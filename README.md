@@ -20,37 +20,41 @@ An end-to-end pipeline that automates strategic SEO content creation, from websi
 
 ```mermaid
 graph TB
-    subgraph "Orchestration Layer"
-        A[ContentAgent] --> B[WorkflowController] --> C[StateManagement]
-    end
-    
-    subgraph "Knowledge Layer"
-        D[ProjectRepository]
-        E[RulebookManager]
-        F[PatternExtractor]
-    end
-    
-    subgraph "Intelligence Layer"
-        G[DecisionEngine]
-        H[SemanticAnalyzer]
-        I[ContextSynthesizer]
-    end
-    
-    subgraph "Optimization Layer"
-        J[CacheManager]
-        K[TokenBudget]
-        L[PromptCompressor]
-    end
-    
-    subgraph "Execution Layer"
-        M[KeywordResearch]
-        N[ContentPlanner]
-        O[ContentGenerator]
-    end
-    
-    subgraph "Persistence Layer"
-        P[(PostgreSQL + pgvector)]
-        Q[(Redis)]
+    subgraph ORCH[" "]
+        subgraph ORC["Orchestration"]
+            A[ContentAgent]
+            B[WorkflowController]
+            C[StateManagement]
+        end
+        
+        subgraph KNW["Knowledge"]
+            D[ProjectRepository]
+            E[RulebookManager]
+            F[PatternExtractor]
+        end
+        
+        subgraph INT["Intelligence"]
+            G[DecisionEngine]
+            H[SemanticAnalyzer]
+            I[ContextSynthesizer]
+        end
+        
+        subgraph OPT["Optimization"]
+            J[CacheManager]
+            K[TokenBudget]
+            L[PromptCompressor]
+        end
+        
+        subgraph EXE["Execution"]
+            M[KeywordResearch]
+            N[ContentPlanner]
+            O[ContentGenerator]
+        end
+        
+        subgraph PERS["Persistence"]
+            P[(PostgreSQL)]
+            Q[(Redis)]
+        end
     end
     
     A --> D
@@ -71,6 +75,13 @@ graph TB
     M --> Q
     N --> Q
     O --> Q
+    
+    style ORC fill:#f8f9fa,stroke:#dee2e6,stroke-width:2px
+    style KNW fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style INT fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style OPT fill:#e8f5e8,stroke:#4caf50,stroke-width:2px
+    style EXE fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+    style PERS fill:#fce4ec,stroke:#e91e63,stroke-width:2px
 ```
 
 ### Decision Flow
@@ -78,26 +89,33 @@ graph TB
 ```mermaid
 flowchart TD
     A[Input Query] --> B{L1: Explicit Rules}
-    B -->|cosine(q,r) ≥ 0.85| C[Match Found<br/>sim=0.91]
-    B -->|No Match| D{L2: Inferred Patterns}
-    D -->|P(pattern|data) > 0.70| E[Pattern Found<br/>conf=0.78]
-    D -->|No Pattern| F{L3: Best Practices}
-    F -->|argmax P(p|query)| G[Best Practice<br/>Default confidence]
+    B -->|"cosine(q,r) ≥ 0.85"| C["Match Found<br/>sim=0.91"]
+    B -->|"No Match"| D{L2: Inferred Patterns}
+    D -->|"P(pattern|data) > 0.70"| E["Pattern Found<br/>conf=0.78"]
+    D -->|"No Pattern"| F{L3: Best Practices}
+    F -->|"argmax P(p|query)"| G["Best Practice<br/>Default confidence"]
     
     C --> H[High Confidence Decision]
     E --> I[Medium Confidence Decision]
     G --> J[Fallback Decision]
     
-    style C fill:#90EE90
-    style E fill:#FFE4B5
-    style G fill:#FFB6C1
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style D fill:#f3e5f5
+    style F fill:#f3e5f5
+    style C fill:#e8f5e8
+    style E fill:#fff3e0
+    style G fill:#fce4ec
+    style H fill:#e8f5e8
+    style I fill:#fff3e0
+    style J fill:#fce4ec
 ```
 
 ## Quick Start
 
 ### Prerequisites
 - Docker & Docker Compose
-- OpenAI API key
+- LLM API key (OpenAI, Anthropic, or other supported providers)
 
 ### Installation
 
@@ -190,11 +208,10 @@ curl -X POST http://localhost:8000/projects/$PROJECT_ID/generate \
 ### Key Metrics
 
 ```mermaid
-xychart-beta
-    title "Performance Metrics"
-    x-axis ["P95 Latency", "Cost/Article", "Success Rate", "Cache Hit Rate"]
-    y-axis "Value" 0 --> 100
-    bar [178, 0.14, 97.8, 42]
+pie title Performance Overview
+    "Success Rate (97.8%)" : 97.8
+    "Cache Hit Rate (42%)" : 42
+    "Remaining (2.2%)" : 2.2
 ```
 
 ### Performance Targets
