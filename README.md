@@ -18,58 +18,79 @@ An end-to-end pipeline that automates strategic SEO content creation, from websi
 
 ### System Overview
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          ORCHESTRATION LAYER                                 │
-│        ContentAgent → WorkflowController → StateManagement                   │
-└──────────────────────────────────────────────────────────────────────────────┘
-     │                    │                    │
-     ▼                    ▼                    ▼
-┌────────────────────────┬──────────────────────────┬─────────────────────────┐
-│ ProjectRepository      │ RulebookManager          │ PatternExtractor        │
-└────────────────────────┴──────────────────────────┴─────────────────────────┘
-     ▼                    ▼                    ▼
-┌────────────────────────┬──────────────────────────┬─────────────────────────┐
-│ DecisionEngine         │ SemanticAnalyzer         │ ContextSynthesizer      │
-└────────────────────────┴──────────────────────────┴─────────────────────────┘
-     ▼                    ▼                    ▼
-┌────────────────────────┬──────────────────────────┬─────────────────────────┐
-│ CacheManager           │ TokenBudget              │ PromptCompressor        │
-└────────────────────────┴──────────────────────────┴─────────────────────────┘
-     ▼                    ▼                    ▼
-┌────────────────────────┬──────────────────────────┬─────────────────────────┐
-│ KeywordResearch        │ ContentPlanner           │ ContentGenerator        │
-└────────────────────────┴──────────────────────────┴─────────────────────────┘
-                         │
-                         ▼
-              ┌──────────────────────────────┐
-              │      PERSISTENCE LAYER       │
-              │ PostgreSQL+pgvector + Redis  │
-              └──────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "Orchestration Layer"
+        A[ContentAgent] --> B[WorkflowController] --> C[StateManagement]
+    end
+    
+    subgraph "Knowledge Layer"
+        D[ProjectRepository]
+        E[RulebookManager]
+        F[PatternExtractor]
+    end
+    
+    subgraph "Intelligence Layer"
+        G[DecisionEngine]
+        H[SemanticAnalyzer]
+        I[ContextSynthesizer]
+    end
+    
+    subgraph "Optimization Layer"
+        J[CacheManager]
+        K[TokenBudget]
+        L[PromptCompressor]
+    end
+    
+    subgraph "Execution Layer"
+        M[KeywordResearch]
+        N[ContentPlanner]
+        O[ContentGenerator]
+    end
+    
+    subgraph "Persistence Layer"
+        P[(PostgreSQL + pgvector)]
+        Q[(Redis)]
+    end
+    
+    A --> D
+    B --> E
+    C --> F
+    D --> G
+    E --> H
+    F --> I
+    G --> J
+    H --> K
+    I --> L
+    J --> M
+    K --> N
+    L --> O
+    M --> P
+    N --> P
+    O --> P
+    M --> Q
+    N --> Q
+    O --> Q
 ```
 
 ### Decision Flow
 
-```
-Input Query
-    │
-    ▼
-┌─ L1: Explicit Rules ─────────────────┐
-│  Vector similarity: cosine(q, r) ≥ 0.85 │
-│  → Match Found: sim=0.91              │
-└───────────────────────────────────────┘
-    │
-    ▼
-┌─ L2: Inferred Patterns ──────────────┐
-│  P(pattern|data) > 0.70, n ≥ 5       │
-│  → Pattern Found: conf=0.78           │
-└───────────────────────────────────────┘
-    │
-    ▼
-┌─ L3: Best Practices ─────────────────┐
-│  argmax_p P(p|query) × priority(p)   │
-│  → Fallback: Return best practice    │
-└───────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A[Input Query] --> B{L1: Explicit Rules}
+    B -->|cosine(q,r) ≥ 0.85| C[Match Found<br/>sim=0.91]
+    B -->|No Match| D{L2: Inferred Patterns}
+    D -->|P(pattern|data) > 0.70| E[Pattern Found<br/>conf=0.78]
+    D -->|No Pattern| F{L3: Best Practices}
+    F -->|argmax P(p|query)| G[Best Practice<br/>Default confidence]
+    
+    C --> H[High Confidence Decision]
+    E --> I[Medium Confidence Decision]
+    G --> J[Fallback Decision]
+    
+    style C fill:#90EE90
+    style E fill:#FFE4B5
+    style G fill:#FFB6C1
 ```
 
 ## Quick Start
@@ -166,12 +187,24 @@ curl -X POST http://localhost:8000/projects/$PROJECT_ID/generate \
 
 ## Performance
 
-| Metric | Target | Actual |
-|--------|--------|--------|
-| P95 Latency | <180s | 178s ✓ |
-| Cost/Article | <$0.30 | $0.14 ✓ |
-| Success Rate | >95% | 97.8% ✓ |
-| Cache Hit Rate | >35% | 42% ✓ |
+### Key Metrics
+
+```mermaid
+xychart-beta
+    title "Performance Metrics"
+    x-axis ["P95 Latency", "Cost/Article", "Success Rate", "Cache Hit Rate"]
+    y-axis "Value" 0 --> 100
+    bar [178, 0.14, 97.8, 42]
+```
+
+### Performance Targets
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| P95 Latency | <180s | 178s | ✅ |
+| Cost/Article | <$0.30 | $0.14 | ✅ |
+| Success Rate | >95% | 97.8% | ✅ |
+| Cache Hit Rate | >35% | 42% | ✅ |
 
 ## Development
 
@@ -216,3 +249,9 @@ content-automation-pipeline/
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Developer
+
+**Mohammad Atashi**  
+Email: mohammadaliatashi@icloud.com  
+GitHub: [@TensorScholar](https://github.com/TensorScholar)
