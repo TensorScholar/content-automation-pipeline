@@ -54,7 +54,7 @@ from api.schemas import (
 
 
 # Import dependencies from separate module
-from api.dependencies import get_content_agent, get_project_repository, get_article_repository, get_task_manager
+from api.dependencies import get_content_agent, get_project_repository, get_article_repository, get_task_manager, get_project_service, get_content_service
 
 
 # Application lifespan manager
@@ -92,6 +92,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         from knowledge.article_repository import ArticleRepository
         from knowledge.rulebook_manager import RulebookManager
         from knowledge.website_analyzer import WebsiteAnalyzer
+        from services.project_service import ProjectService
+        from services.content_service import ContentService
         from optimization.cache_manager import CacheManager
         from optimization.model_router import ModelRouter
         from optimization.prompt_compressor import PromptCompressor
@@ -109,6 +111,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         
         website_analyzer = WebsiteAnalyzer()
         app.state.website_analyzer = website_analyzer
+
+        # Task management (needed for services)
+        task_manager = TaskManager()
+        app.state.task_manager = task_manager
+
+        # Service layer
+        project_service = ProjectService(projects, rulebook_mgr)
+        app.state.project_service = project_service
+        
+        content_service = ContentService(articles, task_manager)
+        app.state.content_service = content_service
 
         # Intelligence layer
         semantic_analyzer = SemanticAnalyzer()
@@ -180,9 +193,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             config=ContentAgentConfig(),
         )
         app.state.content_agent = content_agent
-
-        task_manager = TaskManager()
-        app.state.task_manager = task_manager
 
         logger.info("Application startup complete")
         yield

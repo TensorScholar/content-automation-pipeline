@@ -13,6 +13,8 @@ from orchestration.content_agent import ContentAgent
 from orchestration.task_queue import TaskManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.article_repository import ArticleRepository
+from services.project_service import ProjectService
+from services.content_service import ContentService
 
 
 async def get_db_manager(request: Request) -> DatabaseManager:
@@ -43,3 +45,13 @@ async def get_project_repository(request: Request) -> ProjectRepository:
 async def get_article_repository(request: Request) -> ArticleRepository:
     """Dependency injection: Get article repository."""
     return request.app.state.articles
+
+
+async def get_project_service(request: Request) -> ProjectService:
+    """Dependency injection: Get project service."""
+    return request.app.state.project_service
+
+
+async def get_content_service(request: Request) -> ContentService:
+    """Dependency injection: Get content service."""
+    return request.app.state.content_service

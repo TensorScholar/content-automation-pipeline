@@ -23,9 +23,10 @@ from core.models import InferredPatterns, Project, Rulebook
 from infrastructure.database import DatabaseManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
+from services.project_service import ProjectService
 
 # Import dependency functions
-from api.dependencies import get_project_repository
+from api.dependencies import get_project_service
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -106,9 +107,7 @@ class BulkProjectResponse(BaseModel):
 # ============================================================================
 
 
-async def get_rulebook_manager(request: Request) -> RulebookManager:
-    """Inject rulebook manager."""
-    return request.app.state.rulebook_mgr
+# Rulebook manager is now accessed through ProjectService
 
 
 # ============================================================================
@@ -120,7 +119,7 @@ async def get_rulebook_manager(request: Request) -> RulebookManager:
 async def update_project(
     project_id: UUID,
     request: UpdateProjectRequest,
-    projects: ProjectRepository = Depends(get_project_repository),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Update project properties.
@@ -128,28 +127,15 @@ async def update_project(
     Implements optimistic concurrency control to prevent conflicts.
     Only non-null fields are updated (partial update semantics).
     """
-    project = await projects.get_by_id(project_id)
-
-    if not project:
-        raise ProjectNotFoundError(f"Project not found: {project_id}")
-
-    # Apply updates
     update_data = request.dict(exclude_unset=True)
-
-    updated_project = await projects.update(project_id, update_data)
-
-    return {
-        "id": str(updated_project.id),
-        "message": "Project updated successfully",
-        "updated_fields": list(update_data.keys()),
-    }
+    return await project_service.update_project(project_id, update_data)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete project")
 async def delete_project(
     project_id: UUID,
     cascade: bool = Query(False, description="Delete associated content"),
-    projects: ProjectRepository = Depends(get_project_repository),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Delete project.
@@ -158,21 +144,7 @@ async def delete_project(
         cascade: If true, deletes all associated content (articles, patterns, etc.)
                  If false, fails if project has associated content.
     """
-    project = await projects.get_by_id(project_id)
-
-    if not project:
-        raise ProjectNotFoundError(f"Project not found: {project_id}")
-
-    # Check for associated content
-    article_count = await projects.count_articles(project_id)
-
-    if article_count > 0 and not cascade:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Project has {article_count} associated articles. Use cascade=true to force delete.",
-        )
-
-    await projects.delete(project_id, cascade=cascade)
+    await project_service.delete_project(project_id, cascade)
 
 
 @router.get(
@@ -184,7 +156,7 @@ async def get_project_analytics(
     project_id: UUID,
     start_date: Optional[datetime] = Query(None, description="Analytics period start"),
     end_date: Optional[datetime] = Query(None, description="Analytics period end"),
-    projects: ProjectRepository = Depends(get_project_repository),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Retrieve project performance analytics.
@@ -192,17 +164,7 @@ async def get_project_analytics(
     Returns aggregated metrics for content generation performance,
     cost, and quality over specified time period.
     """
-    project = await projects.get_by_id(project_id)
-
-    if not project:
-        raise ProjectNotFoundError(f"Project not found: {project_id}")
-
-    analytics = await projects.get_analytics(
-        project_id=project_id,
-        start_date=start_date or datetime(2020, 1, 1),
-        end_date=end_date or datetime.utcnow(),
-    )
-
+    analytics = await project_service.get_project_analytics(project_id, start_date, end_date)
     return ProjectAnalyticsResponse(**analytics)
 
 
@@ -220,8 +182,7 @@ async def get_project_analytics(
 async def create_or_update_rulebook(
     project_id: UUID,
     request: RulebookRequest,
-    projects: ProjectRepository = Depends(get_project_repository),
-    rulebook_mgr: RulebookManager = Depends(get_rulebook_manager),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Create or update project rulebook.
@@ -229,36 +190,10 @@ async def create_or_update_rulebook(
     Rulebooks are versioned. Each update creates a new version while
     preserving history for audit and rollback purposes.
     """
-    # Verify project exists
-    project = await projects.get_by_id(project_id)
-
-    if not project:
-        raise ProjectNotFoundError(f"Project not found: {project_id}")
-
-    # Check if rulebook exists
-    existing_rulebook = await rulebook_mgr.get_rulebook(project_id)
-
-    if existing_rulebook:
-        # Update existing
-        rulebook = await rulebook_mgr.update_rulebook(
-            project_id=project_id, content=request.content, version_note=request.version_note
-        )
-        status_message = "updated"
-    else:
-        # Create new
-        rulebook = await rulebook_mgr.create_rulebook(
-            project_id=project_id, content=request.content
-        )
-        status_message = "created"
-
-    return RulebookResponse(
-        id=str(rulebook.id),
-        project_id=str(rulebook.project_id),
-        content=rulebook.raw_content,
-        version=rulebook.version,
-        rule_count=len(rulebook.rules),
-        updated_at=rulebook.updated_at,
+    result = await project_service.create_or_update_rulebook(
+        project_id, request.content, request.version_note
     )
+    return RulebookResponse(**result)
 
 
 @router.get(
@@ -267,29 +202,15 @@ async def create_or_update_rulebook(
 async def get_rulebook(
     project_id: UUID,
     version: Optional[int] = Query(None, description="Specific version (default: latest)"),
-    rulebook_mgr: RulebookManager = Depends(get_rulebook_manager),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Retrieve project rulebook.
 
     Returns latest version by default, or specific version if requested.
     """
-    if version:
-        rulebook = await rulebook_mgr.get_rulebook_version(project_id, version)
-    else:
-        rulebook = await rulebook_mgr.get_rulebook(project_id)
-
-    if not rulebook:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rulebook not found")
-
-    return RulebookResponse(
-        id=str(rulebook.id),
-        project_id=str(rulebook.project_id),
-        content=rulebook.raw_content,
-        version=rulebook.version,
-        rule_count=len(rulebook.rules),
-        updated_at=rulebook.updated_at,
-    )
+    result = await project_service.get_rulebook(project_id, version)
+    return RulebookResponse(**result)
 
 
 @router.get(
@@ -298,33 +219,24 @@ async def get_rulebook(
     summary="Get rulebook version history",
 )
 async def get_rulebook_history(
-    project_id: UUID, rulebook_mgr: RulebookManager = Depends(get_rulebook_manager)
+    project_id: UUID, 
+    project_service: ProjectService = Depends(get_project_service)
 ):
     """
     Retrieve complete rulebook version history.
 
     Returns all versions ordered by version number (newest first).
     """
-    history = await rulebook_mgr.get_rulebook_history(project_id)
-
-    return [
-        RulebookResponse(
-            id=str(rb.id),
-            project_id=str(rb.project_id),
-            content=rb.raw_content,
-            version=rb.version,
-            rule_count=len(rb.rules),
-            updated_at=rb.updated_at,
-        )
-        for rb in history
-    ]
+    history = await project_service.get_rulebook_history(project_id)
+    return [RulebookResponse(**rb) for rb in history]
 
 
 @router.delete(
     "/{project_id}/rulebook", status_code=status.HTTP_204_NO_CONTENT, summary="Delete rulebook"
 )
 async def delete_rulebook(
-    project_id: UUID, rulebook_mgr: RulebookManager = Depends(get_rulebook_manager)
+    project_id: UUID, 
+    project_service: ProjectService = Depends(get_project_service)
 ):
     """
     Delete project rulebook (all versions).
@@ -332,7 +244,7 @@ async def delete_rulebook(
     This operation cannot be undone. Project will fall back to
     inferred patterns or best practices.
     """
-    await rulebook_mgr.delete_rulebook(project_id)
+    await project_service.delete_rulebook(project_id)
 
 
 # ============================================================================
@@ -349,7 +261,7 @@ async def delete_rulebook(
 async def trigger_website_analysis(
     project_id: UUID,
     force_refresh: bool = Query(False, description="Force re-analysis"),
-    projects: ProjectRepository = Depends(get_project_repository),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Trigger website analysis to infer content patterns.
@@ -361,45 +273,8 @@ async def trigger_website_analysis(
     Args:
         force_refresh: Re-analyze even if recent patterns exist
     """
-    project = await projects.get_by_id(project_id)
-
-    if not project:
-        raise ProjectNotFoundError(f"Project not found: {project_id}")
-
-    if not project.domain:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Project has no domain configured for analysis",
-        )
-
-    # Check for existing patterns
-    existing_patterns = await projects.get_inferred_patterns(project_id)
-
-    if existing_patterns and not force_refresh:
-        # Return existing patterns
-        return InferredPatternsResponse(
-            id=str(existing_patterns.id),
-            project_id=str(existing_patterns.project_id),
-            avg_sentence_length=existing_patterns.avg_sentence_length[0],
-            lexical_diversity=existing_patterns.lexical_diversity,
-            readability_score=existing_patterns.readability_score,
-            confidence=existing_patterns.confidence,
-            sample_size=existing_patterns.sample_size,
-            analyzed_at=existing_patterns.analyzed_at,
-        )
-
-    # Trigger async analysis
-    from orchestration.task_queue import celery_app
-
-    task = celery_app.send_task(
-        "content_automation.analyze_website", args=[str(project_id), project.domain]
-    )
-
-    return {
-        "message": "Website analysis initiated",
-        "task_id": task.id,
-        "project_id": str(project_id),
-    }
+    result = await project_service.trigger_website_analysis(project_id, force_refresh)
+    return InferredPatternsResponse(**result)
 
 
 @router.get(
@@ -408,31 +283,16 @@ async def trigger_website_analysis(
     summary="Get inferred patterns",
 )
 async def get_inferred_patterns(
-    project_id: UUID, projects: ProjectRepository = Depends(get_project_repo)
+    project_id: UUID, 
+    project_service: ProjectService = Depends(get_project_service)
 ):
     """
     Retrieve inferred content patterns for project.
 
     Returns linguistic patterns extracted from website analysis.
     """
-    patterns = await projects.get_inferred_patterns(project_id)
-
-    if not patterns:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No inferred patterns found. Trigger analysis first.",
-        )
-
-    return InferredPatternsResponse(
-        id=str(patterns.id),
-        project_id=str(patterns.project_id),
-        avg_sentence_length=patterns.avg_sentence_length[0],
-        lexical_diversity=patterns.lexical_diversity,
-        readability_score=patterns.readability_score,
-        confidence=patterns.confidence,
-        sample_size=patterns.sample_size,
-        analyzed_at=patterns.analyzed_at,
-    )
+    result = await project_service.get_inferred_patterns(project_id)
+    return InferredPatternsResponse(**result)
 
 
 # ============================================================================
@@ -442,7 +302,8 @@ async def get_inferred_patterns(
 
 @router.post("/bulk/create", response_model=BulkProjectResponse, summary="Bulk create projects")
 async def bulk_create_projects(
-    projects_data: List[dict], projects: ProjectRepository = Depends(get_project_repo)
+    projects_data: List[dict], 
+    project_service: ProjectService = Depends(get_project_service)
 ):
     """
     Create multiple projects in single operation.
@@ -450,19 +311,8 @@ async def bulk_create_projects(
     Useful for initial setup or migration scenarios.
     Returns summary of successful and failed operations.
     """
-    successful = []
-    failed = []
-
-    for idx, project_data in enumerate(projects_data):
-        try:
-            project = await projects.create(**project_data)
-            successful.append(str(project.id))
-        except Exception as e:
-            failed.append({"index": idx, "data": project_data, "error": str(e)})
-
-    return BulkProjectResponse(
-        successful=successful, failed=failed, total_processed=len(projects_data)
-    )
+    result = await project_service.bulk_create_projects(projects_data)
+    return BulkProjectResponse(**result)
 
 
 # ============================================================================
@@ -475,24 +325,14 @@ async def search_projects(
     query: str = Query(..., min_length=1, description="Search query"),
     field: str = Query("name", pattern="^(name|domain)$", description="Field to search"),
     limit: int = Query(20, ge=1, le=100),
-    projects: ProjectRepository = Depends(get_project_repository),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Search projects by name or domain.
 
     Supports fuzzy matching for user-friendly search experience.
     """
-    results = await projects.search(query=query, field=field, limit=limit)
-
-    return [
-        {
-            "id": str(p.id),
-            "name": p.name,
-            "domain": p.domain,
-            "match_score": p.match_score,  # Relevance score
-        }
-        for p in results
-    ]
+    return await project_service.search_projects(query, field, limit)
 
 
 @router.get("/filter", response_model=List[dict], summary="Filter projects with advanced criteria")
@@ -501,7 +341,7 @@ async def filter_projects(
     has_patterns: Optional[bool] = Query(None, description="Filter by inferred patterns"),
     min_articles: Optional[int] = Query(None, ge=0, description="Minimum article count"),
     created_after: Optional[datetime] = Query(None, description="Created after date"),
-    projects: ProjectRepository = Depends(get_project_repository),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """
     Filter projects with multiple criteria.
@@ -515,18 +355,4 @@ async def filter_projects(
         "created_after": created_after,
     }
 
-    # Remove None values
-    filters = {k: v for k, v in filters.items() if v is not None}
-
-    results = await projects.filter(**filters)
-
-    return [
-        {
-            "id": str(p.id),
-            "name": p.name,
-            "domain": p.domain,
-            "total_articles": p.total_articles_generated,
-            "created_at": p.created_at,
-        }
-        for p in results
-    ]
+    return await project_service.filter_projects(**filters)
