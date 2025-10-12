@@ -17,17 +17,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
 from core.exceptions import WorkflowError
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
-from infrastructure.schema import generated_articles_table, article_revisions_table
 from orchestration.content_agent import ContentAgent
 from orchestration.task_queue import TaskManager
+from knowledge.article_repository import ArticleRepository
 
 # Import dependency functions
-from api.dependencies import get_db_manager, get_task_manager
+from api.dependencies import get_db_manager, get_article_repository, get_task_manager
 
 router = APIRouter(prefix="/content", tags=["Content"])
 
@@ -175,7 +174,7 @@ async def get_batch_status(batch_id: str, task_manager: TaskManager = Depends())
 async def get_article(
     article_id: UUID,
     include_content: bool = Query(True, description="Include full content"),
-    db: DatabaseManager = Depends(get_db_manager),
+    article_repo: ArticleRepository = Depends(get_article_repository),
 ):
     """
     Retrieve article by ID.
@@ -183,19 +182,12 @@ async def get_article(
     Args:
         include_content: If false, returns metadata only (faster)
     """
-    query = select(generated_articles_table).where(generated_articles_table.c.id == article_id)
-
-    article = await db.fetch_one(query)
+    article = await article_repo.get_by_id(article_id, include_content)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
-    response = dict(article)
-
-    if not include_content:
-        response.pop("content", None)
-
-    return response
+    return article
 
 
 @router.post(
@@ -208,7 +200,7 @@ async def revise_article(
     article_id: UUID,
     request: ContentRevisionRequest,
     task_manager: TaskManager = Depends(get_task_manager),
-    db: DatabaseManager = Depends(get_db_manager),
+    article_repo: ArticleRepository = Depends(get_article_repository),
 ):
     """
     Request revision of existing article based on feedback.
@@ -217,8 +209,7 @@ async def revise_article(
     article incorporating feedback. Original version preserved.
     """
     # Verify article exists
-    query = select(generated_articles_table.c.id, generated_articles_table.c.project_id, generated_articles_table.c.content_plan_id).where(generated_articles_table.c.id == article_id)
-    article = await db.fetch_one(query)
+    article = await article_repo.get_by_id(article_id, include_content=False)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -235,18 +226,18 @@ async def revise_article(
 
 
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete article")
-async def delete_article(article_id: UUID, db: DatabaseManager = Depends(get_db_manager)):
+async def delete_article(
+    article_id: UUID, 
+    article_repo: ArticleRepository = Depends(get_article_repository)
+):
     """
     Delete article permanently.
 
     This operation cannot be undone. Article is removed from all systems.
     """
-    from sqlalchemy import delete
-    
-    query = delete(generated_articles_table).where(generated_articles_table.c.id == article_id)
-    result = await db.execute(query)
+    deleted = await article_repo.delete(article_id)
 
-    if result == "DELETE 0":
+    if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
 
@@ -258,20 +249,17 @@ async def delete_article(article_id: UUID, db: DatabaseManager = Depends(get_db_
 @router.get(
     "/{article_id}/quality", response_model=ContentQualityMetrics, summary="Get quality metrics"
 )
-async def get_quality_metrics(article_id: UUID, db: DatabaseManager = Depends()):
+async def get_quality_metrics(
+    article_id: UUID, 
+    article_repo: ArticleRepository = Depends(get_article_repository)
+):
     """
     Retrieve detailed quality metrics for article.
 
     Analyzes readability, SEO, structure, and semantic coherence.
     Returns comprehensive quality assessment.
     """
-    query = select(
-        generated_articles_table.c.id,
-        generated_articles_table.c.content,
-        generated_articles_table.c.readability_score,
-        generated_articles_table.c.keyword_density
-    ).where(generated_articles_table.c.id == article_id)
-    article = await db.fetch_one(query)
+    article = await article_repo.get_quality_metrics(article_id)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -313,7 +301,9 @@ def _readability_score_to_grade(score: float) -> str:
 
 @router.post("/{article_id}/analyze", response_model=dict, summary="Trigger comprehensive analysis")
 async def trigger_comprehensive_analysis(
-    article_id: UUID, background_tasks: BackgroundTasks, db: DatabaseManager = Depends()
+    article_id: UUID, 
+    background_tasks: BackgroundTasks, 
+    article_repo: ArticleRepository = Depends(get_article_repository)
 ):
     """
     Trigger deep analysis of article quality.
@@ -325,8 +315,7 @@ async def trigger_comprehensive_analysis(
 
     Runs asynchronously; results available via separate endpoint.
     """
-    query = select(generated_articles_table.c.id).where(generated_articles_table.c.id == article_id)
-    article = await db.fetch_one(query)
+    article = await article_repo.get_by_id(article_id, include_content=False)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -353,7 +342,7 @@ async def trigger_comprehensive_analysis(
 async def distribute_article(
     article_id: UUID,
     channels: List[str] = Query(..., description="Distribution channels"),
-    db: DatabaseManager = Depends(get_db_manager),
+    article_repo: ArticleRepository = Depends(get_article_repository),
 ):
     """
         Distribute article to specified channels.
@@ -363,14 +352,7 @@ async def distribute_article(
     - Email (TODO)
     - Social media (TODO)
     """
-    query = select(
-        generated_articles_table.c.id,
-        generated_articles_table.c.project_id,
-        generated_articles_table.c.title,
-        generated_articles_table.c.content,
-        generated_articles_table.c.meta_description
-    ).where(generated_articles_table.c.id == article_id)
-    article = await db.fetch_one(query)
+    article = await article_repo.get_by_id(article_id, include_content=True)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -393,17 +375,15 @@ async def distribute_article(
     response_model=DistributionStatusResponse,
     summary="Get distribution status",
 )
-async def get_distribution_status(article_id: UUID, db: DatabaseManager = Depends(get_db_manager)):
+async def get_distribution_status(
+    article_id: UUID, 
+    article_repo: ArticleRepository = Depends(get_article_repository)
+):
     """
     Query article distribution status.
     Returns delivery confirmations and channel-specific metadata.
     """
-    query = select(
-        generated_articles_table.c.id,
-        generated_articles_table.c.distributed_at,
-        generated_articles_table.c.distribution_channels
-    ).where(generated_articles_table.c.id == article_id)
-    article = await db.fetch_one(query)
+    article = await article_repo.get_distribution_status(article_id)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -425,54 +405,23 @@ async def get_distribution_status(article_id: UUID, db: DatabaseManager = Depend
     response_model=ContentHistoryResponse,
     summary="Get article revision history",
 )
-async def get_article_history(article_id: UUID, db: DatabaseManager = Depends(get_db_manager)):
+async def get_article_history(
+    article_id: UUID, 
+    article_repo: ArticleRepository = Depends(get_article_repository)
+):
     """
     Retrieve complete revision history for article.
     Returns all versions with diff information and revision metadata.
     """
-    # Query current version
-    current_query = select(
-        generated_articles_table.c.id,
-        generated_articles_table.c.title,
-        generated_articles_table.c.content,
-        generated_articles_table.c.created_at,
-        generated_articles_table.c.word_count
-    ).where(generated_articles_table.c.id == article_id)
-    current = await db.fetch_one(current_query)
+    history = await article_repo.get_article_history(article_id)
 
-    if not current:
+    if not history:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
-    # Query revision history
-    revisions_query = select(
-        article_revisions_table.c.id,
-        article_revisions_table.c.title,
-        article_revisions_table.c.content,
-        article_revisions_table.c.created_at,
-        article_revisions_table.c.revision_note,
-        article_revisions_table.c.word_count
-    ).where(article_revisions_table.c.article_id == article_id).order_by(article_revisions_table.c.created_at.desc())
-    revisions = await db.fetch_all(revisions_query)
-
     return ContentHistoryResponse(
-        current_version={
-            "id": str(current["id"]),
-            "title": current["title"],
-            "content": current["content"],
-            "created_at": current["created_at"],
-            "word_count": current["word_count"],
-        },
-        revisions=[
-            {
-                "id": str(rev["id"]),
-                "title": rev["title"],
-                "revision_note": rev["revision_note"],
-                "created_at": rev["created_at"],
-                "word_count": rev["word_count"],
-            }
-            for rev in revisions
-        ],
-        total_revisions=len(revisions),
+        current_version=history["current_version"],
+        revisions=history["revisions"],
+        total_revisions=history["total_revisions"],
     )
 
 
@@ -484,79 +433,23 @@ async def get_content_analytics(
     project_id: Optional[UUID] = Query(None, description="Filter by project"),
     start_date: datetime = Query(datetime.utcnow() - timedelta(days=30)),
     end_date: datetime = Query(datetime.utcnow()),
-    db: DatabaseManager = Depends(get_db_manager),
+    article_repo: ArticleRepository = Depends(get_article_repository),
 ):
     """
     Retrieve comprehensive content generation analytics.
     Returns aggregated metrics including cost analysis, quality trends,
     and production velocity over specified time period.
     """
-    # Build dynamic query based on filters
-
-    # Aggregate metrics
-    from sqlalchemy import func as sql_func
-    
-    stats_query = select(
-        sql_func.count(generated_articles_table.c.id).label("total_articles"),
-        sql_func.sum(generated_articles_table.c.total_cost).label("total_cost"),
-        sql_func.avg(generated_articles_table.c.generation_time).label("avg_generation_time"),
-        sql_func.avg(generated_articles_table.c.readability_score).label("avg_quality_score")
-    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
-    
-    if project_id:
-        stats_query = stats_query.where(generated_articles_table.c.project_id == project_id)
-    
-    stats = await db.fetch_one(stats_query)
-
-    # Articles by day
-    articles_by_day_query = select(
-        sql_func.date(generated_articles_table.c.created_at).label("date"),
-        sql_func.count(generated_articles_table.c.id).label("count"),
-        sql_func.sum(generated_articles_table.c.total_cost).label("daily_cost")
-    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
-    
-    if project_id:
-        articles_by_day_query = articles_by_day_query.where(generated_articles_table.c.project_id == project_id)
-    
-    articles_by_day_query = articles_by_day_query.group_by(
-        sql_func.date(generated_articles_table.c.created_at)
-    ).order_by(sql_func.date(generated_articles_table.c.created_at))
-    
-    articles_by_day = await db.fetch_all(articles_by_day_query)
-
-    # Quality trend
-    quality_trend_query = select(
-        sql_func.date(generated_articles_table.c.created_at).label("date"),
-        sql_func.avg(generated_articles_table.c.readability_score).label("avg_quality")
-    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
-    
-    if project_id:
-        quality_trend_query = quality_trend_query.where(generated_articles_table.c.project_id == project_id)
-    
-    quality_trend_query = quality_trend_query.group_by(
-        sql_func.date(generated_articles_table.c.created_at)
-    ).order_by(sql_func.date(generated_articles_table.c.created_at))
-    
-    quality_trend = await db.fetch_all(quality_trend_query)
+    analytics = await article_repo.get_analytics(project_id, start_date, end_date)
 
     return ContentAnalyticsResponse(
-        total_articles=stats["total_articles"],
-        total_cost=float(stats["total_cost"] or 0),
-        avg_generation_time=float(stats["avg_generation_time"] or 0),
-        avg_quality_score=float(stats["avg_quality_score"] or 0),
-        cost_per_article=float(stats["total_cost"] or 0) / max(stats["total_articles"], 1),
-        articles_by_day=[
-            {
-                "date": row["date"].isoformat(),
-                "count": row["count"],
-                "daily_cost": float(row["daily_cost"]),
-            }
-            for row in articles_by_day
-        ],
-        quality_trend=[
-            {"date": row["date"].isoformat(), "avg_quality": float(row["avg_quality"])}
-            for row in quality_trend
-        ],
+        total_articles=analytics["total_articles"],
+        total_cost=analytics["total_cost"],
+        avg_generation_time=analytics["avg_generation_time"],
+        avg_quality_score=analytics["avg_quality_score"],
+        cost_per_article=analytics["cost_per_article"],
+        articles_by_day=analytics["articles_by_day"],
+        quality_trend=analytics["quality_trend"],
     )
 
 
@@ -566,39 +459,21 @@ async def export_content(
     format: str = Query("json", pattern="^(json|csv)$"),
     start_date: datetime = Query(datetime.utcnow() - timedelta(days=30)),
     end_date: datetime = Query(datetime.utcnow()),
-    db: DatabaseManager = Depends(get_db_manager),
+    article_repo: ArticleRepository = Depends(get_article_repository),
 ):
     """
         Export content data in specified format.
     Supports JSON and CSV formats for integration with external systems
     or data analysis tools.
     """
-    # Build query
-
-    articles_query = select(
-        generated_articles_table.c.id,
-        generated_articles_table.c.project_id,
-        generated_articles_table.c.title,
-        generated_articles_table.c.word_count,
-        generated_articles_table.c.total_cost,
-        generated_articles_table.c.generation_time,
-        generated_articles_table.c.readability_score,
-        generated_articles_table.c.created_at
-    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
-    
-    if project_id:
-        articles_query = articles_query.where(generated_articles_table.c.project_id == project_id)
-    
-    articles_query = articles_query.order_by(generated_articles_table.c.created_at.desc())
-    
-    articles = await db.fetch_all(articles_query)
+    articles = await article_repo.export_articles(project_id, start_date, end_date)
 
     if format == "json":
         from fastapi.responses import JSONResponse
 
         return JSONResponse(
             content={
-                "articles": [dict(article) for article in articles],
+                "articles": articles,
                 "total": len(articles),
                 "exported_at": datetime.utcnow().isoformat(),
             }
@@ -614,7 +489,7 @@ async def export_content(
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=articles[0].keys() if articles else [])
         writer.writeheader()
-        writer.writerows([dict(article) for article in articles])
+        writer.writerows(articles)
 
         output.seek(0)
 
@@ -635,37 +510,12 @@ async def search_articles(
     query: str = Query(..., min_length=1, description="Search query"),
     project_id: Optional[UUID] = Query(None, description="Filter by project"),
     limit: int = Query(20, ge=1, le=100),
-    db: DatabaseManager = Depends(get_db_manager),
+    article_repo: ArticleRepository = Depends(get_article_repository),
 ):
     """
         Full-text search across article titles and content.
     Uses PostgreSQL full-text search for efficient querying.
     Returns ranked results by relevance.
     """
-    # TODO: Implement full-text search with tsvector
-    # For now, simple ILIKE search
-
-    from sqlalchemy import or_
-    
-    search_query = select(
-        generated_articles_table.c.id,
-        generated_articles_table.c.project_id,
-        generated_articles_table.c.title,
-        generated_articles_table.c.word_count,
-        generated_articles_table.c.readability_score,
-        generated_articles_table.c.created_at
-    ).where(
-        or_(
-            generated_articles_table.c.title.ilike(f"%{query}%"),
-            generated_articles_table.c.content.ilike(f"%{query}%")
-        )
-    )
-    
-    if project_id:
-        search_query = search_query.where(generated_articles_table.c.project_id == project_id)
-    
-    search_query = search_query.order_by(generated_articles_table.c.created_at.desc()).limit(limit)
-    
-    results = await db.fetch_all(search_query)
-
-    return [dict(article) for article in results]
+    results = await article_repo.search(query, project_id, limit)
+    return results

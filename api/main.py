@@ -54,7 +54,7 @@ from api.schemas import (
 
 
 # Import dependencies from separate module
-from api.dependencies import get_content_agent, get_project_repository, get_task_manager
+from api.dependencies import get_content_agent, get_project_repository, get_article_repository, get_task_manager
 
 
 # Application lifespan manager
@@ -89,6 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         from intelligence.decision_engine import DecisionEngine
         from intelligence.semantic_analyzer import SemanticAnalyzer
         from knowledge.project_repository import ProjectRepository
+        from knowledge.article_repository import ArticleRepository
         from knowledge.rulebook_manager import RulebookManager
         from knowledge.website_analyzer import WebsiteAnalyzer
         from optimization.cache_manager import CacheManager
@@ -99,6 +100,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         # Knowledge layer
         projects = ProjectRepository(db)
         app.state.projects = projects
+        
+        articles = ArticleRepository(db)
+        app.state.articles = articles
         
         rulebook_mgr = RulebookManager(db)
         app.state.rulebook_mgr = rulebook_mgr

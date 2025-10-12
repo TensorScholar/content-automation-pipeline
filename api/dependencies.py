@@ -12,6 +12,7 @@ from infrastructure.redis_client import RedisClient
 from orchestration.content_agent import ContentAgent
 from orchestration.task_queue import TaskManager
 from knowledge.project_repository import ProjectRepository
+from knowledge.article_repository import ArticleRepository
 
 
 async def get_db_manager(request: Request) -> DatabaseManager:
@@ -37,3 +38,8 @@ async def get_task_manager(request: Request) -> TaskManager:
 async def get_project_repository(request: Request) -> ProjectRepository:
     """Dependency injection: Get project repository."""
     return request.app.state.projects
+
+
+async def get_article_repository(request: Request) -> ArticleRepository:
+    """Dependency injection: Get article repository."""
+    return request.app.state.articles
