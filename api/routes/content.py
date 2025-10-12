@@ -17,10 +17,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from core.exceptions import WorkflowError
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
+from infrastructure.schema import generated_articles_table, article_revisions_table
 from orchestration.content_agent import ContentAgent
 from orchestration.task_queue import TaskManager
 
@@ -181,16 +183,9 @@ async def get_article(
     Args:
         include_content: If false, returns metadata only (faster)
     """
-    query = """
-        SELECT id, project_id, title, content, meta_description,
-               word_count, readability_score, keyword_density,
-               total_tokens_used, total_cost, generation_time,
-               distributed_at, created_at
-        FROM generated_articles
-        WHERE id = $1
-    """
+    query = select(generated_articles_table).where(generated_articles_table.c.id == article_id)
 
-    article = await db.fetch_one(query, article_id)
+    article = await db.fetch_one(query)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -222,9 +217,8 @@ async def revise_article(
     article incorporating feedback. Original version preserved.
     """
     # Verify article exists
-    article = await db.fetch_one(
-        "SELECT id, project_id, content_plan_id FROM generated_articles WHERE id = $1", article_id
-    )
+    query = select(generated_articles_table.c.id, generated_articles_table.c.project_id, generated_articles_table.c.content_plan_id).where(generated_articles_table.c.id == article_id)
+    article = await db.fetch_one(query)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -241,13 +235,16 @@ async def revise_article(
 
 
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete article")
-async def delete_article(article_id: UUID, db: DatabaseManager = Depends()):
+async def delete_article(article_id: UUID, db: DatabaseManager = Depends(get_db_manager)):
     """
     Delete article permanently.
 
     This operation cannot be undone. Article is removed from all systems.
     """
-    result = await db.execute("DELETE FROM generated_articles WHERE id = $1", article_id)
+    from sqlalchemy import delete
+    
+    query = delete(generated_articles_table).where(generated_articles_table.c.id == article_id)
+    result = await db.execute(query)
 
     if result == "DELETE 0":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -268,14 +265,13 @@ async def get_quality_metrics(article_id: UUID, db: DatabaseManager = Depends())
     Analyzes readability, SEO, structure, and semantic coherence.
     Returns comprehensive quality assessment.
     """
-    article = await db.fetch_one(
-        """
-        SELECT id, content, readability_score, keyword_density
-        FROM generated_articles
-        WHERE id = $1
-        """,
-        article_id,
-    )
+    query = select(
+        generated_articles_table.c.id,
+        generated_articles_table.c.content,
+        generated_articles_table.c.readability_score,
+        generated_articles_table.c.keyword_density
+    ).where(generated_articles_table.c.id == article_id)
+    article = await db.fetch_one(query)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -329,7 +325,8 @@ async def trigger_comprehensive_analysis(
 
     Runs asynchronously; results available via separate endpoint.
     """
-    article = await db.fetch_one("SELECT id FROM generated_articles WHERE id = $1", article_id)
+    query = select(generated_articles_table.c.id).where(generated_articles_table.c.id == article_id)
+    article = await db.fetch_one(query)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -366,14 +363,14 @@ async def distribute_article(
     - Email (TODO)
     - Social media (TODO)
     """
-    article = await db.fetch_one(
-        """
-    SELECT id, project_id, title, content, meta_description
-    FROM generated_articles
-    WHERE id = $1
-    """,
-        article_id,
-    )
+    query = select(
+        generated_articles_table.c.id,
+        generated_articles_table.c.project_id,
+        generated_articles_table.c.title,
+        generated_articles_table.c.content,
+        generated_articles_table.c.meta_description
+    ).where(generated_articles_table.c.id == article_id)
+    article = await db.fetch_one(query)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -401,14 +398,12 @@ async def get_distribution_status(article_id: UUID, db: DatabaseManager = Depend
     Query article distribution status.
     Returns delivery confirmations and channel-specific metadata.
     """
-    article = await db.fetch_one(
-        """
-        SELECT id, distributed_at, distribution_channels
-        FROM generated_articles
-        WHERE id = $1
-        """,
-        article_id,
-    )
+    query = select(
+        generated_articles_table.c.id,
+        generated_articles_table.c.distributed_at,
+        generated_articles_table.c.distribution_channels
+    ).where(generated_articles_table.c.id == article_id)
+    article = await db.fetch_one(query)
 
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
@@ -430,34 +425,34 @@ async def get_distribution_status(article_id: UUID, db: DatabaseManager = Depend
     response_model=ContentHistoryResponse,
     summary="Get article revision history",
 )
-async def get_article_history(article_id: UUID, db: DatabaseManager = Depends()):
+async def get_article_history(article_id: UUID, db: DatabaseManager = Depends(get_db_manager)):
     """
     Retrieve complete revision history for article.
     Returns all versions with diff information and revision metadata.
     """
     # Query current version
-    current = await db.fetch_one(
-        """
-        SELECT id, title, content, created_at, word_count
-        FROM generated_articles
-        WHERE id = $1
-        """,
-        article_id,
-    )
+    current_query = select(
+        generated_articles_table.c.id,
+        generated_articles_table.c.title,
+        generated_articles_table.c.content,
+        generated_articles_table.c.created_at,
+        generated_articles_table.c.word_count
+    ).where(generated_articles_table.c.id == article_id)
+    current = await db.fetch_one(current_query)
 
     if not current:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
     # Query revision history
-    revisions = await db.fetch_all(
-        """
-        SELECT id, title, content, created_at, revision_note, word_count
-        FROM article_revisions
-        WHERE article_id = $1
-        ORDER BY created_at DESC
-        """,
-        article_id,
-    )
+    revisions_query = select(
+        article_revisions_table.c.id,
+        article_revisions_table.c.title,
+        article_revisions_table.c.content,
+        article_revisions_table.c.created_at,
+        article_revisions_table.c.revision_note,
+        article_revisions_table.c.word_count
+    ).where(article_revisions_table.c.article_id == article_id).order_by(article_revisions_table.c.created_at.desc())
+    revisions = await db.fetch_all(revisions_query)
 
     return ContentHistoryResponse(
         current_version={
@@ -497,57 +492,52 @@ async def get_content_analytics(
     and production velocity over specified time period.
     """
     # Build dynamic query based on filters
-    filters = ["created_at BETWEEN $1 AND $2"]
-    params = [start_date, end_date]
-
-    if project_id:
-        filters.append(f"project_id = ${len(params) + 1}")
-        params.append(project_id)
-
-    where_clause = " AND ".join(filters)
 
     # Aggregate metrics
-    stats = await db.fetch_one(
-        f"""
-        SELECT 
-            COUNT(*) as total_articles,
-            SUM(total_cost) as total_cost,
-            AVG(generation_time) as avg_generation_time,
-            AVG(readability_score) as avg_quality_score
-        FROM generated_articles
-        WHERE {where_clause}
-        """,
-        *params,
-    )
+    from sqlalchemy import func as sql_func
+    
+    stats_query = select(
+        sql_func.count(generated_articles_table.c.id).label("total_articles"),
+        sql_func.sum(generated_articles_table.c.total_cost).label("total_cost"),
+        sql_func.avg(generated_articles_table.c.generation_time).label("avg_generation_time"),
+        sql_func.avg(generated_articles_table.c.readability_score).label("avg_quality_score")
+    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
+    
+    if project_id:
+        stats_query = stats_query.where(generated_articles_table.c.project_id == project_id)
+    
+    stats = await db.fetch_one(stats_query)
 
     # Articles by day
-    articles_by_day = await db.fetch_all(
-        f"""
-        SELECT 
-            DATE(created_at) as date,
-            COUNT(*) as count,
-            SUM(total_cost) as daily_cost
-        FROM generated_articles
-        WHERE {where_clause}
-        GROUP BY DATE(created_at)
-        ORDER BY date
-        """,
-        *params,
-    )
+    articles_by_day_query = select(
+        sql_func.date(generated_articles_table.c.created_at).label("date"),
+        sql_func.count(generated_articles_table.c.id).label("count"),
+        sql_func.sum(generated_articles_table.c.total_cost).label("daily_cost")
+    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
+    
+    if project_id:
+        articles_by_day_query = articles_by_day_query.where(generated_articles_table.c.project_id == project_id)
+    
+    articles_by_day_query = articles_by_day_query.group_by(
+        sql_func.date(generated_articles_table.c.created_at)
+    ).order_by(sql_func.date(generated_articles_table.c.created_at))
+    
+    articles_by_day = await db.fetch_all(articles_by_day_query)
 
     # Quality trend
-    quality_trend = await db.fetch_all(
-        f"""
-        SELECT 
-            DATE(created_at) as date,
-            AVG(readability_score) as avg_quality
-        FROM generated_articles
-        WHERE {where_clause}
-        GROUP BY DATE(created_at)
-        ORDER BY date
-        """,
-        *params,
-    )
+    quality_trend_query = select(
+        sql_func.date(generated_articles_table.c.created_at).label("date"),
+        sql_func.avg(generated_articles_table.c.readability_score).label("avg_quality")
+    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
+    
+    if project_id:
+        quality_trend_query = quality_trend_query.where(generated_articles_table.c.project_id == project_id)
+    
+    quality_trend_query = quality_trend_query.group_by(
+        sql_func.date(generated_articles_table.c.created_at)
+    ).order_by(sql_func.date(generated_articles_table.c.created_at))
+    
+    quality_trend = await db.fetch_all(quality_trend_query)
 
     return ContentAnalyticsResponse(
         total_articles=stats["total_articles"],
@@ -584,26 +574,24 @@ async def export_content(
     or data analysis tools.
     """
     # Build query
-    filters = ["created_at BETWEEN $1 AND $2"]
-    params = [start_date, end_date]
 
+    articles_query = select(
+        generated_articles_table.c.id,
+        generated_articles_table.c.project_id,
+        generated_articles_table.c.title,
+        generated_articles_table.c.word_count,
+        generated_articles_table.c.total_cost,
+        generated_articles_table.c.generation_time,
+        generated_articles_table.c.readability_score,
+        generated_articles_table.c.created_at
+    ).where(generated_articles_table.c.created_at.between(start_date, end_date))
+    
     if project_id:
-        filters.append(f"project_id = ${len(params) + 1}")
-        params.append(project_id)
-
-    where_clause = " AND ".join(filters)
-
-    articles = await db.fetch_all(
-        f"""
-        SELECT 
-            id, project_id, title, word_count, total_cost,
-            generation_time, readability_score, created_at
-        FROM generated_articles
-        WHERE {where_clause}
-        ORDER BY created_at DESC
-        """,
-        *params,
-    )
+        articles_query = articles_query.where(generated_articles_table.c.project_id == project_id)
+    
+    articles_query = articles_query.order_by(generated_articles_table.c.created_at.desc())
+    
+    articles = await db.fetch_all(articles_query)
 
     if format == "json":
         from fastapi.responses import JSONResponse
@@ -657,26 +645,27 @@ async def search_articles(
     # TODO: Implement full-text search with tsvector
     # For now, simple ILIKE search
 
-    filters = ["(title ILIKE $1 OR content ILIKE $1)"]
-    params = [f"%{query}%"]
-
-    if project_id:
-        filters.append(f"project_id = ${len(params) + 1}")
-        params.append(project_id)
-
-    where_clause = " AND ".join(filters)
-
-    results = await db.fetch_all(
-        f"""
-        SELECT 
-            id, project_id, title, word_count, 
-            readability_score, created_at
-        FROM generated_articles
-        WHERE {where_clause}
-        ORDER BY created_at DESC
-        LIMIT {limit}
-        """,
-        *params,
+    from sqlalchemy import or_
+    
+    search_query = select(
+        generated_articles_table.c.id,
+        generated_articles_table.c.project_id,
+        generated_articles_table.c.title,
+        generated_articles_table.c.word_count,
+        generated_articles_table.c.readability_score,
+        generated_articles_table.c.created_at
+    ).where(
+        or_(
+            generated_articles_table.c.title.ilike(f"%{query}%"),
+            generated_articles_table.c.content.ilike(f"%{query}%")
+        )
     )
+    
+    if project_id:
+        search_query = search_query.where(generated_articles_table.c.project_id == project_id)
+    
+    search_query = search_query.order_by(generated_articles_table.c.created_at.desc()).limit(limit)
+    
+    results = await db.fetch_all(search_query)
 
     return [dict(article) for article in results]
