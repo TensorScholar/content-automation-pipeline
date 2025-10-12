@@ -394,6 +394,7 @@ class LLMClient:
         self,
         redis_client: Optional[Any] = None,
         cache_manager: Optional[Any] = None,
+        metrics_collector: Optional[Any] = None,
         openai_api_key: Optional[str] = None,
         anthropic_api_key: Optional[str] = None,
         timeout: float = 120.0,
@@ -429,8 +430,9 @@ class LLMClient:
             else None
         )
 
-        # Initialize caching
+        # Initialize caching and metrics
         self.cache_manager = cache_manager
+        self.metrics_collector = metrics_collector
 
         # Circuit breakers per provider with Redis state management
         self.circuit_breakers: Dict[ModelProvider, CircuitBreaker] = {
@@ -524,10 +526,41 @@ class LLMClient:
                 self.total_tokens += response.usage.total_tokens
                 self.total_cost += response.cost
 
+            # Record Prometheus metrics if available
+            if self.metrics_collector:
+                self.metrics_collector.record_llm_api_call(
+                    model=model,
+                    provider=provider.value,
+                    status="success",
+                    tokens_used=response.usage.total_tokens,
+                    cost=response.cost,
+                    latency_seconds=response.latency_ms / 1000.0,
+                )
+
             return response
 
         except Exception as e:
             logger.error(f"LLM completion failed | model={model} | error={e}")
+            
+            # Record failure metrics if available
+            if self.metrics_collector:
+                error_type = "unknown"
+                if isinstance(e, (APITimeoutError, httpx.TimeoutException)):
+                    error_type = "timeout"
+                elif isinstance(e, RateLimitError):
+                    error_type = "rate_limit"
+                elif isinstance(e, (OpenAIError, AnthropicError)):
+                    error_type = "api_error"
+                
+                self.metrics_collector.record_llm_api_call(
+                    model=model,
+                    provider=provider.value,
+                    status="failure",
+                    tokens_used=0,
+                    cost=0.0,
+                    latency_seconds=0.0,
+                )
+            
             raise
 
     async def _execute_with_retry(

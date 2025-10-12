@@ -245,6 +245,18 @@ class ContentAgent:
 
         except Exception as e:
             await self._transition_state(WorkflowState.FAILED)
+            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            
+            # Record failure metrics
+            self.metrics_collector.record_workflow_completion(
+                project_id=str(project_id),
+                workflow_type="content_generation",
+                duration_seconds=execution_time,
+                cost=0.0,  # No cost on failure
+                success=False,
+                error_type=type(e).__name__
+            )
+            
             logger.error(
                 f"Content creation failed | workflow_id={workflow_id} | "
                 f"state={self.current_workflow['state']} | error={e}"
@@ -254,364 +266,357 @@ class ContentAgent:
             ) from e
 
 
-async def _load_project_context(self, project_id: UUID) -> Dict:
-    """
-    Load complete project context with 3-layer decision hierarchy.
+    async def _load_project_context(self, project_id: UUID) -> Dict:
+        """
+        Load complete project context with 3-layer decision hierarchy.
 
-    Layer 1: Explicit rulebook (if exists)
-    Layer 2: Inferred patterns (if analyzed)
-    Layer 3: Best practices (always available)
+        Layer 1: Explicit rulebook (if exists)
+        Layer 2: Inferred patterns (if analyzed)
+        Layer 3: Best practices (always available)
 
-    Returns enriched project context dictionary.
-    """
-    logger.debug(f"Loading project context | project_id={project_id}")
+        Returns enriched project context dictionary.
+        """
+        logger.debug(f"Loading project context | project_id={project_id}")
 
-    # Load project metadata
-    project = await self.projects.get_by_id(project_id)
-    if not project:
-        raise ProjectNotFoundError(f"Project not found: {project_id}")
+        # Load project metadata
+        project = await self.projects.get_by_id(project_id)
+        if not project:
+            raise ProjectNotFoundError(f"Project not found: {project_id}")
 
-    context = {
-        "project": project,
-        "rulebook": None,
-        "inferred_patterns": None,
-        "decision_strategy": "best_practices",  # Default
-    }
+        context = {
+            "project": project,
+            "rulebook": None,
+            "inferred_patterns": None,
+            "decision_strategy": "best_practices",  # Default
+        }
 
-    # Layer 1: Load rulebook if exists
-    rulebook = await self.rulebook_mgr.get_rulebook(project_id)
-    if rulebook:
-        context["rulebook"] = rulebook
-        context["decision_strategy"] = "explicit_rules"
-        logger.info(f"Rulebook loaded | project_id={project_id} | rules={len(rulebook.rules)}")
+        # Layer 1: Load rulebook if exists
+        rulebook = await self.rulebook_mgr.get_rulebook(project_id)
+        if rulebook:
+            context["rulebook"] = rulebook
+            context["decision_strategy"] = "explicit_rules"
+            logger.info(f"Rulebook loaded | project_id={project_id} | rules={len(rulebook.rules)}")
 
-    # Layer 2: Load inferred patterns if available
-    patterns = await self.projects.get_inferred_patterns(project_id)
-    if patterns and patterns.confidence > 0.65:  # Minimum confidence threshold
-        context["inferred_patterns"] = patterns
-        if not context["rulebook"]:
-            context["decision_strategy"] = "inferred_patterns"
-        logger.info(
-            f"Inferred patterns loaded | project_id={project_id} | "
-            f"confidence={patterns.confidence:.3f}"
-        )
-
-    # If no rulebook and patterns are stale/missing, trigger analysis
-    if not context["rulebook"] and (not patterns or patterns.confidence < 0.65):
-        if self.config.enable_pattern_inference and project.domain:
-            logger.info(f"Triggering website analysis | domain={project.domain}")
-            patterns = await self.website_analyzer.analyze_website(project.domain, project_id)
+        # Layer 2: Load inferred patterns if available
+        patterns = await self.projects.get_inferred_patterns(project_id)
+        if patterns and patterns.confidence > 0.65:  # Minimum confidence threshold
             context["inferred_patterns"] = patterns
-            context["decision_strategy"] = "inferred_patterns"
+            if not context["rulebook"]:
+                context["decision_strategy"] = "inferred_patterns"
+            logger.info(
+                f"Inferred patterns loaded | project_id={project_id} | "
+                f"confidence={patterns.confidence:.3f}"
+            )
 
-    # Layer 3: Best practices always loaded in decision engine
+        # If no rulebook and patterns are stale/missing, trigger analysis
+        if not context["rulebook"] and (not patterns or patterns.confidence < 0.65):
+            if self.config.enable_pattern_inference and project.domain:
+                logger.info(f"Triggering website analysis | domain={project.domain}")
+                patterns = await self.website_analyzer.analyze_website(project.domain, project_id)
+                context["inferred_patterns"] = patterns
+                context["decision_strategy"] = "inferred_patterns"
 
-    self._record_event(
-        WorkflowState.CONTEXT_LOADING,
-        f"Context loaded | strategy={context['decision_strategy']}",
-        {"strategy": context["decision_strategy"]},
-    )
+        # Layer 3: Best practices always loaded in decision engine
 
-    return context
-
-
-async def _conduct_keyword_research(self, project: Project, topic: str) -> Dict[str, List[Keyword]]:
-    """
-    Execute keyword research with semantic clustering.
-
-    Returns categorized keywords (primary, secondary, long-tail).
-    """
-    logger.debug(f"Conducting keyword research | topic={topic}")
-
-    keywords = await self.keyword_researcher.research_keywords(
-        topic=topic, project=project, max_keywords=25
-    )
-
-    # Categorize keywords by search intent and volume
-    categorized = {
-        "primary": keywords[:5],  # Top performers
-        "secondary": keywords[5:15],  # Supporting keywords
-        "long_tail": keywords[15:],  # Niche, specific queries
-    }
-
-    self._record_event(
-        WorkflowState.KEYWORD_RESEARCH,
-        f"Keyword research completed | total={len(keywords)}",
-        {
-            "primary_count": len(categorized["primary"]),
-            "secondary_count": len(categorized["secondary"]),
-            "long_tail_count": len(categorized["long_tail"]),
-        },
-    )
-
-    logger.info(
-        f"Keywords researched | primary={len(categorized['primary'])} | "
-        f"secondary={len(categorized['secondary'])} | "
-        f"long_tail={len(categorized['long_tail'])}"
-    )
-
-    return categorized
-
-
-async def _plan_content(
-    self,
-    project: Project,
-    topic: str,
-    keywords: Dict[str, List[Keyword]],
-    custom_instructions: Optional[str],
-) -> ContentPlan:
-    """
-    Generate strategic content plan with outline and metadata.
-
-    Uses decision engine to determine optimal structure and approach.
-    """
-    logger.debug(f"Planning content structure | topic={topic}")
-
-    # Synthesize context for planning
-    context = await self.context_synthesizer.synthesize_context(
-        project=project, topic=topic, keywords=keywords["primary"], level="standard"
-    )
-
-    # Generate content plan
-    content_plan = await self.content_planner.create_plan(
-        project=project,
-        topic=topic,
-        primary_keywords=keywords["primary"],
-        secondary_keywords=keywords["secondary"],
-        context=context,
-        custom_instructions=custom_instructions,
-    )
-
-    self._record_event(
-        WorkflowState.CONTENT_PLANNING,
-        f"Content plan created | sections={len(content_plan.outline.sections)}",
-        {
-            "target_words": content_plan.target_word_count,
-            "estimated_cost": content_plan.estimated_cost,
-            "sections": len(content_plan.outline.sections),
-        },
-    )
-
-    logger.info(
-        f"Content planned | sections={len(content_plan.outline.sections)} | "
-        f"target_words={content_plan.target_word_count} | "
-        f"estimated_cost=${content_plan.estimated_cost:.4f}"
-    )
-
-    return content_plan
-
-
-async def _generate_article(
-    self, project: Project, content_plan: ContentPlan, priority: str
-) -> GeneratedArticle:
-    """
-    Generate complete article using content generator.
-
-    Implements budget-aware generation with quality gates.
-    """
-    logger.debug(f"Generating article | plan_id={content_plan.id}")
-
-    article = await self.content_generator.generate_article(
-        content_plan=content_plan, project=project, priority=priority
-    )
-
-    self._record_event(
-        WorkflowState.CONTENT_GENERATION,
-        f"Article generated | id={article.id}",
-        {
-            "word_count": article.word_count,
-            "tokens_used": article.total_tokens_used,
-            "cost": article.total_cost,
-            "generation_time": article.generation_time,
-        },
-    )
-
-    logger.info(
-        f"Article generated | id={article.id} | words={article.word_count} | "
-        f"cost=${article.total_cost:.4f} | time={article.generation_time:.2f}s"
-    )
-
-    return article
-
-
-async def _validate_article_quality(self, article: GeneratedArticle) -> Dict:
-    """
-    Comprehensive quality validation using multi-metric analysis.
-
-    Returns validation result with pass/fail and detailed feedback.
-    """
-    logger.debug(f"Validating article quality | article_id={article.id}")
-
-    issues = []
-
-    # Readability check
-    if article.readability_score < 60.0:
-        issues.append(f"Low readability: {article.readability_score:.1f} (target: 60+)")
-
-    # Length validation
-    if article.word_count < 800:
-        issues.append(f"Article too short: {article.word_count} words (minimum: 800)")
-    elif article.word_count > 3500:
-        issues.append(f"Article too long: {article.word_count} words (maximum: 3500)")
-
-    # Keyword density validation
-    avg_density = (
-        sum(article.keyword_density.values()) / len(article.keyword_density)
-        if article.keyword_density
-        else 0
-    )
-
-    if avg_density < 0.005:
-        issues.append(f"Keyword density too low: {avg_density:.4f} (minimum: 0.005)")
-    elif avg_density > 0.025:
-        issues.append(f"Keyword over-optimization: {avg_density:.4f} (maximum: 0.025)")
-
-    passed = len(issues) == 0
-
-    validation_result = {
-        "passed": passed,
-        "issues": issues,
-        "metrics": {
-            "readability": article.readability_score,
-            "word_count": article.word_count,
-            "avg_keyword_density": avg_density,
-        },
-    }
-
-    self._record_event(
-        WorkflowState.QUALITY_VALIDATION,
-        f"Validation {'passed' if passed else 'failed'}",
-        validation_result,
-    )
-
-    if passed:
-        logger.success(f"Article passed quality validation | article_id={article.id}")
-    else:
-        logger.warning(
-            f"Article failed quality validation | article_id={article.id} | "
-            f"issues={len(issues)}"
+        self._record_event(
+            WorkflowState.CONTEXT_LOADING,
+            f"Context loaded | strategy={context['decision_strategy']}",
+            {"strategy": context["decision_strategy"]},
         )
 
-    return validation_result
+        return context
 
 
-async def _regenerate_with_feedback(
-    self, content_plan: ContentPlan, project: Project, feedback: List[str]
-) -> GeneratedArticle:
-    """
-    Regenerate article with enhanced parameters based on validation feedback.
+    async def _conduct_keyword_research(self, project: Project, topic: str) -> Dict[str, List[Keyword]]:
+        """
+        Execute keyword research with semantic clustering.
 
-    Adjusts generation strategy to address specific quality issues.
-    """
-    logger.info("Regenerating article with quality feedback")
+        Returns categorized keywords (primary, secondary, long-tail).
+        """
+        logger.debug(f"Conducting keyword research | topic={topic}")
 
-    # Enhance content plan based on feedback
-    enhanced_plan = content_plan.copy(deep=True)
+        keywords = await self.keyword_researcher.research_keywords(
+            topic=topic, project=project, max_keywords=25
+        )
 
-    # Adjust parameters based on feedback
-    for issue in feedback:
-        if "too short" in issue.lower():
-            enhanced_plan.target_word_count = int(enhanced_plan.target_word_count * 1.3)
-        elif "too long" in issue.lower():
-            enhanced_plan.target_word_count = int(enhanced_plan.target_word_count * 0.8)
-        elif "readability" in issue.lower():
-            # Will be handled by generator's temperature adjustment
-            pass
+        # Categorize keywords by search intent and volume
+        categorized = {
+            "primary": keywords[:5],  # Top performers
+            "secondary": keywords[5:15],  # Supporting keywords
+            "long_tail": keywords[15:],  # Niche, specific queries
+        }
 
-    # Regenerate with adjusted plan
-    article = await self.content_generator.generate_article(
-        content_plan=enhanced_plan,
-        project=project,
-        priority="critical",  # Use higher priority for regeneration
-    )
-
-    return article
-
-
-async def _distribute_article(self, article: GeneratedArticle, project: Project) -> Dict:
-    """
-    Distribute article through configured channels.
-
-    Currently supports Telegram; extensible for additional channels.
-    """
-    logger.debug(f"Distributing article | article_id={article.id}")
-
-    channels_used = []
-
-    # Telegram distribution
-    if project.telegram_channel:
-        try:
-            await self.distributor.distribute_to_telegram(
-                article=article, channel=project.telegram_channel
-            )
-            channels_used.append("telegram")
-            logger.info(f"Article distributed to Telegram | channel={project.telegram_channel}")
-        except Exception as e:
-            logger.error(f"Telegram distribution failed | error={e}")
-
-    # Future: WordPress, email, etc.
-
-    self._record_event(
-        WorkflowState.DISTRIBUTION,
-        f"Article distributed | channels={channels_used}",
-        {"channels": channels_used},
-    )
-
-    return {"channels": channels_used, "distributed_at": datetime.utcnow()}
-
-
-async def _transition_state(self, new_state: WorkflowState):
-    """Transition workflow to new state with event recording."""
-    old_state = self.current_workflow.get("state")
-    self.current_workflow["state"] = new_state
-
-    logger.debug(f"Workflow state transition | {old_state} → {new_state}")
-
-
-def _record_event(self, state: WorkflowState, message: str, metadata: Dict = None):
-    """Record workflow event for audit trail."""
-    event = WorkflowEvent(
-        timestamp=datetime.utcnow(), state=state, message=message, metadata=metadata or {}
-    )
-    self.workflow_events.append(event)
-
-
-async def _record_workflow_metrics(self, article: GeneratedArticle, execution_time: float):
-    """Record comprehensive workflow metrics for monitoring."""
-    await self.metrics.record_workflow(
-        workflow_id=self.current_workflow["id"],
-        project_id=str(article.project_id),
-        article_id=str(article.id),
-        execution_time=execution_time,
-        total_cost=article.total_cost,
-        total_tokens=article.total_tokens_used,
-        word_count=article.word_count,
-        quality_score=article.readability_score,
-        events=len(self.workflow_events),
-    )
-
-
-async def get_workflow_status(self) -> Dict:
-    """
-    Get current workflow execution status.
-
-    Returns workflow state, events, and progress metrics.
-    """
-    if not self.current_workflow:
-        return {"status": "no_active_workflow"}
-
-    return {
-        "workflow_id": self.current_workflow["id"],
-        "state": self.current_workflow["state"],
-        "project_id": str(self.current_workflow["project_id"]),
-        "topic": self.current_workflow["topic"],
-        "start_time": self.current_workflow["start_time"].isoformat(),
-        "events": [
+        self._record_event(
+            WorkflowState.KEYWORD_RESEARCH,
+            f"Keyword research completed | total={len(keywords)}",
             {
-                "timestamp": event.timestamp.isoformat(),
-                "state": event.state,
-                "message": event.message,
-            }
-            for event in self.workflow_events
-        ],
-    }
+                "primary_count": len(categorized["primary"]),
+                "secondary_count": len(categorized["secondary"]),
+                "long_tail_count": len(categorized["long_tail"]),
+            },
+        )
+
+        logger.info(
+            f"Keywords researched | primary={len(categorized['primary'])} | "
+            f"secondary={len(categorized['secondary'])} | "
+            f"long_tail={len(categorized['long_tail'])}"
+        )
+
+        return categorized
+
+
+    async def _plan_content(
+        self,
+        project: Project,
+        topic: str,
+        keywords: Dict[str, List[Keyword]],
+        custom_instructions: Optional[str],
+    ) -> ContentPlan:
+        """
+        Generate strategic content plan with outline and metadata.
+
+        Uses decision engine to determine optimal structure and approach.
+        """
+        logger.debug(f"Planning content structure | topic={topic}")
+
+        # Synthesize context for planning
+        context = await self.context_synthesizer.synthesize_context(
+            project=project, topic=topic, keywords=keywords["primary"], level="standard"
+        )
+
+        # Generate content plan
+        content_plan = await self.content_planner.create_plan(
+            project=project,
+            topic=topic,
+            primary_keywords=keywords["primary"],
+            secondary_keywords=keywords["secondary"],
+            context=context,
+            custom_instructions=custom_instructions,
+        )
+
+        self._record_event(
+            WorkflowState.CONTENT_PLANNING,
+            f"Content plan created | sections={len(content_plan.outline.sections)}",
+            {
+                "target_words": content_plan.target_word_count,
+                "estimated_cost": content_plan.estimated_cost,
+                "sections": len(content_plan.outline.sections),
+            },
+        )
+
+        logger.info(
+            f"Content planned | sections={len(content_plan.outline.sections)} | "
+            f"target_words={content_plan.target_word_count} | "
+            f"estimated_cost=${content_plan.estimated_cost:.4f}"
+        )
+
+        return content_plan
+
+
+    async def _generate_article(
+        self, project: Project, content_plan: ContentPlan, priority: str
+    ) -> GeneratedArticle:
+        """
+        Generate complete article using content generator.
+
+        Implements budget-aware generation with quality gates.
+        """
+        logger.debug(f"Generating article | plan_id={content_plan.id}")
+
+        article = await self.content_generator.generate_article(
+            content_plan=content_plan, project=project, priority=priority
+        )
+
+        self._record_event(
+            WorkflowState.CONTENT_GENERATION,
+            f"Article generated | id={article.id}",
+            {
+                "word_count": article.word_count,
+                "tokens_used": article.total_tokens_used,
+                "cost": article.total_cost,
+                "generation_time": article.generation_time,
+            },
+        )
+
+        logger.info(
+            f"Article generated | id={article.id} | words={article.word_count} | "
+            f"cost=${article.total_cost:.4f} | time={article.generation_time:.2f}s"
+        )
+
+        return article
+
+
+    async def _validate_article_quality(self, article: GeneratedArticle) -> Dict:
+        """
+        Comprehensive quality validation using multi-metric analysis.
+
+        Returns validation result with pass/fail and detailed feedback.
+        """
+        logger.debug(f"Validating article quality | article_id={article.id}")
+
+        issues = []
+
+        # Readability check
+        if article.readability_score < 60.0:
+            issues.append(f"Low readability: {article.readability_score:.1f} (target: 60+)")
+
+        # Length validation
+        if article.word_count < 800:
+            issues.append(f"Article too short: {article.word_count} words (minimum: 800)")
+        elif article.word_count > 3500:
+            issues.append(f"Article too long: {article.word_count} words (maximum: 3500)")
+
+        # Keyword density validation
+        avg_density = (
+            sum(article.keyword_density.values()) / len(article.keyword_density)
+            if article.keyword_density
+            else 0
+        )
+
+        if avg_density < 0.005:
+            issues.append(f"Keyword density too low: {avg_density:.4f} (minimum: 0.005)")
+        elif avg_density > 0.025:
+            issues.append(f"Keyword over-optimization: {avg_density:.4f} (maximum: 0.025)")
+
+        passed = len(issues) == 0
+
+        validation_result = {
+            "passed": passed,
+            "issues": issues,
+            "metrics": {
+                "readability": article.readability_score,
+                "word_count": article.word_count,
+                "avg_keyword_density": avg_density,
+            },
+        }
+
+        self._record_event(
+            WorkflowState.QUALITY_VALIDATION,
+            f"Validation {'passed' if passed else 'failed'}",
+            validation_result,
+        )
+
+        if passed:
+            logger.success(f"Article passed quality validation | article_id={article.id}")
+        else:
+            logger.warning(
+                f"Article failed quality validation | article_id={article.id} | "
+                f"issues={len(issues)}"
+            )
+
+        return validation_result
+
+
+    async def _regenerate_with_feedback(
+        self, content_plan: ContentPlan, project: Project, feedback: List[str]
+    ) -> GeneratedArticle:
+        """
+        Regenerate article with enhanced parameters based on validation feedback.
+
+        Adjusts generation strategy to address specific quality issues.
+        """
+        logger.info("Regenerating article with quality feedback")
+
+        # Enhance content plan based on feedback
+        enhanced_plan = content_plan.copy(deep=True)
+
+        # Adjust parameters based on feedback
+        for issue in feedback:
+            if "too short" in issue.lower():
+                enhanced_plan.target_word_count = int(enhanced_plan.target_word_count * 1.3)
+            elif "too long" in issue.lower():
+                enhanced_plan.target_word_count = int(enhanced_plan.target_word_count * 0.8)
+            elif "readability" in issue.lower():
+                # Will be handled by generator's temperature adjustment
+                pass
+
+        # Regenerate with adjusted plan
+        article = await self.content_generator.generate_article(
+            content_plan=enhanced_plan,
+            project=project,
+            priority="critical",  # Use higher priority for regeneration
+        )
+
+        return article
+
+
+    async def _distribute_article(self, article: GeneratedArticle, project: Project) -> Dict:
+        """
+        Distribute article through configured channels.
+
+        Currently supports Telegram; extensible for additional channels.
+        """
+        logger.debug(f"Distributing article | article_id={article.id}")
+
+        channels_used = []
+
+        # Telegram distribution
+        if project.telegram_channel:
+            try:
+                await self.distributor.distribute_to_telegram(
+                    article=article, channel=project.telegram_channel
+                )
+                channels_used.append("telegram")
+                logger.info(f"Article distributed to Telegram | channel={project.telegram_channel}")
+            except Exception as e:
+                logger.error(f"Telegram distribution failed | error={e}")
+
+        # Future: WordPress, email, etc.
+
+        self._record_event(
+            WorkflowState.DISTRIBUTION,
+            f"Article distributed | channels={channels_used}",
+            {"channels": channels_used},
+        )
+
+        return {"channels": channels_used, "distributed_at": datetime.utcnow()}
+
+
+    async def _transition_state(self, new_state: WorkflowState):
+        """Transition workflow to new state with event recording."""
+        old_state = self.current_workflow.get("state")
+        self.current_workflow["state"] = new_state
+
+        logger.debug(f"Workflow state transition | {old_state} → {new_state}")
+
+    def _record_event(self, state: WorkflowState, message: str, metadata: Dict = None):
+        """Record workflow event for audit trail."""
+        event = WorkflowEvent(
+            timestamp=datetime.utcnow(), state=state, message=message, metadata=metadata or {}
+        )
+        self.workflow_events.append(event)
+
+    async def _record_workflow_metrics(self, article: GeneratedArticle, execution_time: float):
+        """Record comprehensive workflow metrics for monitoring."""
+        self.metrics_collector.record_workflow_completion(
+            project_id=str(article.project_id),
+            workflow_type="content_generation",
+            duration_seconds=execution_time,
+            cost=article.total_cost,
+            success=True,  # Assuming this method is called only on success
+        )
+
+    async def get_workflow_status(self) -> Dict:
+        """
+        Get current workflow execution status.
+
+        Returns workflow state, events, and progress metrics.
+        """
+        if not self.current_workflow:
+            return {"status": "no_active_workflow"}
+
+        return {
+            "workflow_id": self.current_workflow["id"],
+            "state": self.current_workflow["state"],
+            "project_id": str(self.current_workflow["project_id"]),
+            "topic": self.current_workflow["topic"],
+            "start_time": self.current_workflow["start_time"].isoformat(),
+            "events": [
+                {
+                    "timestamp": event.timestamp.isoformat(),
+                    "state": event.state,
+                    "message": event.message,
+                }
+                for event in self.workflow_events
+            ],
+        }

@@ -139,12 +139,13 @@ class CacheManager:
     Provides single interface with automatic fallback and optimization.
     """
 
-    def __init__(self, max_memory_entries: int = 1000):
+    def __init__(self, max_memory_entries: int = 1000, metrics_collector: Optional[Any] = None):
         """
         Initialize cache manager.
 
         Args:
             max_memory_entries: Maximum entries in L1 memory cache
+            metrics_collector: Optional metrics collector for Prometheus metrics
         """
         # L1: In-memory cache
         self._memory_cache: Dict[str, CacheEntry] = {}
@@ -166,6 +167,9 @@ class CacheManager:
 
         # Policy
         self.policy = CachePolicy()
+        
+        # Metrics collector
+        self.metrics_collector = metrics_collector
 
         logger.info(f"Cache manager initialized (max memory entries: {max_memory_entries})")
 
@@ -199,21 +203,38 @@ class CacheManager:
         if value is not None:
             self.stats_by_level[CacheLevel.MEMORY].hits += 1
             self.global_stats.hits += 1
+            
+            # Record cache hit metrics
+            if self.metrics_collector:
+                self.metrics_collector.record_cache_hit("memory", "general")
+            
             return value
 
         self.stats_by_level[CacheLevel.MEMORY].misses += 1
+        
+        # Record cache miss metrics
+        if self.metrics_collector:
+            self.metrics_collector.record_cache_miss("memory", "general")
 
         # L2: Redis cache
         value = await self._get_from_redis(key)
         if value is not None:
             self.stats_by_level[CacheLevel.REDIS].hits += 1
             self.global_stats.hits += 1
+            
+            # Record cache hit metrics
+            if self.metrics_collector:
+                self.metrics_collector.record_cache_hit("redis", "general")
 
             # Promote to L1
             await self._set_in_memory(key, value)
             return value
 
         self.stats_by_level[CacheLevel.REDIS].misses += 1
+        
+        # Record cache miss metrics
+        if self.metrics_collector:
+            self.metrics_collector.record_cache_miss("redis", "general")
 
         # L3: Fallback (database or computation)
         if fallback:
