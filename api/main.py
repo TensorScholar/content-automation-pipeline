@@ -54,7 +54,7 @@ from api.schemas import (
 
 
 # Import dependencies from separate module
-from api.dependencies import DependencyContainer, get_container, get_content_agent, get_project_repository, get_task_manager
+from api.dependencies import get_content_agent, get_project_repository, get_task_manager
 
 
 # Application lifespan manager
@@ -66,18 +66,131 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     Manages startup/shutdown lifecycle with proper resource initialization
     and cleanup. Implements graceful degradation on startup failures.
     """
-    container = DependencyContainer()
-
     try:
-        await container.initialize()
-        app.state.container = container
+        # Infrastructure layer
+        db = DatabaseManager()
+        await db.connect()
+        app.state.db = db
+
+        redis = RedisClient()
+        await redis.connect()
+        app.state.redis = redis
+
+        metrics = MetricsCollector()
+        app.state.metrics = metrics
+
+        # Initialize all application layers
+        from execution.content_generator import ContentGenerator
+        from execution.content_planner import ContentPlanner
+        from execution.distributer import Distributor
+        from execution.keyword_researcher import KeywordResearcher
+        from infrastructure.llm_client import LLMClient
+        from intelligence.context_synthesizer import ContextSynthesizer
+        from intelligence.decision_engine import DecisionEngine
+        from intelligence.semantic_analyzer import SemanticAnalyzer
+        from knowledge.project_repository import ProjectRepository
+        from knowledge.rulebook_manager import RulebookManager
+        from knowledge.website_analyzer import WebsiteAnalyzer
+        from optimization.cache_manager import CacheManager
+        from optimization.model_router import ModelRouter
+        from optimization.prompt_compressor import PromptCompressor
+        from optimization.token_budget_manager import TokenBudgetManager
+
+        # Knowledge layer
+        projects = ProjectRepository(db)
+        app.state.projects = projects
+        
+        rulebook_mgr = RulebookManager(db)
+        app.state.rulebook_mgr = rulebook_mgr
+        
+        website_analyzer = WebsiteAnalyzer()
+        app.state.website_analyzer = website_analyzer
+
+        # Intelligence layer
+        semantic_analyzer = SemanticAnalyzer()
+        app.state.semantic_analyzer = semantic_analyzer
+        
+        decision_engine = DecisionEngine(db, semantic_analyzer)
+        app.state.decision_engine = decision_engine
+        
+        cache = CacheManager(redis)
+        app.state.cache = cache
+        
+        context_synthesizer = ContextSynthesizer(
+            projects, rulebook_mgr, decision_engine, cache
+        )
+        app.state.context_synthesizer = context_synthesizer
+
+        # Optimization layer
+        llm = LLMClient(redis_client=redis)
+        app.state.llm = llm
+        
+        model_router = ModelRouter()
+        app.state.model_router = model_router
+        
+        budget_manager = TokenBudgetManager(redis, metrics)
+        app.state.budget_manager = budget_manager
+        
+        prompt_compressor = PromptCompressor(semantic_analyzer)
+        app.state.prompt_compressor = prompt_compressor
+
+        # Execution layer
+        keyword_researcher = KeywordResearcher(llm, semantic_analyzer, cache)
+        app.state.keyword_researcher = keyword_researcher
+        
+        content_planner = ContentPlanner(
+            llm, decision_engine, context_synthesizer, model_router
+        )
+        app.state.content_planner = content_planner
+        
+        content_generator = ContentGenerator(
+            llm,
+            context_synthesizer,
+            semantic_analyzer,
+            model_router,
+            budget_manager,
+            prompt_compressor,
+            metrics,
+        )
+        app.state.content_generator = content_generator
+        
+        distributor = Distributor(
+            telegram_bot_token=settings.telegram.bot_token.get_secret_value() if settings.telegram.bot_token else None,
+            metrics_collector=metrics
+        )
+        app.state.distributor = distributor
+
+        # Orchestration layer
+        content_agent = ContentAgent(
+            project_repository=projects,
+            rulebook_manager=rulebook_mgr,
+            website_analyzer=website_analyzer,
+            decision_engine=decision_engine,
+            context_synthesizer=context_synthesizer,
+            keyword_researcher=keyword_researcher,
+            content_planner=content_planner,
+            content_generator=content_generator,
+            distributor=distributor,
+            budget_manager=budget_manager,
+            metrics_collector=metrics,
+            config=ContentAgentConfig(),
+        )
+        app.state.content_agent = content_agent
+
+        task_manager = TaskManager()
+        app.state.task_manager = task_manager
+
         logger.info("Application startup complete")
         yield
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         raise
     finally:
-        await container.cleanup()
+        # Cleanup
+        if hasattr(app.state, "db"):
+            await app.state.db.disconnect()
+        if hasattr(app.state, "redis"):
+            await app.state.redis.disconnect()
         logger.info("Application shutdown complete")
 
 
@@ -150,8 +263,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         client_id = request.client.host
-        container = request.app.state.container
-        redis = container.redis
+        redis = request.app.state.redis
 
         key = f"rate_limit:{client_id}"
         now = int(time.time())  # Current Unix timestamp (seconds)
@@ -258,7 +370,7 @@ from api.routes import content, projects
 @app.get(
     "/health", response_model=HealthCheckResponse, tags=["System"], summary="Health check endpoint"
 )
-async def health_check(container: DependencyContainer = Depends(get_container)):
+async def health_check(request: Request):
     """
     System health check with dependency status.
 
@@ -268,21 +380,21 @@ async def health_check(container: DependencyContainer = Depends(get_container)):
 
     # Check database
     try:
-        await container.db.execute("SELECT 1")
+        await request.app.state.db.execute("SELECT 1")
         dependencies["database"] = "healthy"
     except Exception as e:
         dependencies["database"] = f"unhealthy: {str(e)}"
 
     # Check Redis
     try:
-        await container.redis.ping()
+        await request.app.state.redis.ping()
         dependencies["redis"] = "healthy"
     except Exception as e:
         dependencies["redis"] = f"unhealthy: {str(e)}"
 
     # Check task queue
     try:
-        worker_status = container.task_manager.get_worker_status()
+        worker_status = request.app.state.task_manager.get_worker_status()
         dependencies["task_queue"] = f"healthy ({worker_status.get('total_workers', 0)} workers)"
     except Exception as e:
         dependencies["task_queue"] = f"unhealthy: {str(e)}"
@@ -320,8 +432,7 @@ async def create_project(request: CreateProjectRequest, projects=Depends(get_pro
     # If rulebook provided, create it
     has_rulebook = False
     if request.rulebook_content:
-        container = app.state.container
-        await container.rulebook_mgr.create_rulebook(
+        await app.state.rulebook_mgr.create_rulebook(
             project_id=project.id, content=request.rulebook_content
         )
         has_rulebook = True
@@ -352,8 +463,7 @@ async def get_project(project_id: UUID, projects=Depends(get_project_repository)
         raise ProjectNotFoundError(f"Project not found: {project_id}")
 
     # Check for rulebook and patterns
-    container = app.state.container
-    rulebook = await container.rulebook_mgr.get_rulebook(project_id)
+    rulebook = await app.state.rulebook_mgr.get_rulebook(project_id)
     patterns = await projects.get_inferred_patterns(project_id)
 
     return ProjectResponse(
@@ -595,13 +705,13 @@ async def stream_workflow_events(
 
 
 @app.get("/metrics", tags=["Observability"], summary="System metrics (Prometheus format)")
-async def get_metrics(container: DependencyContainer = Depends(get_container)):
+async def get_metrics(request: Request):
     """
     Export metrics in Prometheus format.
 
     Compatible with Prometheus scraper for monitoring/alerting.
     """
-    metrics_collector = container.metrics
+    metrics_collector = request.app.state.metrics
 
     # Generate Prometheus-formatted metrics
     metrics_content = metrics_collector.export_metrics()

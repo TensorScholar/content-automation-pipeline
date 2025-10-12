@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from core.exceptions import ProjectNotFoundError
@@ -23,6 +23,9 @@ from core.models import InferredPatterns, Project, Rulebook
 from infrastructure.database import DatabaseManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
+
+# Import dependency functions
+from api.dependencies import get_project_repository
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -103,17 +106,9 @@ class BulkProjectResponse(BaseModel):
 # ============================================================================
 
 
-async def get_project_repo() -> ProjectRepository:
-    """Inject project repository."""
-    # In production, get from app.state.container
-    db = DatabaseManager()
-    return ProjectRepository(db)
-
-
-async def get_rulebook_manager() -> RulebookManager:
+async def get_rulebook_manager(request: Request) -> RulebookManager:
     """Inject rulebook manager."""
-    db = DatabaseManager()
-    return RulebookManager(db)
+    return request.app.state.rulebook_mgr
 
 
 # ============================================================================
@@ -125,7 +120,7 @@ async def get_rulebook_manager() -> RulebookManager:
 async def update_project(
     project_id: UUID,
     request: UpdateProjectRequest,
-    projects: ProjectRepository = Depends(get_project_repo),
+    projects: ProjectRepository = Depends(get_project_repository),
 ):
     """
     Update project properties.
@@ -154,7 +149,7 @@ async def update_project(
 async def delete_project(
     project_id: UUID,
     cascade: bool = Query(False, description="Delete associated content"),
-    projects: ProjectRepository = Depends(get_project_repo),
+    projects: ProjectRepository = Depends(get_project_repository),
 ):
     """
     Delete project.
@@ -189,7 +184,7 @@ async def get_project_analytics(
     project_id: UUID,
     start_date: Optional[datetime] = Query(None, description="Analytics period start"),
     end_date: Optional[datetime] = Query(None, description="Analytics period end"),
-    projects: ProjectRepository = Depends(get_project_repo),
+    projects: ProjectRepository = Depends(get_project_repository),
 ):
     """
     Retrieve project performance analytics.
@@ -225,7 +220,7 @@ async def get_project_analytics(
 async def create_or_update_rulebook(
     project_id: UUID,
     request: RulebookRequest,
-    projects: ProjectRepository = Depends(get_project_repo),
+    projects: ProjectRepository = Depends(get_project_repository),
     rulebook_mgr: RulebookManager = Depends(get_rulebook_manager),
 ):
     """
@@ -354,7 +349,7 @@ async def delete_rulebook(
 async def trigger_website_analysis(
     project_id: UUID,
     force_refresh: bool = Query(False, description="Force re-analysis"),
-    projects: ProjectRepository = Depends(get_project_repo),
+    projects: ProjectRepository = Depends(get_project_repository),
 ):
     """
     Trigger website analysis to infer content patterns.
@@ -480,7 +475,7 @@ async def search_projects(
     query: str = Query(..., min_length=1, description="Search query"),
     field: str = Query("name", pattern="^(name|domain)$", description="Field to search"),
     limit: int = Query(20, ge=1, le=100),
-    projects: ProjectRepository = Depends(get_project_repo),
+    projects: ProjectRepository = Depends(get_project_repository),
 ):
     """
     Search projects by name or domain.
@@ -506,7 +501,7 @@ async def filter_projects(
     has_patterns: Optional[bool] = Query(None, description="Filter by inferred patterns"),
     min_articles: Optional[int] = Query(None, ge=0, description="Minimum article count"),
     created_after: Optional[datetime] = Query(None, description="Created after date"),
-    projects: ProjectRepository = Depends(get_project_repo),
+    projects: ProjectRepository = Depends(get_project_repository),
 ):
     """
     Filter projects with multiple criteria.

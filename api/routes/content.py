@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from core.exceptions import WorkflowError
@@ -23,6 +23,9 @@ from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
 from orchestration.content_agent import ContentAgent
 from orchestration.task_queue import TaskManager
+
+# Import dependency functions
+from api.dependencies import get_db_manager, get_task_manager
 
 router = APIRouter(prefix="/content", tags=["Content"])
 
@@ -106,7 +109,7 @@ class ContentAnalyticsResponse(BaseModel):
 async def batch_generate_content(
     request: BatchGenerateRequest,
     background_tasks: BackgroundTasks,
-    task_manager: TaskManager = Depends(),
+    task_manager: TaskManager = Depends(get_task_manager),
 ):
     """
     Generate multiple articles in parallel.
@@ -170,7 +173,7 @@ async def get_batch_status(batch_id: str, task_manager: TaskManager = Depends())
 async def get_article(
     article_id: UUID,
     include_content: bool = Query(True, description="Include full content"),
-    db: DatabaseManager = Depends(),
+    db: DatabaseManager = Depends(get_db_manager),
 ):
     """
     Retrieve article by ID.
@@ -209,8 +212,8 @@ async def get_article(
 async def revise_article(
     article_id: UUID,
     request: ContentRevisionRequest,
-    task_manager: TaskManager = Depends(),
-    db: DatabaseManager = Depends(),
+    task_manager: TaskManager = Depends(get_task_manager),
+    db: DatabaseManager = Depends(get_db_manager),
 ):
     """
     Request revision of existing article based on feedback.
@@ -353,53 +356,7 @@ async def trigger_comprehensive_analysis(
 async def distribute_article(
     article_id: UUID,
     channels: List[str] = Query(..., description="Distribution channels"),
-    db: DatabaseManager = Depends(),
-):
-    """
-        Distribute article to specified channels.
-        Supports multi-channel distribution including:
-    - Telegram
-    - WordPress (TODO)
-    - Email (TODO)
-    - Social media (TODO)
-    """
-    article = await db.fetch_one(
-        """
-    SELECT id, project_id, title, content, meta_description
-    FROM generated_articles
-    WHERE id = $1
-    """,
-        article_id,
-    )
-
-    if not article:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
-
-    # TODO: Implement distribution logic
-    # distributor = get_distributor()
-    # results = await distributor.distribute_multi_channel(...)
-
-    return DistributionStatusResponse(
-        article_id=str(article_id),
-        distributed=True,
-        channels=channels,
-        distributed_at=datetime.utcnow(),
-        delivery_confirmations={},  # TODO: Actual confirmations
-    )
-
-
-# ============================================================================
-# DISTRIBUTION MANAGEMENT
-# ============================================================================
-@router.post(
-    "/{article_id}/distribute",
-    response_model=DistributionStatusResponse,
-    summary="Distribute article",
-)
-async def distribute_article(
-    article_id: UUID,
-    channels: List[str] = Query(..., description="Distribution channels"),
-    db: DatabaseManager = Depends(),
+    db: DatabaseManager = Depends(get_db_manager),
 ):
     """
         Distribute article to specified channels.
@@ -439,7 +396,7 @@ async def distribute_article(
     response_model=DistributionStatusResponse,
     summary="Get distribution status",
 )
-async def get_distribution_status(article_id: UUID, db: DatabaseManager = Depends()):
+async def get_distribution_status(article_id: UUID, db: DatabaseManager = Depends(get_db_manager)):
     """
     Query article distribution status.
     Returns delivery confirmations and channel-specific metadata.
@@ -532,7 +489,7 @@ async def get_content_analytics(
     project_id: Optional[UUID] = Query(None, description="Filter by project"),
     start_date: datetime = Query(datetime.utcnow() - timedelta(days=30)),
     end_date: datetime = Query(datetime.utcnow()),
-    db: DatabaseManager = Depends(),
+    db: DatabaseManager = Depends(get_db_manager),
 ):
     """
     Retrieve comprehensive content generation analytics.
@@ -619,7 +576,7 @@ async def export_content(
     format: str = Query("json", pattern="^(json|csv)$"),
     start_date: datetime = Query(datetime.utcnow() - timedelta(days=30)),
     end_date: datetime = Query(datetime.utcnow()),
-    db: DatabaseManager = Depends(),
+    db: DatabaseManager = Depends(get_db_manager),
 ):
     """
         Export content data in specified format.
@@ -690,7 +647,7 @@ async def search_articles(
     query: str = Query(..., min_length=1, description="Search query"),
     project_id: Optional[UUID] = Query(None, description="Filter by project"),
     limit: int = Query(20, ge=1, le=100),
-    db: DatabaseManager = Depends(),
+    db: DatabaseManager = Depends(get_db_manager),
 ):
     """
         Full-text search across article titles and content.
