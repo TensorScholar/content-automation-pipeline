@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         app.state.context_synthesizer = context_synthesizer
 
         # Optimization layer
-        llm = LLMClient(redis_client=redis)
+        llm = LLMClient(redis_client=redis, cache_manager=cache, metrics_collector=metrics, settings=settings)
         app.state.llm = llm
         
         model_router = ModelRouter()

@@ -113,8 +113,8 @@ class ModelPricing:
         return float(total)
 
 
-# Pricing database (as of October 2025)
-MODEL_PRICING: Dict[str, ModelPricing] = {
+# Default pricing database (fallback if no settings provided)
+DEFAULT_MODEL_PRICING: Dict[str, ModelPricing] = {
     "gpt-4": ModelPricing(input_cost_per_1k=0.03, output_cost_per_1k=0.06),
     "gpt-4-turbo": ModelPricing(input_cost_per_1k=0.01, output_cost_per_1k=0.03),
     "gpt-3.5-turbo": ModelPricing(input_cost_per_1k=0.0005, output_cost_per_1k=0.0015),
@@ -395,6 +395,7 @@ class LLMClient:
         redis_client: Optional[Any] = None,
         cache_manager: Optional[Any] = None,
         metrics_collector: Optional[Any] = None,
+        settings: Optional[Any] = None,
         openai_api_key: Optional[str] = None,
         anthropic_api_key: Optional[str] = None,
         timeout: float = 120.0,
@@ -433,6 +434,10 @@ class LLMClient:
         # Initialize caching and metrics
         self.cache_manager = cache_manager
         self.metrics_collector = metrics_collector
+        
+        # Initialize settings and pricing
+        self.settings = settings
+        self.model_pricing = self._initialize_model_pricing()
 
         # Circuit breakers per provider with Redis state management
         self.circuit_breakers: Dict[ModelProvider, CircuitBreaker] = {
@@ -460,6 +465,21 @@ class LLMClient:
         self._metrics_lock = asyncio.Lock()
 
         logger.info(f"LLMClient initialized | timeout={timeout}s | max_retries={max_retries} | redis_enabled={redis_client is not None} | cache_enabled={cache_manager is not None}")
+
+    def _initialize_model_pricing(self) -> Dict[str, ModelPricing]:
+        """Initialize model pricing from settings or use defaults."""
+        if self.settings and hasattr(self.settings, 'llm') and hasattr(self.settings.llm, 'model_pricing'):
+            pricing_data = self.settings.llm.model_pricing
+            return {
+                model: ModelPricing(
+                    input_cost_per_1k=pricing["input"],
+                    output_cost_per_1k=pricing["output"]
+                )
+                for model, pricing in pricing_data.items()
+            }
+        else:
+            # Fallback to default pricing if no settings provided
+            return DEFAULT_MODEL_PRICING
 
     async def complete(
         self,
@@ -599,7 +619,7 @@ class LLMClient:
             latency_ms = (time.perf_counter() - start_time) * 1000
 
             # Calculate cost
-            pricing = MODEL_PRICING.get(request.model)
+            pricing = self.model_pricing.get(request.model)
             if not pricing:
                 logger.warning(f"No pricing data for model: {request.model}")
                 cost = 0.0

@@ -9,7 +9,7 @@ Architecture: Strategy Pattern + Singleton + Functional Composition
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Dict, Literal, Optional
 
 from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -113,6 +113,19 @@ class LLMSettings(BaseSettings):
     default_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     creative_temperature: float = Field(default=0.9, ge=0.0, le=2.0)
     deterministic_temperature: float = Field(default=0.1, ge=0.0, le=0.5)
+
+    # Model pricing configuration (can be overridden via environment variables)
+    model_pricing: Dict[str, Dict[str, float]] = Field(
+        default={
+            "gpt-4": {"input": 0.03, "output": 0.06},
+            "gpt-4-turbo": {"input": 0.01, "output": 0.03},
+            "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+            "claude-3-opus": {"input": 0.015, "output": 0.075},
+            "claude-3-sonnet": {"input": 0.003, "output": 0.015},
+            "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
+        },
+        description="Model pricing per 1K tokens (input/output costs)"
+    )
 
     model_config = SettingsConfigDict(env_prefix="LLM_", case_sensitive=False, extra="ignore")
 
