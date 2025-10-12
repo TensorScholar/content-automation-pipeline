@@ -194,82 +194,175 @@ class CircuitBreaker:
     HALF_OPEN → OPEN: On any failure
 
     Theoretical Foundation: Finite State Machine with probabilistic transitions
+    Now uses Redis for distributed state management across multiple processes.
     """
 
     def __init__(
         self,
+        redis_client: Any,
+        key_prefix: str,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
         success_threshold: int = 2,
     ):
+        self.redis_client = redis_client
+        self.key_prefix = key_prefix
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.success_threshold = success_threshold
 
-        self.state = CircuitState.CLOSED
-        self.failure_count = 0
-        self.success_count = 0
-        self.last_failure_time: Optional[datetime] = None
-
-        self._lock = asyncio.Lock()
+        # Redis keys for state management
+        self.state_key = f"{key_prefix}:state"
+        self.failure_count_key = f"{key_prefix}:failure_count"
+        self.success_count_key = f"{key_prefix}:success_count"
+        self.last_failure_time_key = f"{key_prefix}:last_failure_time"
 
     async def call(self, func: Callable, *args, **kwargs):
         """
         Execute function through circuit breaker with fault isolation.
 
+        Uses Redis for distributed state management with atomic operations.
+
         Raises:
-            CircuitOpenError: If circuit is open and recovery timeout not elapsed
+            LLMProviderError: If circuit is open and recovery timeout not elapsed
         """
-        async with self._lock:
-            # State: OPEN - Check if recovery timeout elapsed
-            if self.state == CircuitState.OPEN:
-                if (
-                    self.last_failure_time
-                    and (datetime.utcnow() - self.last_failure_time).total_seconds()
-                    > self.recovery_timeout
-                ):
-                    logger.info("Circuit breaker transitioning to HALF_OPEN")
-                    self.state = CircuitState.HALF_OPEN
-                    self.success_count = 0
-                else:
-                    raise LLMProviderError("Circuit breaker is OPEN - service unavailable")
+        # Get current state from Redis
+        current_state = await self._get_state()
+        
+        # State: OPEN - Check if recovery timeout elapsed
+        if current_state == CircuitState.OPEN:
+            last_failure_time = await self._get_last_failure_time()
+            if last_failure_time and (datetime.utcnow() - last_failure_time).total_seconds() > self.recovery_timeout:
+                logger.info("Circuit breaker transitioning to HALF_OPEN")
+                await self._set_state(CircuitState.HALF_OPEN)
+                await self._reset_success_count()
+            else:
+                raise LLMProviderError("Circuit breaker is OPEN - service unavailable")
 
         try:
             result = await func(*args, **kwargs)
 
-            async with self._lock:
-                if self.state == CircuitState.HALF_OPEN:
-                    self.success_count += 1
-                    if self.success_count >= self.success_threshold:
-                        logger.info("Circuit breaker transitioning to CLOSED")
-                        self.state = CircuitState.CLOSED
-                        self.failure_count = 0
-
-                elif self.state == CircuitState.CLOSED:
-                    self.failure_count = 0  # Reset on success
+            # Handle success
+            current_state = await self._get_state()
+            if current_state == CircuitState.HALF_OPEN:
+                success_count = await self._increment_success_count()
+                if success_count >= self.success_threshold:
+                    logger.info("Circuit breaker transitioning to CLOSED")
+                    await self._set_state(CircuitState.CLOSED)
+                    await self._reset_failure_count()
+            elif current_state == CircuitState.CLOSED:
+                await self._reset_failure_count()  # Reset on success
 
             return result
 
         except Exception as e:
-            async with self._lock:
-                self.failure_count += 1
-                self.last_failure_time = datetime.utcnow()
-
-                if self.state == CircuitState.HALF_OPEN:
-                    logger.warning("Circuit breaker transitioning to OPEN (failure in HALF_OPEN)")
-                    self.state = CircuitState.OPEN
-                    self.success_count = 0
-
-                elif (
-                    self.state == CircuitState.CLOSED
-                    and self.failure_count >= self.failure_threshold
-                ):
-                    logger.error(
-                        f"Circuit breaker transitioning to OPEN (failures: {self.failure_count})"
-                    )
-                    self.state = CircuitState.OPEN
+            # Handle failure
+            await self._increment_failure_count()
+            await self._set_last_failure_time(datetime.utcnow())
+            
+            current_state = await self._get_state()
+            if current_state == CircuitState.HALF_OPEN:
+                logger.warning("Circuit breaker transitioning to OPEN (failure in HALF_OPEN)")
+                await self._set_state(CircuitState.OPEN, ttl=int(self.recovery_timeout))
+                await self._reset_success_count()
+            else:
+                failure_count = await self._get_failure_count()
+                if failure_count >= self.failure_threshold:
+                    logger.error(f"Circuit breaker transitioning to OPEN (failures: {failure_count})")
+                    await self._set_state(CircuitState.OPEN, ttl=int(self.recovery_timeout))
 
             raise
+
+    # =========================================================================
+    # REDIS STATE MANAGEMENT HELPERS
+    # =========================================================================
+
+    async def _get_state(self) -> CircuitState:
+        """Get current circuit breaker state from Redis."""
+        try:
+            state_value = await self.redis_client.get(self.state_key)
+            if state_value is None:
+                return CircuitState.CLOSED  # Default state
+            return CircuitState(state_value)
+        except Exception as e:
+            logger.warning(f"Failed to get circuit breaker state: {e}")
+            return CircuitState.CLOSED  # Fail-safe default
+
+    async def _set_state(self, state: CircuitState, ttl: Optional[int] = None) -> None:
+        """Set circuit breaker state in Redis with optional TTL."""
+        try:
+            if ttl:
+                await self.redis_client.set(self.state_key, state.value, ttl=ttl)
+            else:
+                await self.redis_client.set(self.state_key, state.value)
+        except Exception as e:
+            logger.error(f"Failed to set circuit breaker state: {e}")
+
+    async def _get_failure_count(self) -> int:
+        """Get current failure count from Redis."""
+        try:
+            count = await self.redis_client.get(self.failure_count_key)
+            return int(count) if count is not None else 0
+        except Exception as e:
+            logger.warning(f"Failed to get failure count: {e}")
+            return 0
+
+    async def _increment_failure_count(self) -> int:
+        """Atomically increment failure count in Redis."""
+        try:
+            return await self.redis_client.increment(self.failure_count_key)
+        except Exception as e:
+            logger.error(f"Failed to increment failure count: {e}")
+            return 0
+
+    async def _reset_failure_count(self) -> None:
+        """Reset failure count in Redis."""
+        try:
+            await self.redis_client.delete(self.failure_count_key)
+        except Exception as e:
+            logger.warning(f"Failed to reset failure count: {e}")
+
+    async def _get_success_count(self) -> int:
+        """Get current success count from Redis."""
+        try:
+            count = await self.redis_client.get(self.success_count_key)
+            return int(count) if count is not None else 0
+        except Exception as e:
+            logger.warning(f"Failed to get success count: {e}")
+            return 0
+
+    async def _increment_success_count(self) -> int:
+        """Atomically increment success count in Redis."""
+        try:
+            return await self.redis_client.increment(self.success_count_key)
+        except Exception as e:
+            logger.error(f"Failed to increment success count: {e}")
+            return 0
+
+    async def _reset_success_count(self) -> None:
+        """Reset success count in Redis."""
+        try:
+            await self.redis_client.delete(self.success_count_key)
+        except Exception as e:
+            logger.warning(f"Failed to reset success count: {e}")
+
+    async def _get_last_failure_time(self) -> Optional[datetime]:
+        """Get last failure time from Redis."""
+        try:
+            timestamp = await self.redis_client.get(self.last_failure_time_key)
+            if timestamp is None:
+                return None
+            return datetime.fromisoformat(timestamp)
+        except Exception as e:
+            logger.warning(f"Failed to get last failure time: {e}")
+            return None
+
+    async def _set_last_failure_time(self, failure_time: datetime) -> None:
+        """Set last failure time in Redis."""
+        try:
+            await self.redis_client.set(self.last_failure_time_key, failure_time.isoformat())
+        except Exception as e:
+            logger.error(f"Failed to set last failure time: {e}")
 
 
 # ============================================================================
@@ -299,15 +392,19 @@ class LLMClient:
 
     def __init__(
         self,
+        redis_client: Optional[Any] = None,
+        cache_manager: Optional[Any] = None,
         openai_api_key: Optional[str] = None,
         anthropic_api_key: Optional[str] = None,
         timeout: float = 120.0,
         max_retries: int = 3,
     ):
         """
-        Initialize LLM client with provider credentials.
+        Initialize LLM client with provider credentials and caching.
 
         Args:
+            redis_client: Redis client for distributed circuit breaker state
+            cache_manager: Cache manager for LLM response caching
             openai_api_key: OpenAI API key (reads from env if None)
             anthropic_api_key: Anthropic API key (reads from env if None)
             timeout: Request timeout in seconds
@@ -332,10 +429,23 @@ class LLMClient:
             else None
         )
 
-        # Circuit breakers per provider
+        # Initialize caching
+        self.cache_manager = cache_manager
+
+        # Circuit breakers per provider with Redis state management
         self.circuit_breakers: Dict[ModelProvider, CircuitBreaker] = {
-            ModelProvider.OPENAI: CircuitBreaker(failure_threshold=5, recovery_timeout=60.0),
-            ModelProvider.ANTHROPIC: CircuitBreaker(failure_threshold=5, recovery_timeout=60.0),
+            ModelProvider.OPENAI: CircuitBreaker(
+                redis_client=redis_client,
+                key_prefix="breaker:openai",
+                failure_threshold=5,
+                recovery_timeout=60.0,
+            ),
+            ModelProvider.ANTHROPIC: CircuitBreaker(
+                redis_client=redis_client,
+                key_prefix="breaker:anthropic",
+                failure_threshold=5,
+                recovery_timeout=60.0,
+            ),
         }
 
         self.timeout = timeout
@@ -347,7 +457,7 @@ class LLMClient:
         self.total_cost = 0.0
         self._metrics_lock = asyncio.Lock()
 
-        logger.info(f"LLMClient initialized | timeout={timeout}s | max_retries={max_retries}")
+        logger.info(f"LLMClient initialized | timeout={timeout}s | max_retries={max_retries} | redis_enabled={redis_client is not None} | cache_enabled={cache_manager is not None}")
 
     async def complete(
         self,
@@ -384,6 +494,13 @@ class LLMClient:
             **kwargs,
         )
 
+        # Check cache first if cache manager is available
+        if self.cache_manager:
+            cached_response = await self._get_cached_response(request)
+            if cached_response:
+                logger.info(f"Cache hit for LLM request | model={model} | prompt_hash={self._compute_prompt_hash(request)}")
+                return cached_response
+
         # Determine provider
         provider = self._get_provider(model)
 
@@ -396,6 +513,10 @@ class LLMClient:
                 request,
                 provider,
             )
+
+            # Cache the response if cache manager is available
+            if self.cache_manager:
+                await self._cache_response(request, response)
 
             # Update metrics atomically
             async with self._metrics_lock:
@@ -526,6 +647,63 @@ class LLMClient:
             return ModelProvider.ANTHROPIC
         else:
             raise ValueError(f"Cannot determine provider for model: {model}")
+
+    @staticmethod
+    def _compute_prompt_hash(request: LLMRequest) -> str:
+        """Compute hash for caching based on request parameters."""
+        import hashlib
+        content = f"{request.prompt}|{request.model}|{request.temperature:.3f}|{request.max_tokens}"
+        return hashlib.sha256(content.encode()).hexdigest()
+
+    async def _get_cached_response(self, request: LLMRequest) -> Optional[LLMResponse]:
+        """Retrieve cached LLM response if available."""
+        try:
+            prompt_hash = self._compute_prompt_hash(request)
+            cached_data = await self.cache_manager.get(f"llm_cache:{prompt_hash}")
+            
+            if cached_data:
+                # Reconstruct LLMResponse from cached data
+                return LLMResponse(
+                    content=cached_data["response"],
+                    model=request.model,
+                    usage=TokenUsage(
+                        prompt_tokens=cached_data["prompt_tokens"],
+                        completion_tokens=cached_data["completion_tokens"],
+                        total_tokens=cached_data["total_tokens"],
+                    ),
+                    cost=cached_data["cost"],
+                    latency_ms=cached_data["latency_ms"],
+                    provider=ModelProvider(cached_data["provider"]),
+                    timestamp=cached_data["timestamp"],
+                    finish_reason=cached_data.get("finish_reason"),
+                )
+        except Exception as e:
+            logger.warning(f"Failed to retrieve cached response: {e}")
+        
+        return None
+
+    async def _cache_response(self, request: LLMRequest, response: LLMResponse) -> None:
+        """Cache LLM response for future use."""
+        try:
+            prompt_hash = self._compute_prompt_hash(request)
+            cache_data = {
+                "response": response.content,
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+                "cost": response.cost,
+                "latency_ms": response.latency_ms,
+                "provider": response.provider.value,
+                "timestamp": response.timestamp,
+                "finish_reason": response.finish_reason,
+            }
+            
+            # Cache with 30-day TTL (from RedisSettings.llm_response_cache_ttl)
+            await self.cache_manager.set(f"llm_cache:{prompt_hash}", cache_data)
+            logger.debug(f"Cached LLM response | hash={prompt_hash[:16]}... | tokens={response.usage.total_tokens}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to cache response: {e}")
 
     async def get_metrics(self) -> Dict[str, Any]:
         """

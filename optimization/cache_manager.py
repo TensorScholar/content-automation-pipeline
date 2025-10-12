@@ -553,6 +553,64 @@ class CacheManager:
         return await redis_client.get_cache_stats()
 
     # =========================================================================
+    # LLM CACHING WRAPPER METHODS
+    # =========================================================================
+
+    async def get_cached_llm_response(
+        self,
+        prompt: str,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get cached LLM response using RedisClient's caching methods.
+        
+        Args:
+            prompt: The input prompt
+            model: Model identifier
+            temperature: Generation temperature
+            max_tokens: Maximum tokens to generate
+            
+        Returns:
+            Cached response data or None if not found
+        """
+        try:
+            return await redis_client.get_cached_response(prompt, model, temperature, max_tokens)
+        except Exception as e:
+            logger.warning(f"Failed to get cached LLM response: {e}")
+            return None
+
+    async def set_cached_llm_response(
+        self,
+        prompt: str,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        response: str,
+        tokens_used: int,
+    ) -> bool:
+        """
+        Cache LLM response using RedisClient's caching methods.
+        
+        Args:
+            prompt: The input prompt
+            model: Model identifier
+            temperature: Generation temperature
+            max_tokens: Maximum tokens to generate
+            response: Generated response text
+            tokens_used: Actual tokens consumed
+            
+        Returns:
+            True if cached successfully
+        """
+        try:
+            return await redis_client.cache_response(prompt, model, temperature, max_tokens, response, tokens_used)
+        except Exception as e:
+            logger.warning(f"Failed to cache LLM response: {e}")
+            return False
+
+    # =========================================================================
     # MAINTENANCE
     # =========================================================================
 
