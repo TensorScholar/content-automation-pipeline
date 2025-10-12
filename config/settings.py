@@ -243,6 +243,7 @@ class Settings(BaseSettings):
     # Security
     secret_key: SecretStr = Field(default="change-me-in-production")
     allowed_hosts: list[str] = Field(default=["localhost", "127.0.0.1"])
+    cors_origins: list[str] = Field(default=["http://localhost:3000"])
 
     model_config = SettingsConfigDict(
         env_file=".env",

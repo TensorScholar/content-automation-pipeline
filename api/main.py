@@ -345,7 +345,7 @@ app.add_middleware(RateLimitMiddleware, rate_limit=100, window=60)
 app.add_middleware(RequestTracingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
