@@ -15,6 +15,8 @@ Theoretical Foundation: Category Theory for composable request handlers
 
 import asyncio
 import json
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncGenerator, Optional
@@ -28,270 +30,31 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field, validator
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
-from core.exceptions import (
-    DistributionError,
-    ProjectNotFoundError,
-    TokenBudgetExceededError,
-    WorkflowError,
-)
 from core.models import ContentPlan, GeneratedArticle, Project
 from infrastructure.database import DatabaseManager
 from infrastructure.monitoring import MetricsCollector
 from infrastructure.redis_client import RedisClient
 from orchestration.content_agent import ContentAgent, ContentAgentConfig
 from orchestration.task_queue import TaskManager
+from config.settings import settings
 
-# ============================================================================
-# REQUEST/RESPONSE SCHEMAS (Domain Transfer Objects)
-# ============================================================================
-
-
-class CreateProjectRequest(BaseModel):
-    """Command: Create new project with validation."""
-
-    name: str = Field(..., min_length=1, max_length=255, description="Project name")
-    domain: Optional[str] = Field(None, description="Target website domain")
-    telegram_channel: Optional[str] = Field(None, description="Telegram channel ID")
-    rulebook_content: Optional[str] = Field(None, description="Initial rulebook content")
-
-    @validator("domain")
-    def validate_domain(cls, v):
-        if v and not (v.startswith("http://") or v.startswith("https://")):
-            v = f"https://{v}"
-        return v
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "name": "TechBlog AI",
-                "domain": "https://techblog.ai",
-                "telegram_channel": "@techblogai",
-                "rulebook_content": "Write in conversational tone...",
-            }
-        }
+# Import schemas from separate module
+from api.schemas import (
+    ArticleResponse,
+    CreateProjectRequest,
+    ErrorResponse,
+    GenerateContentRequest,
+    HealthCheckResponse,
+    ProjectResponse,
+    TaskStatusResponse,
+    WorkflowStatusResponse,
+)
 
 
-class ProjectResponse(BaseModel):
-    """Query result: Project representation."""
-
-    id: str
-    name: str
-    domain: Optional[str]
-    telegram_channel: Optional[str]
-    created_at: datetime
-    total_articles_generated: int
-    has_rulebook: bool
-    has_inferred_patterns: bool
-
-    class Config:
-        orm_mode = True
-
-
-class GenerateContentRequest(BaseModel):
-    """Command: Generate content with strategic parameters."""
-
-    topic: str = Field(..., min_length=1, max_length=500, description="Content topic")
-    priority: str = Field("high", pattern="^(low|medium|high|critical)$")
-    custom_instructions: Optional[str] = Field(None, max_length=2000)
-    async_execution: bool = Field(False, description="Execute as background task")
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "topic": "Advanced NLP Techniques for Content Generation",
-                "priority": "high",
-                "custom_instructions": "Focus on practical implementations",
-                "async_execution": False,
-            }
-        }
-
-
-class ArticleResponse(BaseModel):
-    """Query result: Generated article metadata."""
-
-    article_id: str
-    project_id: str
-    title: str
-    word_count: int
-    cost: float
-    generation_time: float
-    readability_score: float
-    distributed: bool
-    created_at: datetime
-
-    class Config:
-        orm_mode = True
-
-
-class TaskStatusResponse(BaseModel):
-    """Query result: Async task execution status."""
-
-    task_id: str
-    state: str
-    ready: bool
-    successful: Optional[bool]
-    failed: Optional[bool]
-    result: Optional[dict]
-    error: Optional[str]
-    progress: Optional[dict]
-
-
-class WorkflowStatusResponse(BaseModel):
-    """Query result: Real-time workflow state."""
-
-    workflow_id: str
-    state: str
-    project_id: str
-    topic: str
-    start_time: datetime
-    events: list
-
-
-class HealthCheckResponse(BaseModel):
-    """System health status."""
-
-    status: str
-    timestamp: datetime
-    version: str
-    dependencies: dict
-
-
-class ErrorResponse(BaseModel):
-    """Standardized error response."""
-
-    error: str
-    detail: str
-    timestamp: datetime
-    request_id: Optional[str]
-
-
-# ============================================================================
-# DEPENDENCY INJECTION SYSTEM
-# ============================================================================
-
-
-class DependencyContainer:
-    """
-    Application-wide dependency container implementing Service Locator pattern.
-
-    Provides singleton lifecycle management for infrastructure components
-    with lazy initialization and graceful shutdown.
-
-    Theoretical Foundation: Dependency Inversion Principle + Factory Pattern
-    """
-
-    _instance: Optional["DependencyContainer"] = None
-    _initialized: bool = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    async def initialize(self):
-        """Initialize all dependencies with proper lifecycle management."""
-        if self._initialized:
-            return
-
-        logger.info("Initializing dependency container")
-
-        # Infrastructure layer
-        self.db = DatabaseManager()
-        await self.db.connect()
-
-        self.redis = RedisClient()
-        await self.redis.connect()
-
-        self.metrics = MetricsCollector()
-
-        # Initialize all application layers
-        from execution.content_generator import ContentGenerator
-        from execution.content_planner import ContentPlanner
-        from execution.distributer import Distributor
-        from execution.keyword_researcher import KeywordResearcher
-        from infrastructure.llm_client import LLMClient
-        from intelligence.context_synthesizer import ContextSynthesizer
-        from intelligence.decision_engine import DecisionEngine
-        from intelligence.semantic_analyzer import SemanticAnalyzer
-        from knowledge.project_repository import ProjectRepository
-        from knowledge.rulebook_manager import RulebookManager
-        from knowledge.website_analyzer import WebsiteAnalyzer
-        from optimization.cache_manager import CacheManager
-        from optimization.model_router import ModelRouter
-        from optimization.prompt_compressor import PromptCompressor
-        from optimization.token_budget_manager import TokenBudgetManager
-
-        # Knowledge layer
-        self.projects = ProjectRepository(self.db)
-        self.rulebook_mgr = RulebookManager(self.db)
-        self.website_analyzer = WebsiteAnalyzer()
-
-        # Intelligence layer
-        self.semantic_analyzer = SemanticAnalyzer()
-        self.decision_engine = DecisionEngine(self.db, self.semantic_analyzer)
-        self.cache = CacheManager(self.redis)
-        self.context_synthesizer = ContextSynthesizer(
-            self.projects, self.rulebook_mgr, self.decision_engine, self.cache
-        )
-
-        # Optimization layer
-        self.llm = LLMClient()
-        self.model_router = ModelRouter()
-        self.budget_manager = TokenBudgetManager(self.redis, self.metrics)
-        self.prompt_compressor = PromptCompressor(self.semantic_analyzer)
-
-        # Execution layer
-        self.keyword_researcher = KeywordResearcher(self.llm, self.semantic_analyzer, self.cache)
-        self.content_planner = ContentPlanner(
-            self.llm, self.decision_engine, self.context_synthesizer, self.model_router
-        )
-        self.content_generator = ContentGenerator(
-            self.llm,
-            self.context_synthesizer,
-            self.semantic_analyzer,
-            self.model_router,
-            self.budget_manager,
-            self.prompt_compressor,
-            self.metrics,
-        )
-        self.distributor = Distributor(
-            telegram_bot_token=None, metrics_collector=self.metrics  # Load from settings
-        )
-
-        # Orchestration layer
-        self.content_agent = ContentAgent(
-            project_repository=self.projects,
-            rulebook_manager=self.rulebook_mgr,
-            website_analyzer=self.website_analyzer,
-            decision_engine=self.decision_engine,
-            context_synthesizer=self.context_synthesizer,
-            keyword_researcher=self.keyword_researcher,
-            content_planner=self.content_planner,
-            content_generator=self.content_generator,
-            distributor=self.distributor,
-            budget_manager=self.budget_manager,
-            metrics_collector=self.metrics,
-            config=ContentAgentConfig(),
-        )
-
-        self.task_manager = TaskManager()
-
-        self._initialized = True
-        logger.success("Dependency container initialized")
-
-    async def cleanup(self):
-        """Graceful shutdown with resource cleanup."""
-        logger.info("Cleaning up dependency container")
-
-        if hasattr(self, "db"):
-            await self.db.disconnect()
-
-        if hasattr(self, "redis"):
-            await self.redis.disconnect()
-
-        self._initialized = False
-        logger.info("Dependency container cleaned up")
+# Import dependencies from separate module
+from api.dependencies import DependencyContainer, get_container, get_content_agent, get_project_repository, get_task_manager
 
 
 # Application lifespan manager
@@ -387,40 +150,58 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         client_id = request.client.host
-
-        # Check rate limit
         container = request.app.state.container
         redis = container.redis
 
         key = f"rate_limit:{client_id}"
+        now = int(time.time())  # Current Unix timestamp (seconds)
+        window_start = now - self.window
 
-        # Atomic increment with expiry
-        current = await redis.incr(key)
+        # Step 1: Remove old requests (outside the sliding window)
+        await redis.zremrangebyscore(key, 0, window_start)
 
-        if current == 1:
-            await redis.expire(key, self.window)
+        # Step 2: Get current request count within the window
+        current_count = await redis.zcard(key)
 
-        if current > self.rate_limit:
+        if current_count >= self.rate_limit:
             logger.warning(f"Rate limit exceeded | client={client_id}")
+
+            # Calculate Retry-After header: Find the score of the oldest request in the set
+            oldest_request = await redis.zrange(key, 0, 0, withscores=True)
+            
+            if oldest_request:
+                # Oldest request is at the window_start. The next request can be served 
+                # when the window moves past this oldest request.
+                # Reset time = (oldest_request timestamp + window duration) - now
+                _, oldest_score = oldest_request[0]
+                retry_after = int(oldest_score) + self.window - now
+            else:
+                retry_after = self.window  # Should not happen if current_count > 0, but fallback
 
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
                     "error": "Rate Limit Exceeded",
                     "detail": f"Maximum {self.rate_limit} requests per {self.window}s",
-                    "retry_after": self.window,
+                    "retry_after": max(1, retry_after),
                 },
-                headers={"Retry-After": str(self.window)},
+                headers={"Retry-After": str(max(1, retry_after))},
             )
+
+        # Step 3: Record the new request (timestamp = score and member)
+        # Using ZADD with NX (Not Exist) is often preferred, but here we just add the timestamp
+        # to represent the log of requests. We use the current timestamp for both score and member.
+        await redis.zadd(key, {str(now) + "_" + str(uuid.uuid4()): now})
 
         response = await call_next(request)
 
         # Add rate limit headers
+        # The Remaining count is the limit minus the current count *before* this request was added
+        remaining = max(0, self.rate_limit - current_count - 1) 
         response.headers["X-RateLimit-Limit"] = str(self.rate_limit)
-        response.headers["X-RateLimit-Remaining"] = str(max(0, self.rate_limit - current))
-        response.headers["X-RateLimit-Reset"] = str(
-            int(datetime.utcnow().timestamp()) + self.window
-        )
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        # Reset time is more complex with Sliding Window Log, often set to the end of the current window for simplicity
+        response.headers["X-RateLimit-Reset"] = str(int(datetime.utcnow().timestamp()) + self.window)
 
         return response
 
@@ -439,6 +220,13 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+# Add exception handlers
+add_exception_handlers(app)
+
+# Include route modules
+app.include_router(content.router)
+app.include_router(projects.router)
+
 # Middleware stack (order matters: last added = first executed)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(RateLimitMiddleware, rate_limit=100, window=60)
@@ -452,92 +240,14 @@ app.add_middleware(
 )
 
 
-# ============================================================================
-# DEPENDENCY INJECTION HELPERS
-# ============================================================================
+# Dependency injection helpers are now imported from api.dependencies
 
 
-async def get_container() -> DependencyContainer:
-    """Dependency injection: Get application container."""
-    return app.state.container
+# Import exception handlers from separate module
+from api.exceptions import add_exception_handlers
 
-
-async def get_content_agent(
-    container: DependencyContainer = Depends(get_container),
-) -> ContentAgent:
-    """Dependency injection: Get content agent."""
-    return container.content_agent
-
-
-async def get_task_manager(container: DependencyContainer = Depends(get_container)) -> TaskManager:
-    """Dependency injection: Get task manager."""
-    return container.task_manager
-
-
-async def get_project_repository(container: DependencyContainer = Depends(get_container)):
-    """Dependency injection: Get project repository."""
-    return container.projects
-
-
-# ============================================================================
-# EXCEPTION HANDLERS (Domain Error → HTTP Error Mapping)
-# ============================================================================
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle Pydantic validation errors."""
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "error": "Validation Error",
-            "detail": exc.errors(),
-            "timestamp": datetime.utcnow().isoformat(),
-            "request_id": getattr(request.state, "request_id", None),
-        },
-    )
-
-
-@app.exception_handler(ProjectNotFoundError)
-async def project_not_found_handler(request: Request, exc: ProjectNotFoundError):
-    """Handle project not found errors."""
-    return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "Project Not Found",
-            "detail": str(exc),
-            "timestamp": datetime.utcnow().isoformat(),
-            "request_id": getattr(request.state, "request_id", None),
-        },
-    )
-
-
-@app.exception_handler(WorkflowError)
-async def workflow_error_handler(request: Request, exc: WorkflowError):
-    """Handle workflow execution errors."""
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "Workflow Error",
-            "detail": str(exc),
-            "timestamp": datetime.utcnow().isoformat(),
-            "request_id": getattr(request.state, "request_id", None),
-        },
-    )
-
-
-@app.exception_handler(TokenBudgetExceededError)
-async def budget_exceeded_handler(request: Request, exc: TokenBudgetExceededError):
-    """Handle token budget exceeded errors."""
-    return JSONResponse(
-        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        content={
-            "error": "Token Budget Exceeded",
-            "detail": str(exc),
-            "timestamp": datetime.utcnow().isoformat(),
-            "request_id": getattr(request.state, "request_id", None),
-        },
-    )
+# Import route modules
+from api.routes import content, projects
 
 
 # ============================================================================
@@ -894,13 +604,10 @@ async def get_metrics(container: DependencyContainer = Depends(get_container)):
     metrics_collector = container.metrics
 
     # Generate Prometheus-formatted metrics
-    # TODO: Implement actual Prometheus metric export
+    metrics_content = metrics_collector.export_metrics()
+    content_type = metrics_collector.get_content_type()
 
-    return {
-        "status": "metrics_endpoint",
-        "message": "Prometheus metrics export not yet implemented",
-        "note": "Use metrics_collector.export_prometheus() when implemented",
-    }
+    return Response(content=metrics_content, media_type=content_type)
 
 
 if __name__ == "__main__":
