@@ -18,8 +18,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import spacy
+from bs4 import BeautifulSoup
 from loguru import logger
-from sentence_transformers import SentenceTransformer
 
 from core.exceptions import ValidationError
 
@@ -34,17 +34,22 @@ class PatternExtractor:
     - Semantic: tone embedding (384-dim vector)
     """
 
-    def __init__(self):
-        """Initialize NLP models."""
+    def __init__(self, semantic_analyzer):
+        """
+        Initialize NLP models.
+
+        Args:
+            semantic_analyzer: SemanticAnalyzer instance for embeddings
+        """
         try:
             # Load lightweight spaCy model
             self.nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
             self.nlp.add_pipe("sentencizer")  # Fast sentence boundary detection
 
-            # Load sentence transformer for tone embeddings
-            self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+            # Use injected semantic analyzer for embeddings
+            self.semantic_analyzer = semantic_analyzer
 
-            logger.info("Pattern extractor initialized with spaCy and SentenceTransformer")
+            logger.info("Pattern extractor initialized with spaCy and SemanticAnalyzer")
 
         except Exception as e:
             logger.error(f"Failed to initialize NLP models: {e}")
@@ -54,45 +59,118 @@ class PatternExtractor:
     # FEATURE EXTRACTION ORCHESTRATION
     # =========================================================================
 
-    def extract_features(self, text: str) -> Dict:
+    def extract_patterns(self, html_content: str) -> Dict:
         """
-        Extract comprehensive linguistic features from text.
+        Extract linguistic patterns from HTML content.
 
         Args:
-            text: Input text (article content)
+            html_content: Raw HTML content
 
         Returns:
-            Dict with extracted features:
+            Dict with extracted patterns:
             {
+                'word_count': int,
                 'avg_sentence_length': float,
                 'lexical_diversity': float,
                 'readability_score': float,
                 'tone_embedding': np.ndarray,
                 'structure_patterns': List[str],
-                'entity_density': float,
-                'word_count': int,
             }
         """
-        if not text or len(text) < 50:
-            raise ValidationError("Text too short for feature extraction (minimum 50 chars)")
+        if not html_content or len(html_content) < 50:
+            raise ValidationError(
+                "HTML content too short for pattern extraction (minimum 50 chars)"
+            )
 
-        # Process with spaCy
+        # Step 1: Parse HTML and extract clean text
+        soup = BeautifulSoup(html_content, "html.parser")
+        text = self._extract_clean_text(soup)
+
+        if len(text) < 50:
+            raise ValidationError("Extracted text too short for pattern extraction")
+
+        # Step 2: Process with spaCy
         doc = self.nlp(text)
 
-        # Extract features
-        features = {
-            "avg_sentence_length": self._compute_avg_sentence_length(doc),
-            "lexical_diversity": self._compute_lexical_diversity(doc),
-            "readability_score": self._compute_readability(text, doc),
-            "tone_embedding": self._compute_tone_embedding(text),
-            "structure_patterns": self._detect_structure_patterns(text, doc),
-            "entity_density": self._compute_entity_density(doc),
-            "word_count": len(
-                [token for token in doc if not token.is_punct and not token.is_space]
-            ),
+        # Step 3: Calculate metrics
+        word_count = len([token for token in doc if not token.is_punct and not token.is_space])
+        avg_sentence_length = self._compute_avg_sentence_length(doc)
+        lexical_diversity = self._compute_lexical_diversity(doc)
+        readability_score = self._compute_readability(text, doc)
+
+        # Step 4: Generate tone embedding using semantic analyzer
+        tone_embedding = self.semantic_analyzer.embed(text)
+
+        # Step 5: Detect structural patterns
+        structure_patterns = self._detect_structure_patterns(text, doc)
+
+        return {
+            "word_count": word_count,
+            "avg_sentence_length": avg_sentence_length,
+            "lexical_diversity": lexical_diversity,
+            "readability_score": readability_score,
+            "tone_embedding": tone_embedding,
+            "structure_patterns": structure_patterns,
         }
 
-        return features
+    def _extract_clean_text(self, soup: BeautifulSoup) -> str:
+        """
+        Extract clean text content from HTML.
+
+        Args:
+            soup: BeautifulSoup parsed HTML
+
+        Returns:
+            Clean text content
+        """
+        # Remove script and style elements
+        for script in soup(["script", "style"]):
+            script.decompose()
+
+        # Extract text from main content areas
+        selectors = [
+            "article",
+            "main",
+            '[role="main"]',
+            ".post-content",
+            ".entry-content",
+            ".article-content",
+            "#content",
+        ]
+
+        for selector in selectors:
+            element = soup.select_one(selector)
+            if element:
+                text = element.get_text()
+                if len(text) > 100:  # Has substantial content
+                    return self._clean_text(text)
+
+        # Fallback: use body text
+        body = soup.find("body")
+        if body:
+            return self._clean_text(body.get_text())
+
+        return self._clean_text(soup.get_text())
+
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        """
+        Clean extracted text (remove excess whitespace, etc.).
+
+        Args:
+            text: Raw extracted text
+
+        Returns:
+            Cleaned text
+        """
+        # Remove multiple spaces/newlines
+        text = re.sub(r"\s+", " ", text)
+
+        # Remove common boilerplate patterns
+        text = re.sub(r"(Cookie Policy|Privacy Policy|Terms of Service).*$", "", text, flags=re.I)
+        text = re.sub(r"^.*?(Share on|Follow us|Subscribe)", "", text, flags=re.I)
+
+        return text.strip()
 
     # =========================================================================
     # QUANTITATIVE METRICS
@@ -245,7 +323,7 @@ class PatternExtractor:
 
     def _compute_tone_embedding(self, text: str) -> np.ndarray:
         """
-        Generate semantic tone embedding.
+        Generate semantic tone embedding using semantic analyzer.
 
         Captures the overall semantic "feel" of the text in vector space.
         Similar texts will have high cosine similarity.
@@ -254,16 +332,9 @@ class PatternExtractor:
             text: Input text
 
         Returns:
-            384-dimensional embedding vector
+            Embedding vector from semantic analyzer
         """
-        # Use first 512 tokens to avoid context limits
-        truncated = " ".join(text.split()[:512])
-
-        embedding = self.embedding_model.encode(
-            truncated, convert_to_numpy=True, show_progress_bar=False
-        )
-
-        return embedding
+        return self.semantic_analyzer.embed(text)
 
     @staticmethod
     def compute_centroid(embeddings: List[np.ndarray]) -> np.ndarray:
@@ -279,7 +350,7 @@ class PatternExtractor:
             Centroid embedding (normalized)
         """
         if not embeddings:
-            return np.zeros(384)
+            return np.zeros(384)  # Default dimension
 
         stacked = np.vstack(embeddings)
         centroid = np.mean(stacked, axis=0)

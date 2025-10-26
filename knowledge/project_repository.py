@@ -12,15 +12,15 @@ Design: Single Responsibility - all project data access goes through this layer.
 """
 
 from datetime import datetime
-from typing import List, Optional
-from uuid import UUID
+from typing import Dict, List, Optional
+from uuid import UUID, uuid4
 
 from loguru import logger
 from sqlalchemy import and_, delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import DatabaseError, NotFoundError
-from core.models import Project
+from core.models import InferredPatterns, Project
 from infrastructure.database import DatabaseManager
 
 
@@ -426,6 +426,147 @@ class ProjectRepository:
         except Exception as e:
             logger.error(f"Failed to get global statistics: {e}")
             return {}
+
+    # =========================================================================
+    # INFERRED PATTERNS OPERATIONS
+    # =========================================================================
+
+    async def save_inferred_patterns(self, project_id: UUID, patterns: Dict) -> InferredPatterns:
+        """
+        Save inferred patterns for a project.
+
+        Args:
+            project_id: UUID of project
+            patterns: Aggregated pattern data
+
+        Returns:
+            InferredPatterns model
+        """
+        try:
+            async with self.database_manager.session() as session:
+                # Delete existing patterns for project
+                await session.execute(
+                    text("DELETE FROM inferred_patterns WHERE project_id = :project_id"),
+                    {"project_id": project_id},
+                )
+
+                # Insert new patterns
+                query = """
+                    INSERT INTO inferred_patterns (
+                        id, project_id, avg_sentence_length, sentence_length_std,
+                        lexical_diversity, readability_score, tone_embedding,
+                        structure_patterns, confidence, sample_size, analyzed_at
+                    ) VALUES (
+                        :id, :project_id, :avg_sentence_length, :sentence_length_std,
+                        :lexical_diversity, :readability_score, :tone_embedding,
+                        :structure_patterns, :confidence, :sample_size, NOW()
+                    )
+                    RETURNING id, project_id, avg_sentence_length, sentence_length_std,
+                              lexical_diversity, readability_score, confidence, 
+                              sample_size, analyzed_at;
+                """
+
+                pattern_id = uuid4()
+
+                # Convert structure patterns to JSON
+                structure_json = [
+                    {
+                        "pattern_type": p.pattern_type,
+                        "frequency": p.frequency,
+                        "typical_sections": p.typical_sections,
+                        "avg_word_count": p.avg_word_count,
+                    }
+                    for p in patterns["structure_patterns"]
+                ]
+
+                result = await session.execute(
+                    query,
+                    {
+                        "id": pattern_id,
+                        "project_id": project_id,
+                        "avg_sentence_length": patterns["avg_sentence_length"],
+                        "sentence_length_std": patterns["sentence_length_std"],
+                        "lexical_diversity": patterns["lexical_diversity"],
+                        "readability_score": patterns["readability_score"],
+                        "tone_embedding": f"[{','.join(map(str, patterns['tone_embedding']))}]",
+                        "structure_patterns": str(structure_json).replace("'", '"'),
+                        "confidence": patterns["confidence"],
+                        "sample_size": patterns["sample_size"],
+                    },
+                )
+
+                await session.commit()
+
+                row = result.fetchone()
+
+                inferred = InferredPatterns(
+                    id=row[0],
+                    project_id=row[1],
+                    avg_sentence_length=row[2],
+                    sentence_length_std=row[3],
+                    lexical_diversity=row[4],
+                    readability_score=row[5],
+                    tone_embedding=patterns["tone_embedding"],
+                    structure_patterns=patterns["structure_patterns"],
+                    confidence=row[6],
+                    sample_size=row[7],
+                    analyzed_at=row[8],
+                )
+
+                logger.info(f"Stored inferred patterns (confidence: {patterns['confidence']:.2f})")
+                return inferred
+
+        except Exception as e:
+            logger.error(f"Failed to store patterns: {e}")
+            raise DatabaseError(f"Pattern storage failed: {e}")
+
+    async def get_inferred_patterns(self, project_id: UUID) -> Optional[InferredPatterns]:
+        """
+        Retrieve existing patterns if recent (< 30 days).
+
+        Args:
+            project_id: UUID of project
+
+        Returns:
+            InferredPatterns model or None if not found/recent
+        """
+        try:
+            async with self.database_manager.session() as session:
+                query = """
+                    SELECT id, project_id, avg_sentence_length, sentence_length_std,
+                           lexical_diversity, readability_score, confidence, 
+                           sample_size, analyzed_at
+                    FROM inferred_patterns
+                    WHERE project_id = :project_id
+                    AND analyzed_at > NOW() - INTERVAL '30 days'
+                    ORDER BY analyzed_at DESC
+                    LIMIT 1;
+                """
+
+                result = await session.execute(text(query), {"project_id": project_id})
+                row = result.fetchone()
+
+                if not row:
+                    return None
+
+                # Note: Not loading full tone_embedding or structure_patterns for efficiency
+                return InferredPatterns(
+                    id=row[0],
+                    project_id=row[1],
+                    avg_sentence_length=row[2],
+                    sentence_length_std=row[3],
+                    lexical_diversity=row[4],
+                    readability_score=row[5],
+                    tone_embedding=[],  # Load separately if needed
+                    structure_patterns=[],
+                    confidence=row[6],
+                    sample_size=row[7],
+                    analyzed_at=row[8],
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to get inferred patterns: {e}")
+            return None
 
     # =========================================================================
     # UTILITY METHODS

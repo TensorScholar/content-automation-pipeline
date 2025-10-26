@@ -19,14 +19,16 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from uuid import UUID, uuid4
 
+import httpx
 from bs4 import BeautifulSoup
 from loguru import logger
-from playwright.async_api import Browser, Page, async_playwright
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config.settings import ScrapingSettings
 from core.exceptions import ScrapingError, ValidationError
 from core.models import InferredPatterns, StructurePattern
 from knowledge.pattern_extractor import PatternExtractor
+from knowledge.project_repository import ProjectRepository
 
 
 class WebsiteAnalyzer:
@@ -42,19 +44,23 @@ class WebsiteAnalyzer:
     6. Store inferred patterns
     """
 
-    def __init__(self, session: AsyncSession, pattern_extractor: PatternExtractor):
+    def __init__(
+        self,
+        pattern_extractor: PatternExtractor,
+        project_repository: ProjectRepository,
+        scraping_settings: ScrapingSettings,
+    ):
         """
         Initialize analyzer with dependencies.
 
         Args:
-            session: Database session
             pattern_extractor: Linguistic pattern extraction engine
+            project_repository: Repository for saving inferred patterns
+            scraping_settings: Configuration for scraping behavior
         """
-        self.session = session
         self.pattern_extractor = pattern_extractor
-        self.browser: Optional[Browser] = None
-        self.sample_size = 15  # Number of articles to analyze
-        self.timeout_ms = 30000  # 30 seconds per page
+        self.project_repository = project_repository
+        self.scraping_settings = scraping_settings
 
     # =========================================================================
     # ANALYSIS ORCHESTRATION
@@ -82,13 +88,10 @@ class WebsiteAnalyzer:
 
             # Check if recent analysis exists
             if not force_refresh:
-                existing = await self._get_existing_patterns(project_id)
+                existing = await self.project_repository.get_inferred_patterns(project_id)
                 if existing:
                     logger.info(f"Using existing patterns (analyzed {existing.analyzed_at})")
                     return existing
-
-            # Initialize browser
-            await self._init_browser()
 
             # Step 1: Discover article URLs
             article_urls = await self._discover_articles(domain)
@@ -96,7 +99,7 @@ class WebsiteAnalyzer:
                 raise ScrapingError(f"Insufficient articles found: {len(article_urls)} (minimum 5)")
 
             # Step 2: Scrape representative sample
-            sample_urls = article_urls[: self.sample_size]
+            sample_urls = article_urls[: self.scraping_settings.max_article_sample_size]
             articles = await self._scrape_articles(sample_urls)
 
             if len(articles) < 5:
@@ -106,7 +109,7 @@ class WebsiteAnalyzer:
             patterns = await self._extract_patterns(articles)
 
             # Step 4: Store in database
-            inferred = await self._store_patterns(project_id, patterns)
+            inferred = await self.project_repository.save_inferred_patterns(project_id, patterns)
 
             logger.info(f"Analysis complete: {len(articles)} articles analyzed")
             return inferred
@@ -114,9 +117,6 @@ class WebsiteAnalyzer:
         except Exception as e:
             logger.error(f"Website analysis failed for {domain}: {e}")
             raise ScrapingError(f"Analysis failed: {e}")
-
-        finally:
-            await self._close_browser()
 
     # =========================================================================
     # CONTENT DISCOVERY
@@ -169,30 +169,31 @@ class WebsiteAnalyzer:
 
         all_urls = []
 
-        for sitemap_url in sitemap_urls:
-            try:
-                page = await self.browser.new_page()
-                await page.goto(sitemap_url, timeout=self.timeout_ms)
+        async with httpx.AsyncClient(
+            timeout=self.scraping_settings.request_timeout,
+            headers={"User-Agent": self.scraping_settings.user_agent},
+        ) as client:
+            for sitemap_url in sitemap_urls:
+                try:
+                    response = await client.get(sitemap_url)
+                    response.raise_for_status()
 
-                content = await page.content()
-                await page.close()
+                    # Parse XML
+                    soup = BeautifulSoup(response.text, "xml")
+                    loc_tags = soup.find_all("loc")
 
-                # Parse XML
-                soup = BeautifulSoup(content, "xml")
-                loc_tags = soup.find_all("loc")
+                    urls = [loc.text.strip() for loc in loc_tags]
 
-                urls = [loc.text.strip() for loc in loc_tags]
+                    # Filter for likely article URLs
+                    filtered = self._filter_article_urls(urls)
+                    all_urls.extend(filtered)
 
-                # Filter for likely article URLs
-                filtered = self._filter_article_urls(urls)
-                all_urls.extend(filtered)
+                    if len(all_urls) >= 50:
+                        break
 
-                if len(all_urls) >= 50:
-                    break
-
-            except Exception as e:
-                logger.debug(f"Sitemap {sitemap_url} not accessible: {e}")
-                continue
+                except Exception as e:
+                    logger.debug(f"Sitemap {sitemap_url} not accessible: {e}")
+                    continue
 
         return list(set(all_urls))[:100]  # Deduplicate and limit
 
@@ -210,29 +211,33 @@ class WebsiteAnalyzer:
 
         all_urls = []
 
-        for path in candidate_paths:
-            try:
-                url = urljoin(base_url, path)
-                page = await self.browser.new_page()
-                await page.goto(url, timeout=self.timeout_ms)
+        async with httpx.AsyncClient(
+            timeout=self.scraping_settings.request_timeout,
+            headers={"User-Agent": self.scraping_settings.user_agent},
+        ) as client:
+            for path in candidate_paths:
+                try:
+                    url = urljoin(base_url, path)
+                    response = await client.get(url)
+                    response.raise_for_status()
 
-                # Extract all links
-                links = await page.eval_on_selector_all(
-                    "a[href]", "(elements) => elements.map(e => e.href)"
-                )
+                    # Parse HTML and extract links
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    links = [a.get("href") for a in soup.find_all("a", href=True)]
 
-                await page.close()
+                    # Convert relative URLs to absolute
+                    absolute_links = [urljoin(url, link) for link in links]
 
-                # Filter for article URLs
-                filtered = self._filter_article_urls(links)
-                all_urls.extend(filtered)
+                    # Filter for article URLs
+                    filtered = self._filter_article_urls(absolute_links)
+                    all_urls.extend(filtered)
 
-                if len(all_urls) >= 50:
-                    break
+                    if len(all_urls) >= 50:
+                        break
 
-            except Exception as e:
-                logger.debug(f"Failed to crawl {path}: {e}")
-                continue
+                except Exception as e:
+                    logger.debug(f"Failed to crawl {path}: {e}")
+                    continue
 
         return list(set(all_urls))[:100]
 
@@ -295,43 +300,53 @@ class WebsiteAnalyzer:
         """
         articles = []
 
-        for url in urls:
-            try:
-                article = await self._scrape_single_article(url)
-                if article:
-                    articles.append(article)
+        async with httpx.AsyncClient(
+            timeout=self.scraping_settings.request_timeout,
+            headers={"User-Agent": self.scraping_settings.user_agent},
+        ) as client:
+            for url in urls:
+                try:
+                    article = await self._scrape_single_article(client, url)
+                    if article:
+                        articles.append(article)
 
-                # Rate limiting
-                await asyncio.sleep(1)
+                    # Rate limiting
+                    await asyncio.sleep(self.scraping_settings.min_delay_between_requests)
 
-            except Exception as e:
-                logger.warning(f"Failed to scrape {url}: {e}")
-                continue
+                except Exception as e:
+                    logger.warning(f"Failed to scrape {url}: {e}")
+                    continue
 
         return articles
 
-    async def _scrape_single_article(self, url: str) -> Optional[Dict[str, str]]:
+    async def _scrape_single_article(
+        self, client: httpx.AsyncClient, url: str
+    ) -> Optional[Dict[str, str]]:
         """
         Scrape single article with content extraction.
 
         Args:
+            client: httpx client instance
             url: Article URL
 
         Returns:
             Dict with article data or None if extraction fails
         """
-        page = await self.browser.new_page()
-
         try:
-            await page.goto(url, timeout=self.timeout_ms, wait_until="networkidle")
+            response = await client.get(url)
+            response.raise_for_status()
+
+            # Parse HTML
+            soup = BeautifulSoup(response.text, "html.parser")
 
             # Extract title
-            title = await page.title()
+            title_tag = soup.find("title")
+            title = title_tag.get_text().strip() if title_tag else "Untitled"
 
-            # Extract main content (multiple strategies)
-            content = await self._extract_main_content(page)
+            # Extract main content
+            content = self._extract_main_content(soup)
 
-            if not content or len(content) < 200:
+            if not content or len(content) < self.scraping_settings.min_article_word_count:
                 logger.debug(f"Insufficient content extracted from {url}")
                 return None
 
@@ -341,10 +356,11 @@ class WebsiteAnalyzer:
                 "content": content,
             }
 
-        finally:
-            await page.close()
+        except Exception as e:
+            logger.debug(f"Failed to scrape {url}: {e}")
+            return None
 
-    async def _extract_main_content(self, page: Page) -> str:
+    def _extract_main_content(self, soup: BeautifulSoup) -> str:
         """
         Extract main article content, removing boilerplate.
 
@@ -354,7 +370,7 @@ class WebsiteAnalyzer:
         3. Use common CMS selectors
 
         Args:
-            page: Playwright page object
+            soup: BeautifulSoup parsed HTML
 
         Returns:
             Extracted text content
@@ -372,58 +388,42 @@ class WebsiteAnalyzer:
 
         for selector in selectors:
             try:
-                element = await page.query_selector(selector)
+                element = soup.select_one(selector)
                 if element:
-                    text = await element.inner_text()
+                    text = element.get_text()
                     if len(text) > 300:
                         return self._clean_text(text)
             except Exception:  # nosec B112 - Continue on any selector failure
                 continue
 
-        # Strategy 2: Largest text block
-        try:
-            all_text_blocks = await page.eval_on_selector_all(
-                "p",
-                """(elements) => elements.map(e => ({
-                    text: e.innerText,
-                    length: e.innerText.length
-                }))""",
-            )
-
+        # Strategy 2: Largest text block (find div with most paragraphs)
+        paragraphs = soup.find_all("p")
+        if paragraphs:
             # Find parent with most paragraph content
-            body_text = await page.eval_on_selector(
-                "body",
-                """(body) => {
-                    const paragraphs = Array.from(body.querySelectorAll('p'));
-                    const containers = new Map();
-                    
-                    paragraphs.forEach(p => {
-                        let parent = p.parentElement;
-                        while (parent && parent !== body) {
-                            const key = parent.tagName + (parent.className || '');
-                            const current = containers.get(key) || { element: parent, length: 0 };
-                            current.length += p.innerText.length;
-                            containers.set(key, current);
-                            parent = parent.parentElement;
-                        }
-                    });
-                    
-                    const best = Array.from(containers.values())
-                        .sort((a, b) => b.length - a.length)[0];
-                    
-                    return best ? best.element.innerText : body.innerText;
-                }""",
-            )
+            parent_counts = {}
+            for p in paragraphs:
+                parent = p.parent
+                if parent:
+                    parent_key = f"{parent.name}_{parent.get('class', [])}"
+                    parent_counts[parent_key] = parent_counts.get(parent_key, 0) + 1
 
-            if body_text and len(body_text) > 300:
-                return self._clean_text(body_text)
-
-        except Exception as e:
-            logger.debug(f"Fallback extraction failed: {e}")
+            if parent_counts:
+                best_parent_key = max(parent_counts, key=parent_counts.get)
+                # Find the actual parent element
+                for p in paragraphs:
+                    parent = p.parent
+                    if parent and f"{parent.name}_{parent.get('class', [])}" == best_parent_key:
+                        text = parent.get_text()
+                        if len(text) > 300:
+                            return self._clean_text(text)
 
         # Last resort: body text
-        body_text = await page.eval_on_selector("body", "(body) => body.innerText")
-        return self._clean_text(body_text)
+        body = soup.find("body")
+        if body:
+            text = body.get_text()
+            return self._clean_text(text)
+
+        return ""
 
     @staticmethod
     def _clean_text(text: str) -> str:
@@ -471,7 +471,7 @@ class WebsiteAnalyzer:
         # Extract features from each article
         all_features = []
         for article in articles:
-            features = self.pattern_extractor.extract_features(article["content"])
+            features = self.pattern_extractor.extract_patterns(article["content"])
             all_features.append(features)
 
         # Aggregate statistics
@@ -623,168 +623,20 @@ class WebsiteAnalyzer:
         return confidence * sample_factor
 
     # =========================================================================
-    # PERSISTENCE
+    # UTILITY FUNCTIONS
     # =========================================================================
 
-    async def _store_patterns(
-        self,
-        project_id: UUID,
-        patterns: Dict,
-    ) -> InferredPatterns:
+    @staticmethod
+    def normalize_domain(domain: str) -> str:
         """
-        Store inferred patterns in database.
-
+        Normalize domain to consistent format.
         Args:
-            project_id: UUID of project
-            patterns: Aggregated pattern data
+            domain: Raw domain input
 
         Returns:
-            InferredPatterns model
+            Normalized domain (lowercase, no protocol)
         """
-        try:
-            # Delete existing patterns for project
-            await self.session.execute(
-                "DELETE FROM inferred_patterns WHERE project_id = :project_id",
-                {"project_id": project_id},
-            )
-
-            # Insert new patterns
-            query = """
-                INSERT INTO inferred_patterns (
-                    id, project_id, avg_sentence_length, sentence_length_std,
-                    lexical_diversity, readability_score, tone_embedding,
-                    structure_patterns, confidence, sample_size, analyzed_at
-                ) VALUES (
-                    :id, :project_id, :avg_sentence_length, :sentence_length_std,
-                    :lexical_diversity, :readability_score, :tone_embedding,
-                    :structure_patterns, :confidence, :sample_size, NOW()
-                )
-                RETURNING id, project_id, avg_sentence_length, sentence_length_std,
-                          lexical_diversity, readability_score, confidence, 
-                          sample_size, analyzed_at;
-            """
-
-            pattern_id = uuid4()
-
-            # Convert structure patterns to JSON
-            structure_json = [
-                {
-                    "pattern_type": p.pattern_type,
-                    "frequency": p.frequency,
-                    "typical_sections": p.typical_sections,
-                    "avg_word_count": p.avg_word_count,
-                }
-                for p in patterns["structure_patterns"]
-            ]
-
-            result = await self.session.execute(
-                query,
-                {
-                    "id": pattern_id,
-                    "project_id": project_id,
-                    "avg_sentence_length": patterns["avg_sentence_length"],
-                    "sentence_length_std": patterns["sentence_length_std"],
-                    "lexical_diversity": patterns["lexical_diversity"],
-                    "readability_score": patterns["readability_score"],
-                    "tone_embedding": f"[{','.join(map(str, patterns['tone_embedding']))}]",
-                    "structure_patterns": str(structure_json).replace("'", '"'),
-                    "confidence": patterns["confidence"],
-                    "sample_size": patterns["sample_size"],
-                },
-            )
-
-            await self.session.commit()
-
-            row = result.fetchone()
-
-            inferred = InferredPatterns(
-                id=row[0],
-                project_id=row[1],
-                avg_sentence_length=row[2],
-                sentence_length_std=row[3],
-                lexical_diversity=row[4],
-                readability_score=row[5],
-                tone_embedding=patterns["tone_embedding"],
-                structure_patterns=patterns["structure_patterns"],
-                confidence=row[6],
-                sample_size=row[7],
-                analyzed_at=row[8],
-            )
-
-            logger.info(f"Stored inferred patterns (confidence: {patterns['confidence']:.2f})")
-            return inferred
-
-        except Exception as e:
-            await self.session.rollback()
-            logger.error(f"Failed to store patterns: {e}")
-            raise DatabaseError(f"Pattern storage failed: {e}")
-
-    async def _get_existing_patterns(self, project_id: UUID) -> Optional[InferredPatterns]:
-        """Retrieve existing patterns if recent (< 30 days)."""
-        query = """
-            SELECT id, project_id, avg_sentence_length, sentence_length_std,
-                   lexical_diversity, readability_score, confidence, 
-                   sample_size, analyzed_at
-            FROM inferred_patterns
-            WHERE project_id = :project_id
-            AND analyzed_at > NOW() - INTERVAL '30 days'
-            ORDER BY analyzed_at DESC
-            LIMIT 1;
-        """
-
-        result = await self.session.execute(query, {"project_id": project_id})
-        row = result.fetchone()
-
-        if not row:
-            return None
-
-        # Note: Not loading full tone_embedding or structure_patterns for efficiency
-        return InferredPatterns(
-            id=row[0],
-            project_id=row[1],
-            avg_sentence_length=row[2],
-            sentence_length_std=row[3],
-            lexical_diversity=row[4],
-            readability_score=row[5],
-            tone_embedding=[],  # Load separately if needed
-            structure_patterns=[],
-            confidence=row[6],
-            sample_size=row[7],
-            analyzed_at=row[8],
-        )
-
-    # =========================================================================
-    # BROWSER MANAGEMENT
-    # =========================================================================
-
-    async def _init_browser(self) -> None:
-        """Initialize Playwright browser instance."""
-        if self.browser is None:
-            playwright = await async_playwright().start()
-            self.browser = await playwright.chromium.launch(headless=True)
-            logger.debug("Browser initialized")
-
-    async def _close_browser(self) -> None:
-        """Close browser instance."""
-        if self.browser:
-            await self.browser.close()
-            self.browser = None
-        logger.debug("Browser closed")
-
-
-# =========================================================================
-# UTILITY FUNCTIONS
-# =========================================================================
-def normalize_domain(domain: str) -> str:
-    """
-    Normalize domain to consistent format.
-    Args:
-        domain: Raw domain input
-
-    Returns:
-        Normalized domain (lowercase, no protocol)
-    """
-    domain = domain.lower().strip()
-    domain = re.sub(r"^https?://", "", domain)
-    domain = re.sub(r"/.*$", "", domain)
-    return domain
+        domain = domain.lower().strip()
+        domain = re.sub(r"^https?://", "", domain)
+        domain = re.sub(r"/.*$", "", domain)
+        return domain
