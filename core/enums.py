@@ -355,8 +355,8 @@ class ValidationResult(str, Enum):
     Tri-state validation: pass, warn (acceptable with caveats), fail.
     """
 
-    PASS = "pass"  # Meets all quality criteria
-    PASS_WITH_WARNINGS = "pass_with_warnings"  # Acceptable but suboptimal
+    PASS = "pass"  # Meets all quality criteria  # nosec B105
+    PASS_WITH_WARNINGS = "pass_with_warnings"  # Acceptable but suboptimal  # nosec B105
     FAIL = "fail"  # Below quality threshold
 
     @property

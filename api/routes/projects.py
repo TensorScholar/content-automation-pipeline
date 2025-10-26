@@ -1,10 +1,10 @@
 """
-Project Routes: Advanced CRUD with Relationship Management
+Project Routes: CRUD with Relationship Management
 
-Implements comprehensive project management operations:
+Implements project management operations:
 - CRUD with optimistic concurrency control
 - Bulk operations for batch processing
-- Advanced filtering and search
+- Filtering and search
 - Rulebook and pattern management
 - Article history and analytics
 
@@ -18,17 +18,23 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+# Import dependency functions from container
+from container import container, get_project_service
 from core.exceptions import ProjectNotFoundError
 from core.models import InferredPatterns, Project, Rulebook
 from infrastructure.database import DatabaseManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
+from security import User, get_current_active_user
 from services.project_service import ProjectService
 
-# Import dependency functions
-from api.dependencies import get_project_service
-
 router = APIRouter(prefix="/projects", tags=["Projects"])
+
+
+# Simple dependency function for FastAPI
+def get_project_service_dependency() -> ProjectService:
+    """Get ProjectService instance for FastAPI dependency injection."""
+    return container.project_service()
 
 
 # ============================================================================
@@ -119,7 +125,8 @@ class BulkProjectResponse(BaseModel):
 async def update_project(
     project_id: UUID,
     request: UpdateProjectRequest,
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Update project properties.
@@ -135,7 +142,8 @@ async def update_project(
 async def delete_project(
     project_id: UUID,
     cascade: bool = Query(False, description="Delete associated content"),
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Delete project.
@@ -156,7 +164,7 @@ async def get_project_analytics(
     project_id: UUID,
     start_date: Optional[datetime] = Query(None, description="Analytics period start"),
     end_date: Optional[datetime] = Query(None, description="Analytics period end"),
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
 ):
     """
     Retrieve project performance analytics.
@@ -182,7 +190,8 @@ async def get_project_analytics(
 async def create_or_update_rulebook(
     project_id: UUID,
     request: RulebookRequest,
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Create or update project rulebook.
@@ -202,7 +211,7 @@ async def create_or_update_rulebook(
 async def get_rulebook(
     project_id: UUID,
     version: Optional[int] = Query(None, description="Specific version (default: latest)"),
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
 ):
     """
     Retrieve project rulebook.
@@ -219,8 +228,7 @@ async def get_rulebook(
     summary="Get rulebook version history",
 )
 async def get_rulebook_history(
-    project_id: UUID, 
-    project_service: ProjectService = Depends(get_project_service)
+    project_id: UUID, project_service: ProjectService = Depends(get_project_service_dependency)
 ):
     """
     Retrieve complete rulebook version history.
@@ -235,8 +243,9 @@ async def get_rulebook_history(
     "/{project_id}/rulebook", status_code=status.HTTP_204_NO_CONTENT, summary="Delete rulebook"
 )
 async def delete_rulebook(
-    project_id: UUID, 
-    project_service: ProjectService = Depends(get_project_service)
+    project_id: UUID,
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Delete project rulebook (all versions).
@@ -261,7 +270,8 @@ async def delete_rulebook(
 async def trigger_website_analysis(
     project_id: UUID,
     force_refresh: bool = Query(False, description="Force re-analysis"),
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Trigger website analysis to infer content patterns.
@@ -283,8 +293,7 @@ async def trigger_website_analysis(
     summary="Get inferred patterns",
 )
 async def get_inferred_patterns(
-    project_id: UUID, 
-    project_service: ProjectService = Depends(get_project_service)
+    project_id: UUID, project_service: ProjectService = Depends(get_project_service_dependency)
 ):
     """
     Retrieve inferred content patterns for project.
@@ -302,8 +311,9 @@ async def get_inferred_patterns(
 
 @router.post("/bulk/create", response_model=BulkProjectResponse, summary="Bulk create projects")
 async def bulk_create_projects(
-    projects_data: List[dict], 
-    project_service: ProjectService = Depends(get_project_service)
+    projects_data: List[dict],
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Create multiple projects in single operation.
@@ -325,7 +335,7 @@ async def search_projects(
     query: str = Query(..., min_length=1, description="Search query"),
     field: str = Query("name", pattern="^(name|domain)$", description="Field to search"),
     limit: int = Query(20, ge=1, le=100),
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
 ):
     """
     Search projects by name or domain.
@@ -341,7 +351,7 @@ async def filter_projects(
     has_patterns: Optional[bool] = Query(None, description="Filter by inferred patterns"),
     min_articles: Optional[int] = Query(None, ge=0, description="Minimum article count"),
     created_after: Optional[datetime] = Query(None, description="Created after date"),
-    project_service: ProjectService = Depends(get_project_service),
+    project_service: ProjectService = Depends(get_project_service_dependency),
 ):
     """
     Filter projects with multiple criteria.

@@ -1,17 +1,5 @@
 """
-Decision Engine - Semantic Priority Resolution System
-======================================================
-
-Implements NLP-native decision hierarchy through geometric vector operations:
-
-Layer 1: Explicit Rulebook Query (vector similarity search)
-Layer 2: Inferred Pattern Analysis (statistical confidence weighting)
-Layer 3: Best Practices Retrieval (universal knowledge base)
-
-Architecture: Decision Manifold - choices emerge from geometric relationships
-in high-dimensional semantic space, weighted by source authority and confidence.
-
-No if-else chains. Pure functional composition of evidence vectors.
+Implements a 3-layer decision hierarchy (Rulebook, Inferred Patterns, Best Practices) to guide content generation.
 """
 
 from dataclasses import dataclass, field

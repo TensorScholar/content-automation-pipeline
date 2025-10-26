@@ -366,195 +366,191 @@ class BestPracticesSeeder:
     intelligent semantic retrieval during content generation.
     """
 
+    def __init__(self, db: DatabaseManager, semantic_analyzer: SemanticAnalyzer):
+        self.db = db
+        self.semantic_analyzer = semantic_analyzer
 
-def __init__(self, db: DatabaseManager, semantic_analyzer: SemanticAnalyzer):
-    self.db = db
-    self.semantic_analyzer = semantic_analyzer
+        logger.info("BestPracticesSeeder initialized")
 
-    logger.info("BestPracticesSeeder initialized")
+    async def seed(self, reset: bool = False):
+        """
+        Seed best practices into database with semantic embeddings.
 
+        Args:
+            reset: If True, clear existing best practices before seeding
+        """
+        logger.info(f"Starting best practices seeding | reset={reset}")
 
-async def seed(self, reset: bool = False):
-    """
-    Seed best practices into database with semantic embeddings.
+        if reset:
+            await self._clear_existing()
 
-    Args:
-        reset: If True, clear existing best practices before seeding
-    """
-    logger.info(f"Starting best practices seeding | reset={reset}")
+        # Check if already seeded
+        existing_count = await self._count_existing()
+        if existing_count > 0 and not reset:
+            logger.warning(
+                f"Best practices already seeded ({existing_count} records). "
+                f"Use --reset to re-seed."
+            )
+            return
 
-    if reset:
-        await self._clear_existing()
+        # Seed practices
+        seeded_count = 0
+        failed_count = 0
 
-    # Check if already seeded
-    existing_count = await self._count_existing()
-    if existing_count > 0 and not reset:
-        logger.warning(
-            f"Best practices already seeded ({existing_count} records). " f"Use --reset to re-seed."
+        for practice in BEST_PRACTICES:
+            try:
+                await self._insert_practice(practice)
+                seeded_count += 1
+
+                if seeded_count % 5 == 0:
+                    logger.info(f"Seeded {seeded_count}/{len(BEST_PRACTICES)} practices")
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to seed practice | category={practice['category']} | error={e}"
+                )
+                failed_count += 1
+
+        logger.success(
+            f"Best practices seeding completed | " f"seeded={seeded_count} | failed={failed_count}"
         )
-        return
 
-    # Seed practices
-    seeded_count = 0
-    failed_count = 0
+        # Create indexes for efficient querying
+        await self._create_indexes()
 
-    for practice in BEST_PRACTICES:
-        try:
-            await self._insert_practice(practice)
-            seeded_count += 1
+    async def _clear_existing(self):
+        """Remove all existing best practices."""
+        logger.info("Clearing existing best practices")
 
-            if seeded_count % 5 == 0:
-                logger.info(f"Seeded {seeded_count}/{len(BEST_PRACTICES)} practices")
+        await self.db.execute("DELETE FROM best_practices")
 
-        except Exception as e:
-            logger.error(f"Failed to seed practice | category={practice['category']} | error={e}")
-            failed_count += 1
+        logger.info("Existing best practices cleared")
 
-    logger.success(
-        f"Best practices seeding completed | " f"seeded={seeded_count} | failed={failed_count}"
-    )
+    async def _count_existing(self) -> int:
+        """Count existing best practices records."""
+        result = await self.db.fetch_one("SELECT COUNT(*) as count FROM best_practices")
+        return result["count"] if result else 0
 
-    # Create indexes for efficient querying
-    await self._create_indexes()
-
-
-async def _clear_existing(self):
-    """Remove all existing best practices."""
-    logger.info("Clearing existing best practices")
-
-    await self.db.execute("DELETE FROM best_practices")
-
-    logger.info("Existing best practices cleared")
-
-
-async def _count_existing(self) -> int:
-    """Count existing best practices records."""
-    result = await self.db.fetch_one("SELECT COUNT(*) as count FROM best_practices")
-    return result["count"] if result else 0
-
-
-async def _insert_practice(self, practice: Dict):
-    """
-    Insert single best practice with semantic embedding.
-
-    Generates embedding for the guideline text to enable
-    semantic similarity search during decision-making.
-    """
-    # Generate embedding for semantic search
-    embedding = await self.semantic_analyzer.generate_embedding(practice["guideline"])
-
-    # Insert into database
-    practice_id = uuid4()
-
-    await self.db.execute(
+    async def _insert_practice(self, practice: Dict):
         """
-        INSERT INTO best_practices (
-            id, category, subcategory, guideline, 
-            embedding, priority, context, created_at
+        Insert single best practice with semantic embedding.
+
+        Generates embedding for the guideline text to enable
+        semantic similarity search during decision-making.
+        """
+        # Generate embedding for semantic search
+        embedding = await self.semantic_analyzer.generate_embedding(practice["guideline"])
+
+        # Insert into database
+        practice_id = uuid4()
+
+        await self.db.execute(
+            """
+            INSERT INTO best_practices (
+                id, category, subcategory, guideline,
+                embedding, priority, context, created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """,
+            practice_id,
+            practice["category"],
+            practice["subcategory"],
+            practice["guideline"],
+            embedding.tolist(),  # Convert numpy array to list for pgvector
+            practice["priority"],
+            practice["context"],
+            datetime.utcnow(),
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """,
-        practice_id,
-        practice["category"],
-        practice["subcategory"],
-        practice["guideline"],
-        embedding.tolist(),  # Convert numpy array to list for pgvector
-        practice["priority"],
-        practice["context"],
-        datetime.utcnow(),
-    )
 
+    async def _create_indexes(self):
+        """Create database indexes for efficient querying."""
+        logger.info("Creating indexes for best practices")
 
-async def _create_indexes(self):
-    """Create database indexes for efficient querying."""
-    logger.info("Creating indexes for best practices")
+        # Create vector index for similarity search
+        await self.db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS best_practices_embedding_idx
+            ON best_practices
+            USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = 50)
+            """
+        )
 
-    # Create vector index for similarity search
-    await self.db.execute(
+        # Create indexes for filtering
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS best_practices_category_idx ON best_practices (category)"
+        )
+
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS best_practices_subcategory_idx ON best_practices (subcategory)"
+        )
+
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS best_practices_priority_idx ON best_practices (priority DESC)"
+        )
+
+        logger.success("Indexes created successfully")
+
+    async def verify_seeding(self) -> Dict:
         """
-        CREATE INDEX IF NOT EXISTS best_practices_embedding_idx 
-        ON best_practices 
-        USING ivfflat (embedding vector_cosine_ops)
-        WITH (lists = 50)
+        Verify seeding completeness and quality.
+
+        Returns statistics about seeded practices.
         """
-    )
+        logger.info("Verifying best practices seeding")
 
-    # Create indexes for filtering
-    await self.db.execute(
-        "CREATE INDEX IF NOT EXISTS best_practices_category_idx ON best_practices (category)"
-    )
+        # Count total records
+        total = await self._count_existing()
 
-    await self.db.execute(
-        "CREATE INDEX IF NOT EXISTS best_practices_subcategory_idx ON best_practices (subcategory)"
-    )
+        # Count by category
+        category_counts = await self.db.fetch_all(
+            """
+            SELECT category, COUNT(*) as count
+            FROM best_practices
+            GROUP BY category
+            ORDER BY count DESC
+            """
+        )
 
-    await self.db.execute(
-        "CREATE INDEX IF NOT EXISTS best_practices_priority_idx ON best_practices (priority DESC)"
-    )
+        # Test semantic search functionality
+        test_query = "What tone should I use for writing?"
+        test_embedding = await self.semantic_analyzer.generate_embedding(test_query)
 
-    logger.success("Indexes created successfully")
+        similar_practices = await self.db.fetch_all(
+            """
+            SELECT guideline, category, subcategory,
+                   1 - (embedding <=> $1::vector) as similarity
+            FROM best_practices
+            ORDER BY embedding <=> $1::vector
+            LIMIT 3
+            """,
+            test_embedding.tolist(),
+        )
 
+        verification_result = {
+            "total_practices": total,
+            "expected_practices": len(BEST_PRACTICES),
+            "seeding_complete": total == len(BEST_PRACTICES),
+            "categories": {row["category"]: row["count"] for row in category_counts},
+            "semantic_search_test": {
+                "query": test_query,
+                "top_results": [
+                    {
+                        "guideline": row["guideline"][:100] + "...",
+                        "category": row["category"],
+                        "subcategory": row["subcategory"],
+                        "similarity": float(row["similarity"]),
+                    }
+                    for row in similar_practices
+                ],
+            },
+        }
 
-async def verify_seeding(self) -> Dict:
-    """
-    Verify seeding completeness and quality.
+        logger.info(
+            f"Verification complete | seeding_complete={verification_result['seeding_complete']}"
+        )
 
-    Returns statistics about seeded practices.
-    """
-    logger.info("Verifying best practices seeding")
-
-    # Count total records
-    total = await self._count_existing()
-
-    # Count by category
-    category_counts = await self.db.fetch_all(
-        """
-        SELECT category, COUNT(*) as count 
-        FROM best_practices 
-        GROUP BY category 
-        ORDER BY count DESC
-        """
-    )
-
-    # Test semantic search functionality
-    test_query = "What tone should I use for writing?"
-    test_embedding = await self.semantic_analyzer.generate_embedding(test_query)
-
-    similar_practices = await self.db.fetch_all(
-        """
-        SELECT guideline, category, subcategory,
-               1 - (embedding <=> $1::vector) as similarity
-        FROM best_practices
-        ORDER BY embedding <=> $1::vector
-        LIMIT 3
-        """,
-        test_embedding.tolist(),
-    )
-
-    verification_result = {
-        "total_practices": total,
-        "expected_practices": len(BEST_PRACTICES),
-        "seeding_complete": total == len(BEST_PRACTICES),
-        "categories": {row["category"]: row["count"] for row in category_counts},
-        "semantic_search_test": {
-            "query": test_query,
-            "top_results": [
-                {
-                    "guideline": row["guideline"][:100] + "...",
-                    "category": row["category"],
-                    "subcategory": row["subcategory"],
-                    "similarity": float(row["similarity"]),
-                }
-                for row in similar_practices
-            ],
-        },
-    }
-
-    logger.info(
-        f"Verification complete | seeding_complete={verification_result['seeding_complete']}"
-    )
-
-    return verification_result
+        return verification_result
 
 
 async def main():
@@ -572,7 +568,7 @@ async def main():
 
     # Initialize dependencies
     db = DatabaseManager()
-    await db.connect()
+    await db.initialize()
 
     semantic_analyzer = SemanticAnalyzer()
 

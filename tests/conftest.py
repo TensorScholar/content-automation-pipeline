@@ -23,6 +23,7 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 import redis as redis_client
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -80,12 +81,12 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
     await db_manager.initialize()
 
     # Start transaction
-    await db_manager.execute("BEGIN")
+    await db_manager.execute_raw("BEGIN")
 
     yield db_manager
 
     # Rollback transaction
-    await db_manager.execute("ROLLBACK")
+    await db_manager.execute_raw("ROLLBACK")
     await db_manager.disconnect()
 
 
@@ -102,12 +103,12 @@ async def clean_db() -> AsyncGenerator[DatabaseManager, None]:
     yield db_manager
 
     # Cleanup all test data
-    await db_manager.execute("TRUNCATE TABLE generated_articles CASCADE")
-    await db_manager.execute("TRUNCATE TABLE content_plans CASCADE")
-    await db_manager.execute("TRUNCATE TABLE rules CASCADE")
-    await db_manager.execute("TRUNCATE TABLE rulebooks CASCADE")
-    await db_manager.execute("TRUNCATE TABLE inferred_patterns CASCADE")
-    await db_manager.execute("TRUNCATE TABLE projects CASCADE")
+    await db_manager.execute_raw("TRUNCATE TABLE generated_articles CASCADE")
+    await db_manager.execute_raw("TRUNCATE TABLE content_plans CASCADE")
+    await db_manager.execute_raw("TRUNCATE TABLE rules CASCADE")
+    await db_manager.execute_raw("TRUNCATE TABLE rulebooks CASCADE")
+    await db_manager.execute_raw("TRUNCATE TABLE inferred_patterns CASCADE")
+    await db_manager.execute_raw("TRUNCATE TABLE projects CASCADE")
 
     await db_manager.disconnect()
 
@@ -133,6 +134,25 @@ async def redis() -> AsyncGenerator[RedisClient, None]:
     # Cleanup
     await redis_manager.flushdb()
     await redis_manager.disconnect()
+
+
+# ============================================================================
+# API CLIENT FIXTURES
+# ============================================================================
+
+
+@pytest.fixture
+def api_client():
+    """
+    FastAPI test client fixture.
+
+    Provides a test client for making HTTP requests to the API
+    without running an actual server.
+    """
+    from api.main import app
+
+    with TestClient(app) as client:
+        yield client
 
 
 # ============================================================================
@@ -376,7 +396,7 @@ async def sample_project(db: DatabaseManager) -> Project:
     """Create and persist a sample project."""
     project = ProjectFactory.create()
 
-    await db.execute(
+    await db.execute_raw(
         """
         INSERT INTO projects (id, name, domain, telegram_channel, created_at, last_active, total_articles_generated)
         VALUES ($1, $2, $3, $4, $5, $6, $7)

@@ -32,10 +32,9 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Download spaCy language model
-RUN python -m spacy download en_core_web_sm
+RUN pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 
-# Download sentence-transformers model (cache for faster startup)
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+# Note: sentence-transformers model will be downloaded on first use
 
 # ----------------------------------------------------------------------------
 # Stage 2: Runtime - Minimal production image

@@ -3,7 +3,7 @@ Best Practices Knowledge Base - Layer 3 Intelligence
 ====================================================
 
 Universal knowledge base of content marketing and SEO best practices.
-Provides intelligent fallback when project-specific knowledge unavailable.
+Provides fallback when project-specific knowledge unavailable.
 
 Knowledge Organization:
 - Category-based (SEO, Writing, Structure, Tone, etc.)
@@ -11,7 +11,12 @@ Knowledge Organization:
 - Confidence scored (evidence-based reliability)
 - Versioned (allows knowledge evolution)
 
-Design: Read-heavy workload optimized with aggressive caching.
+Design: Read-heavy workload optimized with caching.
+
+Note for future development:
+Currently, the knowledge base is managed in-memory. For enhanced scalability
+and dynamic management, consider migrating this data to a dedicated table
+in the PostgreSQL database in a future version.
 """
 
 from dataclasses import dataclass

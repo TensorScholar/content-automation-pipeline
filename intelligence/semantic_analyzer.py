@@ -194,8 +194,10 @@ class SemanticAnalyzer:
         Returns:
             Cache key string
         """
-        # Hash text for fixed-length key
-        text_hash = hashlib.md5(text.encode()).hexdigest()
+        # Hash text for fixed-length key (using SHA-256 for security)
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[
+            :16
+        ]  # Truncate to 16 chars for compatibility
         norm_suffix = "_norm" if normalized else ""
         return f"emb_minilm:{text_hash}{norm_suffix}"
 

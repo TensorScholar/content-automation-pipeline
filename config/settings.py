@@ -20,9 +20,9 @@ class DatabaseSettings(BaseSettings):
 
     host: str = Field(default="localhost", description="Database host")
     port: int = Field(default=5432, ge=1024, le=65535)
-    user: str = Field(default="content_agent")
-    password: SecretStr = Field(default="")
-    database: str = Field(default="content_automation")
+    user: str = Field(description="Database username")
+    password: SecretStr = Field(description="Database password")
+    database: str = Field(default="content_pipeline")
 
     # Connection pool optimization
     pool_size: int = Field(default=10, ge=5, le=50)
@@ -85,17 +85,25 @@ class RedisSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     """LLM API configuration with provider fallbacks."""
 
-    # OpenAI
-    openai_api_key: SecretStr = Field(default="")
+    # Provider selection (anthropic or openai)
+    provider: str = Field(
+        default="anthropic", description="LLM provider to use: 'anthropic' or 'openai'"
+    )
+
+    # Anthropic (primary provider)
+    anthropic_api_key: SecretStr = Field(description="Anthropic API key")
+    anthropic_model: str = Field(
+        default="claude-haiku-4-5-20251001", description="Default Anthropic model to use"
+    )
+
+    # OpenAI (secondary/optional provider)
+    openai_api_key: Optional[SecretStr] = Field(default=None)
     openai_org_id: Optional[str] = Field(default=None)
 
-    # Anthropic (fallback)
-    anthropic_api_key: Optional[SecretStr] = Field(default=None)
-
     # Model selection
-    primary_model: str = Field(default="gpt-4-turbo-preview")
-    secondary_model: str = Field(default="gpt-3.5-turbo")
-    fallback_model: Optional[str] = Field(default="claude-3-sonnet-20240229")
+    primary_model: str = Field(default="claude-haiku-4-5-20251001")
+    secondary_model: str = Field(default="claude-3-sonnet-20240229")
+    fallback_model: Optional[str] = Field(default="gpt-4-turbo-preview")
 
     # Rate limiting
     max_requests_per_minute: int = Field(default=50, ge=1, le=500)
@@ -123,8 +131,9 @@ class LLMSettings(BaseSettings):
             "claude-3-opus": {"input": 0.015, "output": 0.075},
             "claude-3-sonnet": {"input": 0.003, "output": 0.015},
             "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
+            "claude-haiku-4-5-20251001": {"input": 0.001, "output": 0.005},
         },
-        description="Model pricing per 1K tokens (input/output costs)"
+        description="Model pricing per 1K tokens (input/output costs)",
     )
 
     model_config = SettingsConfigDict(env_prefix="LLM_", case_sensitive=False, extra="ignore")
@@ -254,7 +263,7 @@ class Settings(BaseSettings):
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 
     # Security
-    secret_key: SecretStr = Field(default="change-me-in-production")
+    secret_key: SecretStr = Field(description="Application secret key")
     allowed_hosts: list[str] = Field(default=["localhost", "127.0.0.1"])
     cors_origins: list[str] = Field(default=["http://localhost:3000"])
 

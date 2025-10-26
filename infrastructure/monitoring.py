@@ -5,23 +5,24 @@ Provides comprehensive observability for the content automation pipeline
 using Prometheus metrics for monitoring and alerting.
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+from loguru import logger
 from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    CollectorRegistry,
     Counter,
     Gauge,
     Histogram,
     generate_latest,
-    CONTENT_TYPE_LATEST,
-    CollectorRegistry,
-    REGISTRY,
 )
-from loguru import logger
 
 
 class MetricsCollector:
     """
     Prometheus metrics collector for system observability.
-    
+
     Tracks key performance indicators (KPIs) including:
     - Workflow duration and success rates
     - LLM API usage and costs
@@ -36,89 +37,73 @@ class MetricsCollector:
             "workflow_duration_seconds",
             "End-to-end workflow execution time",
             buckets=[1, 5, 10, 30, 60, 120, 300, 600, 1800],  # 1s to 30min
-            labelnames=["project_id", "workflow_type"]
+            labelnames=["project_id", "workflow_type"],
         )
-        
+
         self.workflow_total_cost = Gauge(
             "workflow_total_cost",
             "Total cost of generated articles",
-            labelnames=["project_id", "workflow_type"]
+            labelnames=["project_id", "workflow_type"],
         )
-        
+
         self.workflow_success_total = Counter(
             "workflow_success_total",
             "Total successful workflows",
-            labelnames=["project_id", "workflow_type"]
+            labelnames=["project_id", "workflow_type"],
         )
-        
+
         self.workflow_failure_total = Counter(
             "workflow_failure_total",
             "Total failed workflows",
-            labelnames=["project_id", "workflow_type", "error_type"]
+            labelnames=["project_id", "workflow_type", "error_type"],
         )
 
         # LLM API metrics
         self.llm_api_requests_total = Counter(
             "llm_api_requests_total",
             "Total LLM API requests",
-            labelnames=["model", "provider", "status"]
+            labelnames=["model", "provider", "status"],
         )
-        
+
         self.llm_api_tokens_total = Counter(
             "llm_api_tokens_total",
             "Total tokens consumed",
-            labelnames=["model", "provider", "token_type"]
+            labelnames=["model", "provider", "token_type"],
         )
-        
+
         self.llm_api_cost_total = Counter(
-            "llm_api_cost_total",
-            "Total LLM API costs",
-            labelnames=["model", "provider"]
+            "llm_api_cost_total", "Total LLM API costs", labelnames=["model", "provider"]
         )
-        
+
         self.llm_api_latency_seconds = Histogram(
             "llm_api_latency_seconds",
             "LLM API request latency",
             buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
-            labelnames=["model", "provider"]
+            labelnames=["model", "provider"],
         )
 
         # Cache metrics
         self.cache_hits_total = Counter(
-            "cache_hits_total",
-            "Total cache hits",
-            labelnames=["cache_level", "cache_type"]
+            "cache_hits_total", "Total cache hits", labelnames=["cache_level", "cache_type"]
         )
 
         self.cache_misses_total = Counter(
-            "cache_misses_total",
-            "Total cache misses",
-            labelnames=["cache_level", "cache_type"]
+            "cache_misses_total", "Total cache misses", labelnames=["cache_level", "cache_type"]
         )
-        
+
         self.cache_size_bytes = Gauge(
-            "cache_size_bytes",
-            "Current cache size in bytes",
-            labelnames=["cache_level"]
+            "cache_size_bytes", "Current cache size in bytes", labelnames=["cache_level"]
         )
 
         # System metrics
         self.active_workflows = Gauge(
-            "active_workflows",
-            "Number of currently active workflows",
-            labelnames=["project_id"]
+            "active_workflows", "Number of currently active workflows", labelnames=["project_id"]
         )
-        
-        self.queue_size = Gauge(
-            "queue_size",
-            "Current task queue size",
-            labelnames=["queue_name"]
-        )
-        
+
+        self.queue_size = Gauge("queue_size", "Current task queue size", labelnames=["queue_name"])
+
         self.error_rate = Gauge(
-            "error_rate",
-            "Current error rate (errors per minute)",
-            labelnames=["error_type"]
+            "error_rate", "Current error rate (errors per minute)", labelnames=["error_type"]
         )
 
         logger.info("Metrics collector initialized with Prometheus metrics")
@@ -130,7 +115,7 @@ class MetricsCollector:
         duration_seconds: float,
         cost: float,
         success: bool,
-        error_type: Optional[str] = None
+        error_type: Optional[str] = None,
     ) -> None:
         """
         Record workflow completion metrics.
@@ -144,25 +129,22 @@ class MetricsCollector:
             error_type: Error type if failed
         """
         self.workflow_duration_seconds.labels(
-            project_id=project_id,
-            workflow_type=workflow_type
+            project_id=project_id, workflow_type=workflow_type
         ).observe(duration_seconds)
-        
-        self.workflow_total_cost.labels(
-            project_id=project_id,
-            workflow_type=workflow_type
-        ).set(cost)
-        
+
+        self.workflow_total_cost.labels(project_id=project_id, workflow_type=workflow_type).set(
+            cost
+        )
+
         if success:
             self.workflow_success_total.labels(
-                project_id=project_id,
-                workflow_type=workflow_type
+                project_id=project_id, workflow_type=workflow_type
             ).inc()
         else:
             self.workflow_failure_total.labels(
                 project_id=project_id,
                 workflow_type=workflow_type,
-                error_type=error_type or "unknown"
+                error_type=error_type or "unknown",
             ).inc()
 
     def record_llm_api_call(
@@ -173,11 +155,11 @@ class MetricsCollector:
         tokens_used: int,
         cost: float,
         latency_seconds: float,
-        token_type: str = "total"
+        token_type: str = "total",
     ) -> None:
         """
         Record LLM API call metrics.
-        
+
         Args:
             model: Model identifier (e.g., "gpt-4")
             provider: Provider name (e.g., "openai")
@@ -187,41 +169,23 @@ class MetricsCollector:
             latency_seconds: Request latency
             token_type: Type of tokens ("prompt", "completion", "total")
         """
-        self.llm_api_requests_total.labels(
-            model=model,
-            provider=provider,
-            status=status
-        ).inc()
-        
-        self.llm_api_tokens_total.labels(
-            model=model,
-            provider=provider,
-            token_type=token_type
-        ).inc(tokens_used)
-        
-        self.llm_api_cost_total.labels(
-            model=model,
-            provider=provider
-        ).inc(cost)
-        
-        self.llm_api_latency_seconds.labels(
-            model=model,
-            provider=provider
-        ).observe(latency_seconds)
+        self.llm_api_requests_total.labels(model=model, provider=provider, status=status).inc()
+
+        self.llm_api_tokens_total.labels(model=model, provider=provider, token_type=token_type).inc(
+            tokens_used
+        )
+
+        self.llm_api_cost_total.labels(model=model, provider=provider).inc(cost)
+
+        self.llm_api_latency_seconds.labels(model=model, provider=provider).observe(latency_seconds)
 
     def record_cache_hit(self, cache_level: str, cache_type: str) -> None:
         """Record cache hit."""
-        self.cache_hits_total.labels(
-            cache_level=cache_level,
-            cache_type=cache_type
-        ).inc()
+        self.cache_hits_total.labels(cache_level=cache_level, cache_type=cache_type).inc()
 
     def record_cache_miss(self, cache_level: str, cache_type: str) -> None:
         """Record cache miss."""
-        self.cache_misses_total.labels(
-            cache_level=cache_level,
-            cache_type=cache_type
-        ).inc()
+        self.cache_misses_total.labels(cache_level=cache_level, cache_type=cache_type).inc()
 
     def update_cache_size(self, cache_level: str, size_bytes: int) -> None:
         """Update cache size metric."""

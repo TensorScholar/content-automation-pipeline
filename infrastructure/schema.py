@@ -9,17 +9,17 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
+    JSON,
+    UUID,
     Boolean,
     Column,
     DateTime,
     Float,
     Integer,
-    JSON,
     MetaData,
     String,
     Table,
     Text,
-    UUID,
     func,
 )
 
@@ -98,4 +98,18 @@ inferred_patterns_table = Table(
     Column("confidence", Float),
     Column("sample_size", Integer),
     Column("analyzed_at", DateTime, default=func.now()),
+)
+
+# Users Table
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", UUID, primary_key=True, default=func.uuid_generate_v4()),
+    Column("email", String(255), nullable=False, unique=True, index=True),
+    Column("hashed_password", String(255), nullable=False),
+    Column("full_name", String(255), nullable=True),
+    Column("is_active", Boolean, default=True),
+    Column("is_superuser", Boolean, default=False),
+    Column("created_at", DateTime, default=func.now()),
+    Column("updated_at", DateTime, default=func.now(), onupdate=func.now()),
 )

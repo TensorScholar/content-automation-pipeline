@@ -5,9 +5,11 @@ Tests the semantic LLM response caching functionality to ensure
 redundant API calls are avoided and cache hits work correctly.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-from infrastructure.llm_client import LLMClient
+
+import pytest
+
+from infrastructure.llm_client import get_llm_client
 from optimization.cache_manager import CacheManager
 
 
@@ -18,20 +20,15 @@ async def test_llm_caching_reduces_api_calls(redis):
     mock_llm_api = AsyncMock()
     mock_llm_api.chat.completions.create.return_value = MagicMock()
     mock_llm_api.chat.completions.create.return_value.choices = [
-        MagicMock(
-            message=MagicMock(content="This is a test response."),
-            finish_reason="stop"
-        )
+        MagicMock(message=MagicMock(content="This is a test response."), finish_reason="stop")
     ]
     mock_llm_api.chat.completions.create.return_value.usage = MagicMock(
-        prompt_tokens=5,
-        completion_tokens=10,
-        total_tokens=15
+        prompt_tokens=5, completion_tokens=10, total_tokens=15
     )
 
     # Initialize cache manager and LLM client
     cache_manager = CacheManager()
-    llm_client = LLMClient(redis_client=redis, cache_manager=cache_manager)
+    llm_client = get_llm_client(provider="openai", redis_client=redis, cache_manager=cache_manager)
     llm_client.openai_client = mock_llm_api  # Mock the actual client
 
     prompt = "This is a unique test prompt for caching."
@@ -58,20 +55,15 @@ async def test_cache_miss_with_different_parameters(redis):
     mock_llm_api = AsyncMock()
     mock_llm_api.chat.completions.create.return_value = MagicMock()
     mock_llm_api.chat.completions.create.return_value.choices = [
-        MagicMock(
-            message=MagicMock(content="This is a test response."),
-            finish_reason="stop"
-        )
+        MagicMock(message=MagicMock(content="This is a test response."), finish_reason="stop")
     ]
     mock_llm_api.chat.completions.create.return_value.usage = MagicMock(
-        prompt_tokens=5,
-        completion_tokens=10,
-        total_tokens=15
+        prompt_tokens=5, completion_tokens=10, total_tokens=15
     )
 
     # Initialize cache manager and LLM client
     cache_manager = CacheManager()
-    llm_client = LLMClient(redis_client=redis, cache_manager=cache_manager)
+    llm_client = get_llm_client(provider="openai", redis_client=redis, cache_manager=cache_manager)
     llm_client.openai_client = mock_llm_api
 
     prompt = "This is a test prompt."
@@ -95,19 +87,14 @@ async def test_caching_without_cache_manager(redis):
     mock_llm_api = AsyncMock()
     mock_llm_api.chat.completions.create.return_value = MagicMock()
     mock_llm_api.chat.completions.create.return_value.choices = [
-        MagicMock(
-            message=MagicMock(content="This is a test response."),
-            finish_reason="stop"
-        )
+        MagicMock(message=MagicMock(content="This is a test response."), finish_reason="stop")
     ]
     mock_llm_api.chat.completions.create.return_value.usage = MagicMock(
-        prompt_tokens=5,
-        completion_tokens=10,
-        total_tokens=15
+        prompt_tokens=5, completion_tokens=10, total_tokens=15
     )
 
     # Initialize LLM client without cache manager
-    llm_client = LLMClient(redis_client=redis, cache_manager=None)
+    llm_client = get_llm_client(provider="openai", redis_client=redis, cache_manager=None)
     llm_client.openai_client = mock_llm_api
 
     prompt = "This is a test prompt."
@@ -116,6 +103,6 @@ async def test_caching_without_cache_manager(redis):
     # Both calls should trigger API calls since no caching
     response1 = await llm_client.complete(prompt=prompt, model=model)
     response2 = await llm_client.complete(prompt=prompt, model=model)
-    
+
     assert mock_llm_api.chat.completions.create.call_count == 2
     print("✓ No caching test passed. Both requests triggered API calls.")

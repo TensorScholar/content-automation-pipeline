@@ -12,20 +12,21 @@ Design Pattern: Service Layer with Repository Pattern
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
 
 from knowledge.article_repository import ArticleRepository
-from orchestration.task_queue import TaskManager
+
+# from orchestration.task_queue import TaskManager  # File was deleted
 
 
 class ContentService:
     """
     Service layer for content business logic.
-    
+
     Provides high-level business operations for content management,
     abstracting away implementation details from the API layer.
     """
@@ -33,17 +34,20 @@ class ContentService:
     def __init__(
         self,
         article_repository: ArticleRepository,
-        task_manager: TaskManager
+        # task_manager: TaskManager,  # File was deleted
+        project_service: Optional["ProjectService"] = None,
     ):
         """
         Initialize service with required dependencies.
-        
+
         Args:
             article_repository: Repository for article data access
             task_manager: Manager for task operations
+            project_service: Optional project service for fetching project details
         """
         self.articles = article_repository
         self.tasks = task_manager
+        self.project_service = project_service
         logger.debug("ContentService initialized")
 
     async def batch_generate_content(
@@ -51,35 +55,31 @@ class ContentService:
         project_id: UUID,
         topics: List[str],
         priority: str = "high",
-        schedule_after: Optional[datetime] = None
+        schedule_after: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """
         Submit batch content generation with business logic validation.
-        
+
         Args:
             project_id: Project identifier
             topics: List of topics to generate
             priority: Generation priority
             schedule_after: Optional delayed execution
-            
+
         Returns:
             Batch submission result
-            
+
         Raises:
             HTTPException: If schedule_after is in the past
         """
         if schedule_after and schedule_after < datetime.utcnow():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="schedule_after must be in the future"
+                detail="schedule_after must be in the future",
             )
 
         # Submit batch task
-        batch_id = self.tasks.submit_batch(
-            project_id=project_id,
-            topics=topics,
-            priority=priority
-        )
+        batch_id = self.tasks.submit_batch(project_id=project_id, topics=topics, priority=priority)
 
         return {
             "batch_id": batch_id,
@@ -92,10 +92,10 @@ class ContentService:
     async def get_batch_status(self, batch_id: str) -> Dict[str, Any]:
         """
         Get batch generation status with business logic.
-        
+
         Args:
             batch_id: Batch identifier
-            
+
         Returns:
             Batch status information
         """
@@ -115,31 +115,24 @@ class ContentService:
             },
         }
 
-    async def get_article(
-        self,
-        article_id: UUID,
-        include_content: bool = True
-    ) -> Dict[str, Any]:
+    async def get_article(self, article_id: UUID, include_content: bool = True) -> Dict[str, Any]:
         """
         Get article with business logic validation.
-        
+
         Args:
             article_id: Article identifier
             include_content: Whether to include full content
-            
+
         Returns:
             Article data
-            
+
         Raises:
             HTTPException: If article not found
         """
         article = await self.articles.get_by_id(article_id, include_content)
 
         if not article:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
         return article
 
@@ -148,20 +141,20 @@ class ContentService:
         article_id: UUID,
         feedback: str,
         sections_to_revise: Optional[List[str]] = None,
-        priority: str = "high"
+        priority: str = "high",
     ) -> Dict[str, Any]:
         """
         Request article revision with business logic validation.
-        
+
         Args:
             article_id: Article identifier
             feedback: Revision feedback
             sections_to_revise: Specific sections to revise
             priority: Revision priority
-            
+
         Returns:
             Revision request result
-            
+
         Raises:
             HTTPException: If article not found
         """
@@ -169,10 +162,7 @@ class ContentService:
         article = await self.articles.get_by_id(article_id, include_content=False)
 
         if not article:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
         # TODO: Implement revision task
         # task_id = self.tasks.submit_revision(...)
@@ -187,41 +177,35 @@ class ContentService:
     async def delete_article(self, article_id: UUID) -> None:
         """
         Delete article with business logic validation.
-        
+
         Args:
             article_id: Article identifier
-            
+
         Raises:
             HTTPException: If article not found
         """
         deleted = await self.articles.delete(article_id)
 
         if not deleted:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
     async def get_quality_metrics(self, article_id: UUID) -> Dict[str, Any]:
         """
         Get article quality metrics with business logic.
-        
+
         Args:
             article_id: Article identifier
-            
+
         Returns:
             Quality metrics data
-            
+
         Raises:
             HTTPException: If article not found
         """
         article = await self.articles.get_quality_metrics(article_id)
 
         if not article:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
         # TODO: Implement comprehensive quality analysis
         # For now, return basic metrics
@@ -259,23 +243,20 @@ class ContentService:
     async def trigger_comprehensive_analysis(self, article_id: UUID) -> Dict[str, Any]:
         """
         Trigger comprehensive analysis with business logic validation.
-        
+
         Args:
             article_id: Article identifier
-            
+
         Returns:
             Analysis trigger result
-            
+
         Raises:
             HTTPException: If article not found
         """
         article = await self.articles.get_by_id(article_id, include_content=False)
 
         if not article:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
         # TODO: Implement comprehensive analysis task
         # analysis_task_id = ...
@@ -287,31 +268,41 @@ class ContentService:
             "estimated_completion": (datetime.utcnow() + timedelta(minutes=2)).isoformat(),
         }
 
-    async def distribute_article(
-        self,
-        article_id: UUID,
-        channels: List[str]
-    ) -> Dict[str, Any]:
+    async def distribute_article(self, article_id: UUID, channels: List[str]) -> Dict[str, Any]:
         """
         Distribute article with business logic validation.
-        
+
         Args:
             article_id: Article identifier
             channels: Distribution channels
-            
+
         Returns:
             Distribution result
-            
+
         Raises:
             HTTPException: If article not found
         """
         article = await self.articles.get_by_id(article_id, include_content=True)
 
         if not article:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+
+        # Fetch project details for distribution channels
+        project_details = None
+        if self.project_service:
+            try:
+                project_details = await self.project_service.get_project_with_details(
+                    article.project_id
+                )
+            except Exception as e:
+                logger.warning(f"Failed to fetch project details for distribution: {e}")
+
+        # Extract distribution channels from project if not provided
+        distribution_channels = channels.copy()
+        if project_details and project_details.get("telegram_channel"):
+            telegram_channel = project_details["telegram_channel"]
+            if telegram_channel and telegram_channel not in distribution_channels:
+                distribution_channels.append(telegram_channel)
 
         # TODO: Implement distribution logic
         # distributor = get_distributor()
@@ -320,7 +311,7 @@ class ContentService:
         return {
             "article_id": str(article_id),
             "distributed": True,
-            "channels": channels,
+            "channels": distribution_channels,
             "distributed_at": datetime.utcnow(),
             "delivery_confirmations": {},  # TODO: Actual confirmations
         }
@@ -328,23 +319,20 @@ class ContentService:
     async def get_distribution_status(self, article_id: UUID) -> Dict[str, Any]:
         """
         Get distribution status with business logic validation.
-        
+
         Args:
             article_id: Article identifier
-            
+
         Returns:
             Distribution status data
-            
+
         Raises:
             HTTPException: If article not found
         """
         article = await self.articles.get_distribution_status(article_id)
 
         if not article:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
         return {
             "article_id": str(article_id),
@@ -357,23 +345,20 @@ class ContentService:
     async def get_article_history(self, article_id: UUID) -> Dict[str, Any]:
         """
         Get article history with business logic validation.
-        
+
         Args:
             article_id: Article identifier
-            
+
         Returns:
             Article history data
-            
+
         Raises:
             HTTPException: If article not found
         """
         history = await self.articles.get_article_history(article_id)
 
         if not history:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Article not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
         return {
             "current_version": history["current_version"],
@@ -385,16 +370,16 @@ class ContentService:
         self,
         project_id: Optional[UUID] = None,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """
         Get content analytics with business logic.
-        
+
         Args:
             project_id: Optional project filter
             start_date: Analytics period start
             end_date: Analytics period end
-            
+
         Returns:
             Analytics data
         """
@@ -419,16 +404,16 @@ class ContentService:
         self,
         project_id: Optional[UUID] = None,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """
         Export content data with business logic.
-        
+
         Args:
             project_id: Optional project filter
             start_date: Export period start
             end_date: Export period end
-            
+
         Returns:
             List of article data for export
         """
@@ -441,19 +426,16 @@ class ContentService:
         return articles
 
     async def search_articles(
-        self,
-        query: str,
-        project_id: Optional[UUID] = None,
-        limit: int = 20
+        self, query: str, project_id: Optional[UUID] = None, limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
         Search articles with business logic.
-        
+
         Args:
             query: Search query
             project_id: Optional project filter
             limit: Maximum results
-            
+
         Returns:
             Search results
         """

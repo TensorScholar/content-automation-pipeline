@@ -377,7 +377,7 @@ class WebsiteAnalyzer:
                     text = await element.inner_text()
                     if len(text) > 300:
                         return self._clean_text(text)
-            except:
+            except Exception:  # nosec B112 - Continue on any selector failure
                 continue
 
         # Strategy 2: Largest text block

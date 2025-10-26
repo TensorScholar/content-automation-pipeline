@@ -1,19 +1,5 @@
 """
-Model Router - Adaptive Economic Intelligence Orchestration
-============================================================
-
-Implements sophisticated model selection through computational optimization:
-
-Theoretical Foundation:
-- Multi-Armed Bandit (Thompson Sampling): Exploration-exploitation balance
-- Constraint Satisfaction: Budget and latency constraints
-- Bayesian Capability Inference: Model suitability prediction
-- Dynamic Programming: Optimal task decomposition
-
-Architecture: Reactive event-driven router with online learning,
-achieving provably near-optimal model selection under uncertainty.
-
-Mathematical Guarantee: Expected regret O(√(KT log T)) where K=models, T=trials
+Adaptive model selection router. Uses strategies (e.g., Thompson Sampling) to choose the optimal LLM based on cost, latency, and capability constraints.
 """
 
 from __future__ import annotations

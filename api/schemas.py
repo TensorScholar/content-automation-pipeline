@@ -15,14 +15,15 @@ class CreateProjectRequest(BaseModel):
     """Command: Create new project with validation."""
 
     name: str = Field(..., min_length=1, max_length=255, description="Project name")
-    domain: Optional[str] = Field(None, description="Target website domain")
+    domain: Optional[str] = Field(None, description="Target website domain (e.g., 'example.com')")
     telegram_channel: Optional[str] = Field(None, description="Telegram channel ID")
     rulebook_content: Optional[str] = Field(None, description="Initial rulebook content")
 
     @validator("domain")
     def validate_domain(cls, v):
-        if v and not (v.startswith("http://") or v.startswith("https://")):
-            v = f"https://{v}"
+        """Strip protocol and trailing slash from domain."""
+        if v:
+            v = v.replace("https://", "").replace("http://", "").rstrip("/")
         return v
 
     class Config:

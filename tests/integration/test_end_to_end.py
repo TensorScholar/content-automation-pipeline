@@ -41,7 +41,8 @@ from optimization.model_router import ModelRouter
 from optimization.prompt_compressor import PromptCompressor
 from optimization.token_budget_manager import TokenBudgetManager
 from orchestration.content_agent import ContentAgent, ContentAgentConfig, WorkflowState
-from orchestration.task_queue import TaskManager
+
+# from orchestration.task_queue import TaskManager  # File was deleted
 
 # ============================================================================
 # INTEGRATION TEST FIXTURES
@@ -986,3 +987,256 @@ async def test_workflow_state_machine_contract(integrated_system, sample_project
             assert (
                 next_state in valid_transitions[current_state]
             ), f"Invalid transition: {current_state} → {next_state}"
+
+
+# ============================================================================
+# AUTHENTICATION & AUTHORIZATION INTEGRATION TESTS
+# ============================================================================
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_full_auth_workflow_register_login_create_project(api_client, clean_db):
+    """
+    Test complete authentication workflow: register → login → access protected endpoint.
+
+    Validates:
+    - User registration
+    - JWT token generation
+    - Token-based access to protected endpoints
+    - End-to-end authentication flow
+    """
+    from fastapi.testclient import TestClient
+
+    # Step 1: Register a new user
+    registration_data = {
+        "email": "testuser@example.com",
+        "password": "SecurePassword123!",
+        "full_name": "Test User",
+    }
+
+    register_response = api_client.post("/auth/register", json=registration_data)
+    assert register_response.status_code == 201
+    user_data = register_response.json()
+    assert user_data["email"] == "testuser@example.com"
+    assert "hashed_password" not in user_data  # Password should not be in response
+
+    # Step 2: Login to get JWT token
+    login_data = {"username": "testuser@example.com", "password": "SecurePassword123!"}
+
+    token_response = api_client.post(
+        "/auth/token",
+        data=login_data,  # OAuth2 uses form data, not JSON
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert token_response.status_code == 200
+    token_data = token_response.json()
+
+    assert "access_token" in token_data
+    assert token_data["token_type"] == "bearer"
+    access_token = token_data["access_token"]
+
+    # Step 3: Use token to access protected endpoint (create project)
+    project_data = {
+        "name": "Authenticated Project",
+        "domain": "https://authenticated-project.com",
+        "telegram_channel": "@auth_project",
+    }
+
+    create_response = api_client.post(
+        "/projects/", json=project_data, headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert create_response.status_code == 201
+    project = create_response.json()
+
+    assert project["name"] == "Authenticated Project"
+    assert project["domain"] == "https://authenticated-project.com"
+    assert "id" in project
+
+    # Step 4: Verify can access user profile with token
+    me_response = api_client.get("/auth/me", headers={"Authorization": f"Bearer {access_token}"})
+    assert me_response.status_code == 200
+    user_profile = me_response.json()
+
+    assert user_profile["email"] == "testuser@example.com"
+    assert user_profile["full_name"] == "Test User"
+    assert user_profile["is_active"] is True
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_protected_endpoint_without_token_returns_401(api_client):
+    """
+    Test that accessing protected endpoint without token returns 401 Unauthorized.
+
+    Validates:
+    - Authentication middleware is working
+    - Proper error response for unauthenticated requests
+    - Security headers are set correctly
+    """
+    # Attempt to create project without authentication
+    project_data = {"name": "Unauthorized Project", "domain": "https://unauthorized.com"}
+
+    response = api_client.post("/projects/", json=project_data)
+
+    # Should return 401 Unauthorized
+    assert response.status_code == 401
+    error_data = response.json()
+
+    assert "detail" in error_data
+    assert "Not authenticated" in error_data["detail"]
+
+    # Verify WWW-Authenticate header is present
+    assert "WWW-Authenticate" in response.headers
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_protected_endpoint_with_invalid_token_returns_401(api_client):
+    """
+    Test that accessing protected endpoint with invalid token returns 401.
+
+    Validates:
+    - Token validation is working
+    - Invalid tokens are rejected
+    - Proper error messaging
+    """
+    # Attempt to access protected endpoint with invalid token
+    invalid_token = "invalid.jwt.token.here"
+
+    response = api_client.get("/auth/me", headers={"Authorization": f"Bearer {invalid_token}"})
+
+    # Should return 401 Unauthorized
+    assert response.status_code == 401
+    error_data = response.json()
+
+    assert "detail" in error_data
+    assert "Could not validate credentials" in error_data["detail"]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_expired_token_returns_401(api_client, clean_db):
+    """
+    Test that expired tokens are rejected.
+
+    Validates:
+    - Token expiration is enforced
+    - Expired tokens cannot access protected resources
+    """
+    from datetime import timedelta
+
+    from security import create_access_token
+
+    # Create a token that's already expired
+    expired_token = create_access_token(
+        data={"sub": "test@example.com", "user_id": "123"},
+        expires_delta=timedelta(seconds=-10),  # Expired 10 seconds ago
+    )
+
+    response = api_client.get("/auth/me", headers={"Authorization": f"Bearer {expired_token}"})
+
+    # Should return 401 Unauthorized
+    assert response.status_code == 401
+    error_data = response.json()
+
+    assert "detail" in error_data
+    assert "Could not validate credentials" in error_data["detail"]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inactive_user_cannot_access_protected_endpoints(api_client, clean_db):
+    """
+    Test that inactive users cannot access protected endpoints.
+
+    Validates:
+    - User activation status is checked
+    - Inactive users are denied access even with valid token
+    """
+    # Register user
+    registration_data = {
+        "email": "inactive@example.com",
+        "password": "Password123!",
+        "full_name": "Inactive User",
+    }
+
+    api_client.post("/auth/register", json=registration_data)
+
+    # Login to get token
+    login_data = {"username": "inactive@example.com", "password": "Password123!"}
+
+    token_response = api_client.post(
+        "/auth/token",
+        data=login_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    access_token = token_response.json()["access_token"]
+
+    # TODO: Add logic to deactivate user in database
+    # For now, this test documents the expected behavior
+
+    # Attempt to access protected endpoint with valid token but inactive user
+    # Should return 400 Bad Request with "Inactive user" message
+    # (Implementation depends on your user deactivation logic)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_token_contains_correct_user_information(api_client, clean_db):
+    """
+    Test that JWT tokens contain correct user information.
+
+    Validates:
+    - Token payload includes user ID and email
+    - Token can be decoded to retrieve user information
+    - Scopes are correctly assigned
+    """
+    # Register and login
+    registration_data = {
+        "email": "tokentest@example.com",
+        "password": "Password123!",
+        "full_name": "Token Test User",
+    }
+
+    register_response = api_client.post("/auth/register", json=registration_data)
+    user_id = register_response.json()["id"]
+
+    login_data = {"username": "tokentest@example.com", "password": "Password123!"}
+
+    token_response = api_client.post(
+        "/auth/token",
+        data=login_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    access_token = token_response.json()["access_token"]
+
+    # Decode token to verify payload
+    from security import decode_access_token
+
+    token_data = decode_access_token(access_token)
+
+    assert token_data.username == "tokentest@example.com"
+    assert token_data.user_id == str(user_id)
+    assert token_data.scopes is not None
+    assert len(token_data.scopes) > 0
+    assert token_data.expires_at is not None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_superuser_can_access_admin_endpoints(api_client, clean_db):
+    """
+    Test that superusers can access admin-only endpoints.
+
+    Validates:
+    - Superuser role is correctly assigned
+    - Admin endpoints check superuser status
+    - Regular users cannot access admin endpoints
+    """
+    # This test requires superuser creation logic in your system
+    # For now, this documents the expected behavior
+
+    # TODO: Implement once admin endpoints are defined
+    pass

@@ -16,20 +16,28 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from loguru import logger
 from pydantic import BaseModel, Field
 
+# Import dependency functions from container
+from container import container, get_content_service
 from core.exceptions import WorkflowError
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
-from orchestration.content_agent import ContentAgent
-from orchestration.task_queue import TaskManager
+
+# from orchestration.task_queue import TaskManager  # File was deleted
 from knowledge.article_repository import ArticleRepository
+from orchestration.content_agent import ContentAgent
+from security import User, get_current_active_user
 from services.content_service import ContentService
 
-# Import dependency functions
-from api.dependencies import get_db_manager, get_article_repository, get_task_manager, get_content_service
-
 router = APIRouter(prefix="/content", tags=["Content"])
+
+
+# Simple dependency function for FastAPI
+def get_content_service_dependency() -> ContentService:
+    """Get ContentService instance for FastAPI dependency injection."""
+    return container.content_service()
 
 
 # ============================================================================
@@ -41,7 +49,7 @@ class BatchGenerateRequest(BaseModel):
     """Command: Batch content generation."""
 
     project_id: UUID
-    topics: List[str] = Field(..., min_items=1, max_items=50)
+    topics: List[str] = Field(..., min_length=1, max_length=50)
     priority: str = Field("high", pattern="^(low|medium|high|critical)$")
     schedule_after: Optional[datetime] = Field(None, description="Delayed execution")
 
@@ -102,6 +110,161 @@ class ContentAnalyticsResponse(BaseModel):
 # ============================================================================
 
 
+class GenerateContentRequest(BaseModel):
+    """Command: Generate single article asynchronously."""
+
+    project_id: UUID
+    topic: str = Field(..., min_length=3, max_length=500)
+    priority: str = Field("high", pattern="^(low|medium|high|critical)$")
+    custom_instructions: Optional[str] = Field(None, description="Custom generation instructions")
+
+
+@router.post(
+    "/generate/async",
+    response_model=dict,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Generate content asynchronously",
+)
+async def generate_content_async(
+    request: GenerateContentRequest,
+    user: User = Depends(get_current_active_user),
+):
+    """
+    Generate a single article asynchronously using Celery.
+
+    Dispatches content generation task to Celery worker queue and returns
+    immediately with a task ID for tracking progress.
+
+    The task will:
+    1. Execute keyword research
+    2. Create content plan
+    3. Generate full article
+    4. Optionally distribute to configured channels
+
+    Args:
+        request: Generation parameters including project_id, topic, priority
+
+    Returns:
+        Dict with task_id for status tracking via /content/task/{task_id}
+
+    Example:
+        POST /content/generate/async
+        {
+            "project_id": "123e4567-e89b-12d3-a456-426614174000",
+            "topic": "AI-Powered Content Automation",
+            "priority": "high",
+            "custom_instructions": "Focus on technical implementation"
+        }
+
+        Response:
+        {
+            "task_id": "abc-123-def-456",
+            "status": "queued",
+            "project_id": "123e4567-e89b-12d3-a456-426614174000",
+            "topic": "AI-Powered Content Automation",
+            "submitted_at": "2024-01-15T10:30:00Z"
+        }
+    """
+    from orchestration.tasks import generate_content_task
+
+    logger.info(
+        f"Async content generation requested | project_id={request.project_id} | "
+        f"topic={request.topic} | priority={request.priority}"
+    )
+
+    # Dispatch Celery task
+    task = generate_content_task.apply_async(
+        args=[
+            str(request.project_id),
+            request.topic,
+            request.priority,
+            request.custom_instructions,
+        ],
+        queue=request.priority,  # Route to appropriate priority queue
+        routing_key=request.priority,
+    )
+
+    logger.info(
+        f"Content generation task dispatched | task_id={task.id} | "
+        f"project_id={request.project_id}"
+    )
+
+    return {
+        "task_id": task.id,
+        "status": "queued",
+        "project_id": str(request.project_id),
+        "topic": request.topic,
+        "priority": request.priority,
+        "submitted_at": datetime.utcnow().isoformat(),
+        "status_endpoint": f"/content/task/{task.id}",
+    }
+
+
+@router.get(
+    "/task/{task_id}",
+    response_model=dict,
+    summary="Get task status",
+)
+async def get_task_status(task_id: str):
+    """
+    Query the status of an asynchronous content generation task.
+
+    Args:
+        task_id: The task ID returned from /generate/async
+
+    Returns:
+        Dict with task state, progress, and result (if completed)
+
+    Task States:
+        - PENDING: Task is waiting to be executed
+        - STARTED: Task has been started
+        - RETRY: Task is being retried
+        - FAILURE: Task failed (includes error info)
+        - SUCCESS: Task completed successfully (includes article data)
+    """
+    from celery.result import AsyncResult
+
+    from orchestration.celery_app import app
+
+    result = AsyncResult(task_id, app=app)
+
+    response = {
+        "task_id": task_id,
+        "state": result.state,
+        "ready": result.ready(),
+    }
+
+    # Add state-specific information
+    if result.state == "PENDING":
+        response["status"] = "Task is queued and waiting to be executed"
+
+    elif result.state == "STARTED":
+        response["status"] = "Task is currently being processed"
+        response["current"] = result.info.get("current", 0) if isinstance(result.info, dict) else 0
+        response["total"] = result.info.get("total", 100) if isinstance(result.info, dict) else 100
+
+    elif result.state == "RETRY":
+        response["status"] = "Task is being retried after a failure"
+        response["retry_count"] = (
+            result.info.get("retry_count", 0) if isinstance(result.info, dict) else 0
+        )
+
+    elif result.state == "FAILURE":
+        response["status"] = "Task failed"
+        response["error"] = str(result.info) if result.info else "Unknown error"
+        response["traceback"] = result.traceback
+
+    elif result.state == "SUCCESS":
+        response["status"] = "Task completed successfully"
+        response["result"] = result.result
+        response["completed_at"] = result.date_done.isoformat() if result.date_done else None
+
+    else:
+        response["status"] = f"Unknown state: {result.state}"
+
+    return response
+
+
 @router.post(
     "/generate/batch",
     response_model=dict,
@@ -111,7 +274,8 @@ class ContentAnalyticsResponse(BaseModel):
 async def batch_generate_content(
     request: BatchGenerateRequest,
     background_tasks: BackgroundTasks,
-    content_service: ContentService = Depends(get_content_service),
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Generate multiple articles in parallel.
@@ -129,8 +293,7 @@ async def batch_generate_content(
 
 @router.get("/batch/{batch_id}/status", response_model=dict, summary="Get batch generation status")
 async def get_batch_status(
-    batch_id: str, 
-    content_service: ContentService = Depends(get_content_service)
+    batch_id: str, content_service: ContentService = Depends(get_content_service_dependency)
 ):
     """
     Query batch generation progress.
@@ -150,7 +313,7 @@ async def get_batch_status(
 async def get_article(
     article_id: UUID,
     include_content: bool = Query(True, description="Include full content"),
-    content_service: ContentService = Depends(get_content_service),
+    content_service: ContentService = Depends(get_content_service_dependency),
 ):
     """
     Retrieve article by ID.
@@ -170,7 +333,8 @@ async def get_article(
 async def revise_article(
     article_id: UUID,
     request: ContentRevisionRequest,
-    content_service: ContentService = Depends(get_content_service),
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Request revision of existing article based on feedback.
@@ -185,8 +349,9 @@ async def revise_article(
 
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete article")
 async def delete_article(
-    article_id: UUID, 
-    content_service: ContentService = Depends(get_content_service)
+    article_id: UUID,
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Delete article permanently.
@@ -205,8 +370,7 @@ async def delete_article(
     "/{article_id}/quality", response_model=ContentQualityMetrics, summary="Get quality metrics"
 )
 async def get_quality_metrics(
-    article_id: UUID, 
-    content_service: ContentService = Depends(get_content_service)
+    article_id: UUID, content_service: ContentService = Depends(get_content_service_dependency)
 ):
     """
     Retrieve detailed quality metrics for article.
@@ -223,9 +387,10 @@ async def get_quality_metrics(
 
 @router.post("/{article_id}/analyze", response_model=dict, summary="Trigger comprehensive analysis")
 async def trigger_comprehensive_analysis(
-    article_id: UUID, 
-    background_tasks: BackgroundTasks, 
-    content_service: ContentService = Depends(get_content_service)
+    article_id: UUID,
+    background_tasks: BackgroundTasks,
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Trigger deep analysis of article quality.
@@ -251,7 +416,8 @@ async def trigger_comprehensive_analysis(
 async def distribute_article(
     article_id: UUID,
     channels: List[str] = Query(..., description="Distribution channels"),
-    content_service: ContentService = Depends(get_content_service),
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
         Distribute article to specified channels.
@@ -271,8 +437,7 @@ async def distribute_article(
     summary="Get distribution status",
 )
 async def get_distribution_status(
-    article_id: UUID, 
-    content_service: ContentService = Depends(get_content_service)
+    article_id: UUID, content_service: ContentService = Depends(get_content_service_dependency)
 ):
     """
     Query article distribution status.
@@ -291,8 +456,7 @@ async def get_distribution_status(
     summary="Get article revision history",
 )
 async def get_article_history(
-    article_id: UUID, 
-    content_service: ContentService = Depends(get_content_service)
+    article_id: UUID, content_service: ContentService = Depends(get_content_service_dependency)
 ):
     """
     Retrieve complete revision history for article.
@@ -310,7 +474,7 @@ async def get_content_analytics(
     project_id: Optional[UUID] = Query(None, description="Filter by project"),
     start_date: datetime = Query(datetime.utcnow() - timedelta(days=30)),
     end_date: datetime = Query(datetime.utcnow()),
-    content_service: ContentService = Depends(get_content_service),
+    content_service: ContentService = Depends(get_content_service_dependency),
 ):
     """
     Retrieve comprehensive content generation analytics.
@@ -327,7 +491,8 @@ async def export_content(
     format: str = Query("json", pattern="^(json|csv)$"),
     start_date: datetime = Query(datetime.utcnow() - timedelta(days=30)),
     end_date: datetime = Query(datetime.utcnow()),
-    content_service: ContentService = Depends(get_content_service),
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
         Export content data in specified format.
@@ -378,7 +543,7 @@ async def search_articles(
     query: str = Query(..., min_length=1, description="Search query"),
     project_id: Optional[UUID] = Query(None, description="Filter by project"),
     limit: int = Query(20, ge=1, le=100),
-    content_service: ContentService = Depends(get_content_service),
+    content_service: ContentService = Depends(get_content_service_dependency),
 ):
     """
         Full-text search across article titles and content.

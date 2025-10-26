@@ -62,15 +62,17 @@ class RedisConnectionPool:
         """Initialize Redis connection pool with optimized parameters."""
         try:
             self._pool = ConnectionPool(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                db=settings.REDIS_DB,
-                password=settings.REDIS_PASSWORD if hasattr(settings, "REDIS_PASSWORD") else None,
+                host=settings.redis.host,
+                port=settings.redis.port,
+                db=settings.redis.db,
+                password=(
+                    settings.redis.password.get_secret_value() if settings.redis.password else None
+                ),
                 encoding="utf-8",
                 decode_responses=False,  # Handle binary data manually
-                max_connections=50,
-                socket_timeout=5.0,
-                socket_connect_timeout=5.0,
+                max_connections=settings.redis.max_connections,
+                socket_timeout=settings.redis.socket_timeout,
+                socket_connect_timeout=settings.redis.socket_connect_timeout,
                 socket_keepalive=True,
                 health_check_interval=30,
             )

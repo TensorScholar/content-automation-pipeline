@@ -149,7 +149,7 @@ class BenchmarkExecutor:
         from execution.content_planner import ContentPlanner
         from execution.distributor import Distributor
         from execution.keyword_researcher import KeywordResearcher
-        from infrastructure.llm_client import LLMClient
+        from infrastructure.llm_client import get_llm_client
         from infrastructure.monitoring import MetricsCollector
         from intelligence.context_synthesizer import ContextSynthesizer
         from intelligence.decision_engine import DecisionEngine
@@ -170,7 +170,7 @@ class BenchmarkExecutor:
         cache = CacheManager(self.redis)
         context_synthesizer = ContextSynthesizer(projects, rulebook_mgr, decision_engine, cache)
 
-        llm = LLMClient()
+        llm = get_llm_client()
         model_router = ModelRouter()
         metrics = MetricsCollector()
         budget_manager = TokenBudgetManager(self.redis, metrics)

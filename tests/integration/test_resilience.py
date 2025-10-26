@@ -5,11 +5,13 @@ Tests the distributed circuit breaker functionality to ensure
 fault isolation and fail-fast behavior when LLM providers are down.
 """
 
-import pytest
 import asyncio
 from unittest.mock import AsyncMock
-from infrastructure.llm_client import LLMClient, LLMProviderError
+
+import pytest
+
 from core.exceptions import LLMTimeoutError
+from infrastructure.llm_client import LLMProviderError, get_llm_client
 
 
 @pytest.mark.asyncio
@@ -20,9 +22,11 @@ async def test_circuit_breaker_opens_on_repeated_failures(redis):
     mock_llm_api.chat.completions.create.side_effect = LLMTimeoutError("API timed out")
 
     # Initialize LLM client with low retries and low failure threshold for faster testing
-    llm_client = LLMClient(redis_client=redis, cache_manager=None, max_retries=1)
+    llm_client = get_llm_client(
+        provider="openai", redis_client=redis, cache_manager=None, max_retries=1
+    )
     llm_client.openai_client = mock_llm_api
-    llm_client.circuit_breakers['openai'].failure_threshold = 2  # Open after 2 failures
+    llm_client.circuit_breaker.failure_threshold = 2  # Open after 2 failures
 
     # First and second calls should fail after retries
     with pytest.raises(LLMTimeoutError):
@@ -44,9 +48,10 @@ async def test_circuit_breaker_recovers_after_timeout(redis):
     """Verify the circuit breaker recovers after the recovery timeout."""
     # Mock the LLM API client to simulate initial failures then success
     mock_llm_api = AsyncMock()
-    
+
     # First few calls fail, then succeed
     call_count = 0
+
     async def side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
@@ -56,26 +61,21 @@ async def test_circuit_breaker_recovers_after_timeout(redis):
             # Return a successful response
             mock_response = AsyncMock()
             mock_response.choices = [
-                AsyncMock(
-                    message=AsyncMock(content="Success!"),
-                    finish_reason="stop"
-                )
+                AsyncMock(message=AsyncMock(content="Success!"), finish_reason="stop")
             ]
-            mock_response.usage = AsyncMock(
-                prompt_tokens=5,
-                completion_tokens=10,
-                total_tokens=15
-            )
+            mock_response.usage = AsyncMock(prompt_tokens=5, completion_tokens=10, total_tokens=15)
             return mock_response
 
     mock_llm_api.chat.completions.create.side_effect = side_effect
 
     # Initialize LLM client with low thresholds for faster testing
-    llm_client = LLMClient(redis_client=redis, cache_manager=None, max_retries=1)
+    llm_client = get_llm_client(
+        provider="openai", redis_client=redis, cache_manager=None, max_retries=1
+    )
     llm_client.openai_client = mock_llm_api
-    llm_client.circuit_breakers['openai'].failure_threshold = 2
-    llm_client.circuit_breakers['openai'].recovery_timeout = 5.0  # 5 second recovery
-    llm_client.circuit_breakers['openai'].success_threshold = 1  # 1 success to close
+    llm_client.circuit_breaker.failure_threshold = 2
+    llm_client.circuit_breaker.recovery_timeout = 5.0  # 5 second recovery
+    llm_client.circuit_breaker.success_threshold = 1  # 1 success to close
 
     # First two calls should fail and open the circuit
     with pytest.raises(LLMTimeoutError):
@@ -93,41 +93,48 @@ async def test_circuit_breaker_recovers_after_timeout(redis):
     # After recovery timeout, circuit should be half-open and allow one call
     response = await llm_client.complete(prompt="test 4", model="gpt-4")
     assert response.content == "Success!"
-    
+
     print("✓ Circuit breaker recovery test passed. Circuit recovered after timeout.")
 
 
 @pytest.mark.asyncio
 async def test_circuit_breaker_separate_per_provider(redis):
     """Verify that circuit breakers are separate for each provider."""
-    # Mock both providers
+    # Mock OpenAI
     mock_openai = AsyncMock()
     mock_openai.chat.completions.create.side_effect = LLMTimeoutError("OpenAI down")
-    
+
+    # Mock Anthropic
     mock_anthropic = AsyncMock()
     mock_anthropic.messages.create.side_effect = LLMTimeoutError("Anthropic down")
 
-    # Initialize LLM client
-    llm_client = LLMClient(redis_client=redis, cache_manager=None, max_retries=1)
-    llm_client.openai_client = mock_openai
-    llm_client.anthropic_client = mock_anthropic
-    llm_client.circuit_breakers['openai'].failure_threshold = 1
-    llm_client.circuit_breakers['anthropic'].failure_threshold = 1
+    # Initialize separate LLM clients for each provider
+    openai_client = get_llm_client(
+        provider="openai", redis_client=redis, cache_manager=None, max_retries=1
+    )
+    openai_client.openai_client = mock_openai
+    openai_client.circuit_breaker.failure_threshold = 1
+
+    anthropic_client = get_llm_client(
+        provider="anthropic", redis_client=redis, cache_manager=None, max_retries=1
+    )
+    anthropic_client.anthropic_client = mock_anthropic
+    anthropic_client.circuit_breaker.failure_threshold = 1
 
     # Fail OpenAI circuit breaker
     with pytest.raises(LLMTimeoutError):
-        await llm_client.complete(prompt="test", model="gpt-4")
+        await openai_client.complete(prompt="test", model="gpt-4")
 
     # OpenAI circuit should be open
     with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN"):
-        await llm_client.complete(prompt="test", model="gpt-4")
+        await openai_client.complete(prompt="test", model="gpt-4")
 
     # Anthropic should still work (separate circuit breaker)
     with pytest.raises(LLMTimeoutError):
-        await llm_client.complete(prompt="test", model="claude-3-sonnet-20240229")
+        await anthropic_client.complete(prompt="test", model="claude-haiku-4-5-20251001")
 
     # Anthropic circuit should now be open too
     with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN"):
-        await llm_client.complete(prompt="test", model="claude-3-sonnet-20240229")
+        await anthropic_client.complete(prompt="test", model="claude-haiku-4-5-20251001")
 
     print("✓ Separate circuit breakers test passed. Providers isolated correctly.")

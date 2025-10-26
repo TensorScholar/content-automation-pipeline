@@ -20,7 +20,7 @@ from loguru import logger
 
 from core.exceptions import GenerationError, QualityValidationError, TokenBudgetExceededError
 from core.models import ContentPlan, GeneratedArticle, Keyword, Project, Section, SectionIntent
-from infrastructure.llm_client import LLMClient
+from infrastructure.llm_client import AbstractLLMClient
 from infrastructure.monitoring import MetricsCollector
 from intelligence.context_synthesizer import ContextSynthesizer
 from intelligence.semantic_analyzer import SemanticAnalyzer
@@ -48,7 +48,7 @@ class ContentGenerator:
 
     def __init__(
         self,
-        llm_client: LLMClient,
+        llm_client: AbstractLLMClient,
         context_synthesizer: ContextSynthesizer,
         semantic_analyzer: SemanticAnalyzer,
         model_router: ModelRouter,
