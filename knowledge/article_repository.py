@@ -17,7 +17,7 @@ from uuid import UUID
 from loguru import logger
 from sqlalchemy import delete, func, or_, select
 
-from core.models import GeneratedArticle
+from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
 from infrastructure.schema import article_revisions_table, generated_articles_table
 
@@ -441,3 +441,34 @@ class ArticleRepository:
         revision = await self.db.fetch_one(revision_query)
 
         return dict(revision) if revision else None
+
+    async def save_content_plan(self, plan: ContentPlan) -> None:
+        """
+        Saves a new content plan to the database.
+
+        Args:
+            plan: The ContentPlan object to save.
+        """
+        # Note: 'outline' is a JSONB field.
+        # 'keywords' needs to be serialized (e.g., list of strings).
+        query = """
+            INSERT INTO content_plans (
+                id, project_id, topic, outline, 
+                target_word_count, readability_target, 
+                estimated_cost_usd, created_at
+            ) VALUES (
+                :id, :project_id, :topic, :outline,
+                :target_word_count, :readability_target,
+                :estimated_cost_usd, :created_at
+            )
+        """
+
+        # Serialize complex types for database
+        plan_dict = plan.model_dump()
+        plan_dict["outline"] = plan.outline.model_dump_json()
+
+        await self.db.execute(query=query, values=plan_dict)
+
+    # =========================================================================
+    # CONTENT PLAN OPERATIONS
+    # =========================================================================
