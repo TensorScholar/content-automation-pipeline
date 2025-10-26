@@ -469,6 +469,34 @@ class ArticleRepository:
 
         await self.db.execute(query=query, values=plan_dict)
 
+    async def save_generated_article(self, article: GeneratedArticle) -> None:
+        """
+        Saves a fully generated article to the database.
+
+        Args:
+            article: The GeneratedArticle object to save.
+        """
+        # Note: 'quality_metrics' is a JSONB field.
+        query = """
+            INSERT INTO generated_articles (
+                id, project_id, content_plan_id, title, content, 
+                meta_description, total_tokens_used, total_cost_usd,
+                generation_time_seconds, quality_metrics, model_used,
+                status, created_at, updated_at
+            ) VALUES (
+                :id, :project_id, :content_plan_id, :title, :content, 
+                :meta_description, :total_tokens_used, :total_cost_usd,
+                :generation_time_seconds, :quality_metrics, :model_used,
+                :status, :created_at, :updated_at
+            )
+        """
+
+        # Serialize complex types for database
+        article_dict = article.model_dump()
+        article_dict["quality_metrics"] = article.quality_metrics.model_dump_json()
+
+        await self.db.execute(query=query, values=article_dict)
+
     # =========================================================================
     # CONTENT PLAN OPERATIONS
     # =========================================================================

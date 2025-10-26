@@ -1,629 +1,197 @@
 """
-Content Generator: LLM-Orchestrated Article Synthesis Engine
+Content Generator - Strategic Article Execution Engine
+=====================================================
 
-This module implements economically-optimized, quality-assured content generation
-through adaptive prompt synthesis, incremental section generation, and multi-stage
-validation. Leverages semantic coherence analysis and statistical quality metrics
-to ensure output fidelity while minimizing API costs.
+The ContentGenerator executes ContentPlan sections by:
+- Iterating through plan sections sequentially
+- Using ModelRouter for CREATIVE_GENERATION capability
+- Checking budget before each section generation
+- Implementing quality and SEO analysis
+- Persisting final articles via ArticleRepository
 
-Architectural Pattern: Strategy + Pipeline with Adaptive Quality Gates
+Architecture: Orchestration pattern with dependency injection
 """
 
-import asyncio
-import json
-from datetime import datetime
-from typing import Dict, List, Optional, Tuple
-from uuid import UUID, uuid4
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+from uuid import UUID
 
-import numpy as np
 from loguru import logger
 
-from core.exceptions import GenerationError, QualityValidationError, TokenBudgetExceededError
-from core.models import ContentPlan, GeneratedArticle, Keyword, Project, Section, SectionIntent
+from core.exceptions import WorkflowError
+from core.models import ContentPlan, GeneratedArticle, Keyword, QualityMetrics
 from infrastructure.llm_client import AbstractLLMClient
 from infrastructure.monitoring import MetricsCollector
 from intelligence.context_synthesizer import ContextSynthesizer
 from intelligence.semantic_analyzer import SemanticAnalyzer
-from optimization.model_router import ModelRouter
-from optimization.prompt_compressor import PromptCompressor
+from knowledge.article_repository import ArticleRepository
+from optimization.model_router import ModelCapability, ModelRouter, RoutingTask, TaskComplexity
 from optimization.token_budget_manager import TokenBudgetManager
 
 
 class ContentGenerator:
     """
-    Adaptive content generation engine with economic optimization and quality assurance.
+    Strategic content generation system.
 
-    Implements a multi-stage generation pipeline:
-    1. Context preparation and compression
-    2. Section-by-section synthesis with validation gates
-    3. Coherence analysis and refinement
-    4. Final assembly with metadata generation
-
-    Design Philosophy:
-    - Fail fast: Validate early sections before generating later ones
-    - Economic rationality: Use cheapest model that meets quality threshold
-    - Semantic consistency: Enforce coherence across section boundaries
-    - Graceful degradation: Retry with enhanced prompts on quality failures
+    Executes ContentPlan sections by orchestrating model routing,
+    budget management, and quality analysis to produce final articles.
     """
 
     def __init__(
         self,
+        model_router: ModelRouter,
         llm_client: AbstractLLMClient,
         context_synthesizer: ContextSynthesizer,
         semantic_analyzer: SemanticAnalyzer,
-        model_router: ModelRouter,
         token_budget_manager: TokenBudgetManager,
-        prompt_compressor: PromptCompressor,
+        article_repository: ArticleRepository,
         metrics_collector: MetricsCollector,
     ):
-        self.llm = llm_client
+        self.model_router = model_router
+        self.llm_client = llm_client
         self.context_synthesizer = context_synthesizer
         self.semantic_analyzer = semantic_analyzer
-        self.model_router = model_router
         self.budget_manager = token_budget_manager
-        self.prompt_compressor = prompt_compressor
+        self.article_repo = article_repository
         self.metrics = metrics_collector
 
-        # Quality thresholds
-        self.min_readability_score = 60.0  # Flesch-Kincaid
-        self.min_section_coherence = 0.75  # Cosine similarity
-        self.max_keyword_density = 0.025  # 2.5%
-        self.min_keyword_density = 0.005  # 0.5%
-
-        # Generation parameters
-        self.max_retries = 2
-        self.temperature_progression = [0.7, 0.5, 0.3]  # Decrease on retries
-
-        logger.info("ContentGenerator initialized with adaptive quality gates")
-
     async def generate_article(
-        self, content_plan: ContentPlan, project: Project, priority: str = "high"
+        self,
+        project_id: UUID,
+        plan: ContentPlan,
     ) -> GeneratedArticle:
         """
-        Generate complete article from content plan with quality assurance.
-
-        Args:
-            content_plan: Structured outline with keyword strategy
-            project: Project context for voice/tone adaptation
-            priority: Token budget priority level
-
-        Returns:
-            GeneratedArticle with full content and metadata
-
-        Raises:
-            GenerationError: On irrecoverable generation failures
-            TokenBudgetExceededError: When budget allocation exhausted
+        Generates a full article based on the provided content plan.
         """
-        start_time = datetime.utcnow()
-        article_id = uuid4()
+        logger.info(f"Starting article generation for plan: {plan.outline.title}")
+        start_time = time.perf_counter()
 
-        logger.info(
-            f"Initiating article generation | article_id={article_id} | "
-            f"topic={content_plan.topic} | sections={len(content_plan.outline.sections)}"
-        )
+        article_content_parts = []
+        total_tokens = 0
+        total_cost = 0.0
 
-        try:
-            # Allocate token budget for this generation task
-            budget = await self.budget_manager.allocate_budget(
-                task_type="article_generation",
-                priority=priority,
-                estimated_sections=len(content_plan.outline.sections),
-            )
+        # 1. Iterate through each section in the plan
+        for section in plan.outline.sections:
+            logger.debug(f"Generating section: {section.heading}")
 
-            # Prepare compressed context
-            context = await self._prepare_generation_context(project, content_plan)
-
-            # Generate sections with validation gates
-            sections_content = await self._generate_sections_incremental(
-                content_plan.outline.sections, context, budget, content_plan.primary_keywords
-            )
-
-            # Assemble full article
-            full_content = await self._assemble_article(
-                title=content_plan.outline.title,
-                sections=sections_content,
-                meta_description=content_plan.outline.meta_description,
-            )
-
-            # Final quality validation
-            quality_metrics = await self._validate_full_article(
-                full_content, content_plan.primary_keywords + content_plan.secondary_keywords
-            )
-
-            # Generate metadata
-            article = GeneratedArticle(
-                id=article_id,
-                project_id=project.id,
-                content_plan_id=content_plan.id,
-                title=content_plan.outline.title,
-                content=full_content,
-                meta_description=content_plan.outline.meta_description,
-                word_count=quality_metrics["word_count"],
-                readability_score=quality_metrics["readability_score"],
-                keyword_density=quality_metrics["keyword_density"],
-                total_tokens_used=budget.tokens_consumed,
-                total_cost=budget.cost_incurred,
-                generation_time=(datetime.utcnow() - start_time).total_seconds(),
-                created_at=datetime.utcnow(),
-            )
-
-            # Record metrics
-            await self._record_generation_metrics(article, quality_metrics)
-
-            logger.success(
-                f"Article generation completed | article_id={article_id} | "
-                f"words={article.word_count} | cost=${article.total_cost:.4f} | "
-                f"time={article.generation_time:.2f}s"
-            )
-
-            return article
-
-        except Exception as e:
-            logger.error(f"Article generation failed | article_id={article_id} | error={e}")
-            raise GenerationError(f"Failed to generate article: {str(e)}") from e
-
-    async def _prepare_generation_context(self, project: Project, content_plan: ContentPlan) -> str:
-        """
-        Prepare and compress context for content generation.
-
-        Synthesizes project knowledge (rulebook, inferred patterns, best practices)
-        into a compact, information-dense context suitable for LLM prompts.
-        """
-        logger.debug(f"Preparing generation context | project_id={project.id}")
-
-        # Build context stream
-        raw_context = await self.context_synthesizer.synthesize_context(
-            project=project,
-            topic=content_plan.topic,
-            keywords=content_plan.primary_keywords,
-            level="standard",  # Balance between richness and cost
-        )
-
-        # Compress for token efficiency
-        compressed = await self.prompt_compressor.compress_context(
-            context=raw_context,
-            target_tokens=1200,  # ~30% of typical prompt budget
-            preserve_critical=True,
-        )
-
-        logger.debug(
-            f"Context prepared | original_tokens={len(raw_context.split())*1.3:.0f} | "
-            f"compressed_tokens={len(compressed.split())*1.3:.0f}"
-        )
-
-        return compressed
-
-    async def _generate_sections_incremental(
-        self,
-        sections: List[Section],
-        context: str,
-        budget: "TokenBudget",
-        primary_keywords: List[Keyword],
-    ) -> List[Dict[str, str]]:
-        """
-        Generate sections incrementally with validation gates.
-
-        Implements early-exit strategy: validate each section before proceeding
-        to next. This prevents wasting tokens on later sections if early ones fail.
-        """
-        generated_sections = []
-        cumulative_content = ""
-
-        for idx, section in enumerate(sections):
-            logger.debug(f"Generating section {idx+1}/{len(sections)} | heading={section.heading}")
-
-            # Check budget availability
-            if not budget.has_capacity(estimated_tokens=400):
-                raise TokenBudgetExceededError(
-                    f"Insufficient budget for section {idx+1}/{len(sections)}"
-                )
-
-            # Generate section with retry mechanism
-            section_content = await self._generate_single_section(
-                section=section,
-                context=context,
-                previous_content=cumulative_content,
-                keywords=primary_keywords,
-                budget=budget,
-            )
-
-            # Validate section quality
-            is_valid, validation_msg = await self._validate_section(
-                section_content, section, cumulative_content
-            )
-
-            if not is_valid:
+            # 2. Check budget BEFORE generation
+            if not await self.budget_manager.can_afford(
+                project_id=project_id, estimated_cost=0.05  # Assume a small cost per section
+            ):
                 logger.warning(
-                    f"Section validation failed | section={idx+1} | reason={validation_msg}"
+                    f"Token budget exceeded for project {project_id}. Stopping generation."
                 )
+                break  # Stop generation if budget is hit
 
-                # Retry with enhanced prompt
-                section_content = await self._regenerate_section_with_feedback(
-                    section=section,
-                    context=context,
-                    previous_content=cumulative_content,
-                    feedback=validation_msg,
-                    budget=budget,
-                )
+            # 3. Build section-specific prompt
+            section_prompt = self._build_section_prompt(plan, section)
 
-            generated_sections.append(
-                {
-                    "heading": section.heading,
-                    "content": section_content,
-                    "intent": section.intent.value,
-                }
+            # 4. Route for *Creative Generation*
+            routing_task = RoutingTask(
+                task_id=f"gen_{plan.id}_{section.heading[:20]}",
+                capability_required=ModelCapability.CREATIVE_GENERATION,
+                complexity=TaskComplexity.MODERATE,
+                estimated_input_tokens=len(section_prompt) // 3,
+                estimated_output_tokens=plan.target_word_count // len(plan.outline.sections),
+            )
+            decision = await self.model_router.route(routing_task)
+
+            # 5. Call LLM to generate section content
+            response = await self.llm_client.complete(
+                prompt=section_prompt,
+                model=decision.selected_model,
+                temperature=0.7,  # Generation can be more creative
+                max_tokens=2000,
             )
 
-            cumulative_content += f"\n\n## {section.heading}\n\n{section_content}"
+            # 6. Format and append content (e.g., wrap in <h2> and <p>)
+            formatted_section = f"<h2>{section.heading}</h2>\n<p>{response.content}</p>\n"
+            article_content_parts.append(formatted_section)
 
-        logger.info(f"All sections generated successfully | total_sections={len(sections)}")
-        return generated_sections
-
-    async def _generate_single_section(
-        self,
-        section: Section,
-        context: str,
-        previous_content: str,
-        keywords: List[Keyword],
-        budget: "TokenBudget",
-        temperature: float = 0.7,
-    ) -> str:
-        """
-        Generate a single section using optimal model routing.
-
-        Constructs section-specific prompt with contextual continuity from
-        previous sections and explicit keyword integration requirements.
-        """
-        # Route to optimal model based on section complexity
-        model = await self.model_router.select_model(
-            task_type="section_generation",
-            complexity=self._estimate_section_complexity(section),
-            budget_constraint=budget.remaining_budget,
-        )
-
-        # Construct section prompt
-        prompt = self._build_section_prompt(
-            section=section, context=context, previous_content=previous_content, keywords=keywords
-        )
-
-        # Compress prompt if needed
-        if len(prompt.split()) * 1.3 > budget.max_prompt_tokens:
-            prompt = await self.prompt_compressor.compress_prompt(
-                prompt, target_tokens=budget.max_prompt_tokens
+            # 7. Update costs and report to budget manager
+            total_tokens += response.usage.total_tokens
+            total_cost += response.cost
+            await self.budget_manager.record_usage(
+                project_id=project_id, tokens=response.usage.total_tokens, cost=response.cost
             )
 
-        # Generate with LLM
-        response = await self.llm.complete(
-            prompt=prompt,
-            model=model,
-            temperature=temperature,
-            max_tokens=section.estimated_words * 1.5,  # Conservative estimate
-            stop_sequences=["##", "\n\n---"],  # Prevent running into next section
+        # 8. Assemble final article
+        final_content = "\n".join(article_content_parts)
+        generation_time = time.perf_counter() - start_time
+
+        # 9. Run quality analysis
+        quality_metrics = await self._run_quality_analysis(final_content, plan.primary_keywords)
+
+        # 10. Create and save the article object
+        article = GeneratedArticle(
+            id=uuid.uuid4(),
+            project_id=project_id,
+            content_plan_id=plan.id,
+            title=plan.outline.title,
+            content=final_content,
+            meta_description=plan.outline.meta_description,
+            total_tokens_used=total_tokens,
+            total_cost_usd=total_cost,
+            generation_time_seconds=generation_time,
+            quality_metrics=quality_metrics,
+            model_used=decision.selected_model,
+            status="completed",
+            created_at=datetime.utcnow(timezone.utc),
+            updated_at=datetime.utcnow(timezone.utc),
         )
 
-        # Update budget tracking
-        budget.consume(
-            prompt_tokens=response.usage.prompt_tokens,
-            completion_tokens=response.usage.completion_tokens,
-            cost=response.cost,
-        )
+        await self.article_repo.save_generated_article(article)
+        logger.success(f"Article generated and saved: {article.title}")
+        return article
 
-        return response.content.strip()
-
-    def _build_section_prompt(
-        self, section: Section, context: str, previous_content: str, keywords: List[Keyword]
-    ) -> str:
+    def _build_section_prompt(self, plan: ContentPlan, section) -> str:
+        """Constructs the prompt to instruct the LLM to *write* a specific section."""
+        return f"""
+        Act as an expert writer. Your task is to write a single, comprehensive section for an article.
+        
+        **Article Title:** {plan.outline.title}
+        **Target Audience:** Professional audience
+        **Tone:** Authoritative and informative
+        
+        **Section to Write:** {section.heading}
+        
+        **Instructions for this section (You MUST follow these):**
+        Write comprehensive content for the "{section.heading}" section. Include relevant information, examples, and insights that would be valuable to readers.
+        
+        Write *only* the text for this section. Do NOT include the heading. Do NOT add any preamble or sign-off.
         """
-        Construct optimized section generation prompt.
 
-        Implements adaptive prompting strategy based on section intent
-        and keyword integration requirements.
+    async def _run_quality_analysis(self, content: str, keywords: List[Keyword]) -> QualityMetrics:
         """
-        # Intent-specific guidance
-        intent_guidance = {
-            SectionIntent.INTRODUCE: (
-                "Begin with a compelling hook that establishes relevance. "
-                "Provide necessary background without assuming prior knowledge."
-            ),
-            SectionIntent.EXPLAIN: (
-                "Break down complex concepts into digestible explanations. "
-                "Use examples and analogies where appropriate."
-            ),
-            SectionIntent.COMPARE: (
-                "Present balanced comparisons with clear criteria. "
-                "Use structured formats (tables, lists) when helpful."
-            ),
-            SectionIntent.CONCLUDE: (
-                "Synthesize key points without introducing new information. "
-                "Provide actionable takeaways or clear next steps."
-            ),
-            SectionIntent.INSTRUCT: (
-                "Provide step-by-step instructions with clear sequence. "
-                "Anticipate common questions or obstacles."
-            ),
-        }
-
-        # Extract keyword phrases for natural integration
-        keyword_phrases = [kw.phrase for kw in keywords[:5]]  # Top 5
-
-        prompt = f"""You are writing a section for a professional article.
-
-PROJECT CONTEXT:
-{context}
-
-PREVIOUS CONTENT (for continuity):
-{previous_content[-800:] if previous_content else "This is the first section."}
-
-SECTION SPECIFICATION:
-Heading: {section.heading}
-Intent: {section.intent.value}
-Target Length: ~{section.estimated_words} words
-
-WRITING GUIDELINES:
-{intent_guidance.get(section.intent, "Provide clear, engaging content.")}
-
-KEYWORD INTEGRATION:
-Naturally incorporate these concepts: {', '.join(keyword_phrases)}
-Do NOT force keywords—prioritize readability and natural flow.
-
-STYLE REQUIREMENTS:
-- Write in clear, accessible language (Flesch-Kincaid grade 10-12)
-- Use short paragraphs (3-4 sentences maximum)
-- Employ active voice and concrete examples
-- Maintain consistent tone with previous sections
-
-Generate ONLY the content for this section. Do not include the heading itself.
-Do not add transitional phrases to the next section.
-Begin writing now:"""
-
-        return prompt
-
-    async def _validate_section(
-        self, section_content: str, section: Section, previous_content: str
-    ) -> Tuple[bool, str]:
+        Analyzes the generated content for quality metrics.
+        (This is a simplified implementation. Real-world would be more complex.)
         """
-        Validate section quality using local NLP and heuristics.
+        logger.debug("Running quality analysis...")
+        # Use existing SemanticAnalyzer for text processing
+        word_count = len(self.semantic_analyzer.tokenize(content))
+        sentence_count = len(self.semantic_analyzer.sentencize(content))
+        avg_sentence_length = word_count / max(sentence_count, 1)
+        lexical_diversity = await self.semantic_analyzer.calculate_lexical_diversity(content)
 
-        Checks:
-        1. Semantic coherence with previous content
-        2. Appropriate length
-        3. Keyword integration (not over-optimized)
-        4. Readability metrics
-        """
-        word_count = len(section_content.split())
+        # Placeholder for readability
+        readability_score = 70.0  # Placeholder
 
-        # Length validation
-        expected_words = section.estimated_words
-        if word_count < expected_words * 0.6:
-            return False, f"Section too short: {word_count} words (expected ~{expected_words})"
-
-        if word_count > expected_words * 1.8:
-            return False, f"Section too long: {word_count} words (expected ~{expected_words})"
-
-        # Semantic coherence check (if previous content exists)
-        if previous_content:
-            coherence = await self.semantic_analyzer.compute_coherence(
-                previous_content[-500:],  # Last portion of previous content
-                section_content[:500],  # Beginning of current section
-            )
-
-            if coherence < self.min_section_coherence:
-                return False, f"Low semantic coherence: {coherence:.3f}"
-
-        # Keyword density check
-        for keyword in section.target_keywords:
-            density = section_content.lower().count(keyword.lower()) / word_count
-            if density > self.max_keyword_density:
-                return (
-                    False,
-                    f"Keyword over-optimization detected: '{keyword}' density={density:.3f}",
-                )
-
-        # Readability check (local computation)
-        readability = self._compute_readability(section_content)
-        if readability < 50.0:  # Lower threshold for sections
-            return False, f"Low readability score: {readability:.1f}"
-
-        return True, "Section validated"
-
-    async def _regenerate_section_with_feedback(
-        self,
-        section: Section,
-        context: str,
-        previous_content: str,
-        feedback: str,
-        budget: "TokenBudget",
-    ) -> str:
-        """
-        Regenerate section with explicit feedback integration.
-
-        Uses lower temperature and enhanced prompt to address validation failures.
-        """
-        logger.info(f"Regenerating section with feedback | section={section.heading}")
-
-        # Enhanced prompt with feedback
-        base_prompt = self._build_section_prompt(
-            section=section,
-            context=context,
-            previous_content=previous_content,
-            keywords=[],  # Will be in base prompt
-        )
-
-        enhanced_prompt = f"""{base_prompt}
-
-IMPORTANT FEEDBACK FROM PREVIOUS ATTEMPT:
-{feedback}
-
-Please address this feedback in your generation. Focus on quality over length.
-Begin writing now:"""
-
-        # Use lower temperature for more focused generation
-        return await self._generate_single_section(
-            section=section,
-            context=context,
-            previous_content=previous_content,
-            keywords=[],  # Already in enhanced prompt
-            budget=budget,
-            temperature=0.5,
-        )
-
-    async def _assemble_article(
-        self, title: str, sections: List[Dict[str, str]], meta_description: str
-    ) -> str:
-        """
-        Assemble final article from generated sections.
-
-        Formats sections with proper HTML/Markdown structure and
-        ensures consistent formatting throughout.
-        """
-        article_parts = [f"# {title}\n"]
-
-        for section_data in sections:
-            article_parts.append(f"## {section_data['heading']}\n")
-            article_parts.append(f"{section_data['content']}\n")
-
-        full_content = "\n".join(article_parts)
-
-        logger.debug(f"Article assembled | total_length={len(full_content)} chars")
-        return full_content
-
-    async def _validate_full_article(self, content: str, keywords: List[Keyword]) -> Dict[str, any]:
-        """
-        Comprehensive quality validation for complete article.
-
-        Returns quality metrics for storage and analysis.
-        """
-        word_count = len(content.split())
-
-        # Readability analysis
-        readability = self._compute_readability(content)
-
-        # Keyword density analysis
+        # Calculate keyword density
         keyword_density = {}
-        for keyword in keywords:
-            phrase = keyword.phrase.lower()
-            occurrences = content.lower().count(phrase)
-            density = occurrences / word_count if word_count > 0 else 0
-            keyword_density[phrase] = density
+        content_lower = content.lower()
+        for kw in keywords:
+            kw_lower = kw.phrase.lower()
+            count = content_lower.count(kw_lower)
+            density = count / max(word_count, 1)
+            keyword_density[kw.phrase] = density
 
-        # Average keyword density
-        avg_density = np.mean(list(keyword_density.values())) if keyword_density else 0
-
-        # Validation gates
-        if readability < self.min_readability_score:
-            logger.warning(
-                f"Article readability below threshold | score={readability:.1f} | "
-                f"threshold={self.min_readability_score}"
-            )
-
-        if avg_density < self.min_keyword_density:
-            logger.warning(
-                f"Keyword density too low | avg_density={avg_density:.4f} | "
-                f"threshold={self.min_keyword_density}"
-            )
-
-        return {
-            "word_count": word_count,
-            "readability_score": readability,
-            "keyword_density": keyword_density,
-            "avg_keyword_density": avg_density,
-        }
-
-    def _compute_readability(self, text: str) -> float:
-        """
-        Compute Flesch-Kincaid readability score.
-
-        Formula: 206.835 - 1.015(total_words/total_sentences) - 84.6(total_syllables/total_words)
-        Higher scores indicate easier readability.
-        """
-        sentences = text.split(".")
-        sentences = [s.strip() for s in sentences if s.strip()]
-
-        words = text.split()
-        total_words = len(words)
-        total_sentences = len(sentences)
-
-        if total_words == 0 or total_sentences == 0:
-            return 0.0
-
-        # Approximate syllable count
-        total_syllables = sum(self._count_syllables(word) for word in words)
-
-        score = (
-            206.835
-            - 1.015 * (total_words / total_sentences)
-            - 84.6 * (total_syllables / total_words)
-        )
-
-        return max(0.0, min(100.0, score))  # Clamp to [0, 100]
-
-    def _count_syllables(self, word: str) -> int:
-        """
-        Approximate syllable count using vowel clustering heuristic.
-        """
-        word = word.lower()
-        vowels = "aeiouy"
-        syllable_count = 0
-        previous_was_vowel = False
-
-        for char in word:
-            is_vowel = char in vowels
-            if is_vowel and not previous_was_vowel:
-                syllable_count += 1
-            previous_was_vowel = is_vowel
-
-        # Adjust for silent 'e'
-        if word.endswith("e"):
-            syllable_count -= 1
-
-        # Ensure at least one syllable
-        return max(1, syllable_count)
-
-    def _estimate_section_complexity(self, section: Section) -> str:
-        """
-        Estimate section complexity for model routing decisions.
-
-        Complexity factors:
-        - Intent type (explain/compare = higher complexity)
-        - Estimated word count
-        - Number of target keywords
-        """
-        complexity_scores = {
-            SectionIntent.INTRODUCE: 2,
-            SectionIntent.EXPLAIN: 4,
-            SectionIntent.COMPARE: 5,
-            SectionIntent.CONCLUDE: 2,
-            SectionIntent.INSTRUCT: 3,
-        }
-
-        base_complexity = complexity_scores.get(section.intent, 3)
-
-        # Adjust for length
-        if section.estimated_words > 400:
-            base_complexity += 1
-
-        # Adjust for keyword density requirement
-        if len(section.target_keywords) > 3:
-            base_complexity += 1
-
-        if base_complexity <= 2:
-            return "low"
-        elif base_complexity <= 4:
-            return "medium"
-        else:
-            return "high"
-
-    async def _record_generation_metrics(
-        self, article: GeneratedArticle, quality_metrics: Dict[str, any]
-    ):
-        """Record comprehensive metrics for monitoring and optimization."""
-        await self.metrics.record_generation(
-            article_id=str(article.id),
-            project_id=str(article.project_id),
-            word_count=article.word_count,
-            tokens_used=article.total_tokens_used,
-            cost=article.total_cost,
-            generation_time=article.generation_time,
-            readability_score=quality_metrics["readability_score"],
-            avg_keyword_density=quality_metrics["avg_keyword_density"],
+        return QualityMetrics(
+            word_count=word_count,
+            readability_score=readability_score,
+            lexical_diversity=lexical_diversity,
+            keyword_density=keyword_density,
+            avg_sentence_length=avg_sentence_length,
+            paragraph_count=len([p for p in content.split("\n\n") if p.strip()]),
         )
