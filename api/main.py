@@ -1806,6 +1806,8 @@ async def list_projects(
             name=p.name,
             domain=p.domain,
             telegram_channel=p.telegram_channel,
+            wordpress_url=p.wordpress_url,
+            wordpress_username=p.wordpress_username,
             created_at=p.created_at,
             total_articles_generated=p.total_articles_generated,
             has_rulebook=False,  # TODO: batch load

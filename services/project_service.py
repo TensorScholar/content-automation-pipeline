@@ -17,6 +17,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
+from pydantic import SecretStr
 
 from core.exceptions import ProjectNotFoundError
 from core.models import InferredPatterns, Project, Rulebook
@@ -48,6 +49,9 @@ class ProjectService:
         name: str,
         domain: Optional[str] = None,
         telegram_channel: Optional[str] = None,
+        wordpress_url: Optional[str] = None,
+        wordpress_username: Optional[str] = None,
+        wordpress_app_password: Optional[str] = None,
         rulebook_content: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
@@ -73,7 +77,16 @@ class ProjectService:
         try:
             async with self.database_manager.session() as session:
                 # Create project object
-                project = Project(name=name, domain=domain, telegram_channel=telegram_channel)
+                project = Project(
+                    name=name,
+                    domain=domain,
+                    telegram_channel=telegram_channel,
+                    wordpress_url=wordpress_url,
+                    wordpress_username=wordpress_username,
+                    wordpress_app_password=SecretStr(wordpress_app_password)
+                    if wordpress_app_password
+                    else None,
+                )
 
                 # Create repositories with database manager
                 project_repo = ProjectRepository(self.database_manager)

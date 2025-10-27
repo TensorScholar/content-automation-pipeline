@@ -17,6 +17,13 @@ class CreateProjectRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Project name")
     domain: Optional[str] = Field(None, description="Target website domain (e.g., 'example.com')")
     telegram_channel: Optional[str] = Field(None, description="Telegram channel ID")
+    wordpress_url: Optional[str] = Field(
+        None, description="WordPress site URL (e.g., 'https://example.com')"
+    )
+    wordpress_username: Optional[str] = Field(None, description="WordPress username")
+    wordpress_app_password: Optional[str] = Field(
+        None, description="WordPress Application Password"
+    )
     rulebook_content: Optional[str] = Field(None, description="Initial rulebook content")
 
     @validator("domain")
@@ -44,6 +51,9 @@ class ProjectResponse(BaseModel):
     name: str
     domain: Optional[str]
     telegram_channel: Optional[str]
+    wordpress_url: Optional[str]
+    wordpress_username: Optional[str]
+    # DO NOT expose the password in the response
     created_at: datetime
     total_articles_generated: int
     has_rulebook: bool

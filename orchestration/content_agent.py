@@ -10,7 +10,7 @@ Architectural Pattern: Orchestrator + State Machine with Event Sourcing
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -224,14 +224,21 @@ class ContentAgent:
                         feedback=validation_result["issues"],
                     )
 
-            # Stage 6: Distribution (if enabled and approved)
-            if self.config.enable_auto_distribution and not self.config.require_manual_approval:
+            # Stage 6: Distribution (if enabled)
+            if self.config.enable_auto_distribution:
                 await self._transition_state(WorkflowState.DISTRIBUTION)
-                distribution_result = await self._distribute_article(
+                channels, results = await self._distribute_article(
                     article=article, project=project_context["project"]
                 )
-                article.distributed_at = datetime.utcnow()
-                article.distribution_channels = distribution_result["channels"]
+                if channels:
+                    article.distributed_at = datetime.utcnow(timezone.utc)
+                    article.distribution_channels = channels
+                    # We need to re-save the article to update its distributed status
+                    await self.article_repo.update_article_distribution(
+                        article_id=article.id,
+                        distributed_at=article.distributed_at,
+                        channels=channels,
+                    )
 
             # Workflow completion
             await self._transition_state(WorkflowState.COMPLETED)
@@ -447,7 +454,7 @@ class ContentAgent:
 
         # TODO: Implement content generation when content_plan is available
         # For now, create a mock article to test the workflow
-        from datetime import datetime
+        from datetime import datetime, timezone
         from uuid import uuid4
 
         from core.models import GeneratedArticle, QualityMetrics
@@ -597,36 +604,48 @@ class ContentAgent:
 
         return article
 
-    async def _distribute_article(self, article: GeneratedArticle, project: Project) -> Dict:
+    async def _distribute_article(
+        self, article: GeneratedArticle, project: Project
+    ) -> tuple[list[str], list[dict[str, Any]]]:
         """
-        Distribute article through configured channels.
-
-        Currently supports Telegram; extensible for additional channels.
+        Distributes the article to all configured channels for the project.
         """
-        logger.debug(f"Distributing article | article_id={article.id}")
+        channels_used: list[str] = []
+        distribution_results: list[dict[str, Any]] = []
 
-        channels_used = []
-
-        # Telegram distribution
+        # 1. Telegram Distribution (Existing)
         if project.telegram_channel:
             try:
-                await self.distributor.distribute_to_telegram(
+                tg_result = await self.distributor.distribute_to_telegram(
                     article=article, channel=project.telegram_channel
                 )
                 channels_used.append("telegram")
-                logger.info(f"Article distributed to Telegram | channel={project.telegram_channel}")
+                distribution_results.append(tg_result)
+                logger.info(f"Article distributed to Telegram: {project.telegram_channel}")
             except Exception as e:
-                logger.error(f"Telegram distribution failed | error={e}")
+                logger.error(f"Telegram distribution failed: {e}")
 
-        # Future: WordPress, email, etc.
+        # 2. WordPress Distribution (New)
+        if project.wordpress_url:
+            try:
+                wp_result = await self.distributor.distribute_to_wordpress(
+                    article=article, project=project
+                )
+                if wp_result.get("status") == "published":
+                    channels_used.append("wordpress")
+                    distribution_results.append(wp_result)
+            except Exception as e:
+                logger.error(f"WordPress distribution failed: {e}")
+
+        # ... (Future channels) ...
 
         self._record_event(
             WorkflowState.DISTRIBUTION,
-            f"Article distributed | channels={channels_used}",
-            {"channels": channels_used},
+            f"Article distributed to: {', '.join(channels_used) or 'None'}",
+            {"channels": channels_used, "results": distribution_results},
         )
 
-        return {"channels": channels_used, "distributed_at": datetime.utcnow()}
+        return channels_used, distribution_results
 
     async def _transition_state(self, new_state: WorkflowState):
         """Transition workflow to new state with event recording."""

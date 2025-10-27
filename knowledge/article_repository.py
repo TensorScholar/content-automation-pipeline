@@ -10,7 +10,7 @@ Encapsulates all database operations for article management including:
 Design Pattern: Repository Pattern with SQLAlchemy Core
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -496,6 +496,26 @@ class ArticleRepository:
         article_dict["quality_metrics"] = article.quality_metrics.model_dump_json()
 
         await self.db.execute(query=query, values=article_dict)
+
+    async def update_article_distribution(
+        self, article_id: UUID, distributed_at: datetime, channels: list[str]
+    ) -> None:
+        query = """
+            UPDATE generated_articles
+            SET distributed_at = :distributed_at, 
+                distribution_channels = :channels,
+                updated_at = :updated_at
+            WHERE id = :article_id
+        """
+        await self.db.execute(
+            query=query,
+            values={
+                "article_id": article_id,
+                "distributed_at": distributed_at,
+                "channels": channels,
+                "updated_at": datetime.utcnow(timezone.utc),
+            },
+        )
 
     # =========================================================================
     # CONTENT PLAN OPERATIONS

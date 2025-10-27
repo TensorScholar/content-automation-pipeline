@@ -69,6 +69,9 @@ projects_table = Table(
     Column("name", String(255), nullable=False),
     Column("domain", String(500)),
     Column("telegram_channel", String(255)),
+    Column("wordpress_url", String(500)),
+    Column("wordpress_username", String(255)),
+    Column("wordpress_app_password", String(500)),  # Stored as encrypted string
     Column("total_articles_generated", Integer, default=0),
     Column("created_at", DateTime, default=func.now()),
     Column("updated_at", DateTime, default=func.now(), onupdate=func.now()),

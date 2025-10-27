@@ -15,7 +15,15 @@ from typing import Any, Optional
 from uuid import UUID, uuid4
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, computed_field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    SecretStr,
+    computed_field,
+    field_validator,
+)
 
 from core.enums import (
     ContentStructureType,
@@ -79,6 +87,15 @@ class Project(BaseModelConfig):
 
     # Distribution
     telegram_channel: Optional[str] = Field(default=None)
+    wordpress_url: Optional[str] = Field(
+        default=None, description="The base URL of the WordPress site (e.g., https://example.com)"
+    )
+    wordpress_username: Optional[str] = Field(
+        default=None, description="WordPress username for Application Password"
+    )
+    wordpress_app_password: Optional[SecretStr] = Field(
+        default=None, description="WordPress Application Password (use pydantic.SecretStr)"
+    )
 
     # Relationships (loaded separately for performance)
     rulebook_id: Optional[UUID] = Field(default=None)
