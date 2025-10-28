@@ -477,11 +477,16 @@ class DecisionEngine:
             if "tone" in query.lower() or "voice" in query.lower():
                 recommendation = self._pattern_to_tone_recommendation(patterns)
 
+                # Ensure tone_embedding is a numpy array
+                tone_emb = patterns.tone_embedding
+                if isinstance(tone_emb, list):
+                    tone_emb = np.array(tone_emb, dtype=np.float32)
+
                 evidence.append(
                     Evidence(
                         source_layer=DecisionLayer.INFERRED_PATTERN,
                         content=recommendation,
-                        embedding=patterns.tone_embedding,
+                        embedding=tone_emb,
                         confidence=patterns.confidence,
                         authority=self.layer_authorities[DecisionLayer.INFERRED_PATTERN],
                         metadata={

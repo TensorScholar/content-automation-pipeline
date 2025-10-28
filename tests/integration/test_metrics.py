@@ -18,6 +18,7 @@ from orchestration.content_agent import ContentAgent
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_metrics_collector_records_workflow_metrics():
     """Verify that MetricsCollector records workflow completion metrics."""
     metrics_collector = MetricsCollector()
@@ -42,14 +43,30 @@ async def test_metrics_collector_records_workflow_metrics():
         error_type="LLMTimeoutError",
     )
 
-    # Verify metrics were recorded (checking internal state)
-    assert metrics_collector.workflow_success_total._value.get() == 1
-    assert metrics_collector.workflow_failure_total._value.get() == 1
+    # Verify metrics were recorded by checking the registry
+    from prometheus_client import REGISTRY
+
+    registry = REGISTRY
+    success_count = registry.get_sample_value(
+        "workflow_success_total",
+        labels={"project_id": project_id, "workflow_type": "content_generation"},
+    )
+    failure_count = registry.get_sample_value(
+        "workflow_failure_total",
+        labels={
+            "project_id": project_id,
+            "workflow_type": "content_generation",
+            "error_type": "LLMTimeoutError",
+        },
+    )
+    assert success_count == 1
+    assert failure_count == 1
 
     print("✓ Workflow metrics recording test passed.")
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_metrics_collector_records_llm_metrics():
     """Verify that MetricsCollector records LLM API call metrics."""
     metrics_collector = MetricsCollector()
@@ -76,15 +93,48 @@ async def test_metrics_collector_records_llm_metrics():
         token_type="total",
     )
 
-    # Verify metrics were recorded
-    assert metrics_collector.llm_api_requests_total._value.get() == 2
-    assert metrics_collector.llm_api_tokens_total._value.get() == 150
-    assert metrics_collector.llm_api_cost_total._value.get() == 0.045
+    # Verify metrics were recorded by checking the registry
+    from prometheus_client import REGISTRY
+
+    registry = REGISTRY
+    requests_count = (
+        registry.get_sample_value(
+            "llm_api_requests_total",
+            labels={"model": "gpt-4", "provider": "openai", "status": "success"},
+        )
+        or 0
+    )
+    requests_count_failure = (
+        registry.get_sample_value(
+            "llm_api_requests_total",
+            labels={"model": "gpt-4", "provider": "openai", "status": "failure"},
+        )
+        or 0
+    )
+    assert requests_count + requests_count_failure == 2
+
+    tokens_count = (
+        registry.get_sample_value(
+            "llm_api_tokens_total",
+            labels={"model": "gpt-4", "provider": "openai", "token_type": "total"},
+        )
+        or 0
+    )
+    assert tokens_count == 150
+
+    cost_total = (
+        registry.get_sample_value(
+            "llm_api_cost_total", labels={"model": "gpt-4", "provider": "openai"}
+        )
+        or 0
+    )
+    assert cost_total == 0.045
 
     print("✓ LLM API metrics recording test passed.")
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_metrics_collector_records_cache_metrics():
     """Verify that MetricsCollector records cache performance metrics."""
     metrics_collector = MetricsCollector()
@@ -98,14 +148,49 @@ async def test_metrics_collector_records_cache_metrics():
     metrics_collector.record_cache_miss("memory", "general")
     metrics_collector.record_cache_miss("redis", "general")
 
-    # Verify metrics were recorded
-    assert metrics_collector.cache_hits_total._value.get() == 3
-    assert metrics_collector.cache_misses_total._value.get() == 2
+    # Verify metrics were recorded by checking the registry
+    from prometheus_client import REGISTRY
+
+    registry = REGISTRY
+    hits_count = (
+        registry.get_sample_value(
+            "cache_hits_total", labels={"cache_level": "memory", "cache_type": "general"}
+        )
+        or 0
+    )
+    hits_count_redis = (
+        registry.get_sample_value(
+            "cache_hits_total", labels={"cache_level": "redis", "cache_type": "general"}
+        )
+        or 0
+    )
+    hits_count_memory_llm = (
+        registry.get_sample_value(
+            "cache_hits_total", labels={"cache_level": "memory", "cache_type": "llm_responses"}
+        )
+        or 0
+    )
+    assert hits_count + hits_count_redis + hits_count_memory_llm == 3
+
+    misses_count = (
+        registry.get_sample_value(
+            "cache_misses_total", labels={"cache_level": "memory", "cache_type": "general"}
+        )
+        or 0
+    )
+    misses_count_redis = (
+        registry.get_sample_value(
+            "cache_misses_total", labels={"cache_level": "redis", "cache_type": "general"}
+        )
+        or 0
+    )
+    assert misses_count + misses_count_redis == 2
 
     print("✓ Cache metrics recording test passed.")
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_metrics_collector_exports_prometheus_format():
     """Verify that MetricsCollector exports metrics in Prometheus format."""
     metrics_collector = MetricsCollector()
@@ -135,7 +220,9 @@ async def test_metrics_collector_exports_prometheus_format():
 
     # Verify format
     assert content_type == "text/plain; version=0.0.4; charset=utf-8"
-    assert isinstance(metrics_content, str)
+    assert isinstance(metrics_content, (str, bytes))
+    if isinstance(metrics_content, bytes):
+        metrics_content = metrics_content.decode("utf-8")
     assert "workflow_success_total" in metrics_content
     assert "llm_api_requests_total" in metrics_content
     assert "test-project" in metrics_content
@@ -145,6 +232,7 @@ async def test_metrics_collector_exports_prometheus_format():
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_metrics_collector_health_summary():
     """Verify that MetricsCollector provides health summary."""
     metrics_collector = MetricsCollector()
@@ -170,10 +258,13 @@ async def test_metrics_collector_health_summary():
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_content_agent_integrates_with_metrics():
     """Verify that ContentAgent integrates with MetricsCollector."""
     # Mock dependencies
-    mock_project_repo = AsyncMock()
+    from unittest.mock import Mock
+
+    mock_database_manager = Mock()
     mock_rulebook_manager = AsyncMock()
     mock_website_analyzer = AsyncMock()
     mock_decision_engine = AsyncMock()
@@ -181,13 +272,12 @@ async def test_content_agent_integrates_with_metrics():
     mock_keyword_researcher = AsyncMock()
     mock_content_planner = AsyncMock()
     mock_content_generator = AsyncMock()
-    mock_distributor = AsyncMock()
     mock_budget_manager = AsyncMock()
     mock_metrics_collector = MetricsCollector()
 
     # Create ContentAgent with metrics collector
     content_agent = ContentAgent(
-        project_repository=mock_project_repo,
+        database_manager=mock_database_manager,
         rulebook_manager=mock_rulebook_manager,
         website_analyzer=mock_website_analyzer,
         decision_engine=mock_decision_engine,
@@ -195,19 +285,19 @@ async def test_content_agent_integrates_with_metrics():
         keyword_researcher=mock_keyword_researcher,
         content_planner=mock_content_planner,
         content_generator=mock_content_generator,
-        distributor=mock_distributor,
         budget_manager=mock_budget_manager,
         metrics_collector=mock_metrics_collector,
     )
 
-    # Verify metrics collector is properly integrated
-    assert content_agent.metrics_collector is not None
-    assert content_agent.metrics_collector == mock_metrics_collector
+    # Verify metrics collector is properly integrated (stored as self.metrics)
+    assert content_agent.metrics is not None
+    assert content_agent.metrics == mock_metrics_collector
 
     print("✓ ContentAgent metrics integration test passed.")
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_llm_client_integrates_with_metrics():
     """Verify that LLM client integrates with MetricsCollector."""
     mock_redis_client = AsyncMock()
@@ -230,6 +320,7 @@ async def test_llm_client_integrates_with_metrics():
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("reset_metrics_collector")
 async def test_cache_manager_integrates_with_metrics():
     """Verify that CacheManager integrates with MetricsCollector."""
     mock_metrics_collector = MetricsCollector()

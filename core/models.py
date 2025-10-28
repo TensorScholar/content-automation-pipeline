@@ -492,13 +492,13 @@ class GeneratedArticle(BaseModelConfig):
     def word_count(self) -> int:
         """Get word count from quality metrics."""
         return self.quality_metrics.word_count
-    
+
     @computed_field
     @property
     def readability_score(self) -> float:
         """Get readability score from quality metrics."""
         return self.quality_metrics.readability_score
-    
+
     @computed_field
     @property
     def is_distributed(self) -> bool:

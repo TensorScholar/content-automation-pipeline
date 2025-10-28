@@ -9,7 +9,7 @@ Comprehensive unit tests for security module including:
 - FastAPI security dependencies
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -109,10 +109,10 @@ class TestJWTTokens:
         payload = jwt.decode(token, settings.secret_key.get_secret_value(), algorithms=[ALGORITHM])
 
         exp_timestamp = payload.get("exp")
-        exp_datetime = datetime.fromtimestamp(exp_timestamp)
+        exp_datetime = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
 
         # Should expire in approximately 60 minutes
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         delta = exp_datetime - now
         assert 59 <= delta.total_seconds() / 60 <= 61
 
@@ -224,11 +224,30 @@ class TestFastAPIDependencies:
     @pytest.mark.asyncio
     async def test_get_current_user_valid_token(self):
         """Test getting current user with valid token."""
+        from unittest.mock import AsyncMock
+
+        from security import UserInDB
+
         # Create a valid token
         token = create_access_token({"sub": "admin", "user_id": "1"})
 
-        # Get current user
-        user = await get_current_user(token)
+        # Mock user service
+        mock_user_service = AsyncMock()
+        mock_user_in_db = UserInDB(
+            id="1",
+            username="admin",
+            email="admin@example.com",
+            full_name="Admin User",
+            hashed_password="hashed_password",
+            is_active=True,
+            is_superuser=True,
+            created_at=datetime.utcnow(),
+        )
+        mock_user_service.get_user_by_email = AsyncMock(return_value=mock_user_in_db)
+
+        # Patch get_user_service to return our mock
+        with patch("container.get_user_service", return_value=mock_user_service):
+            user = await get_current_user(token)
 
         assert isinstance(user, User)
         assert user.username == "admin"
@@ -248,8 +267,29 @@ class TestFastAPIDependencies:
     @pytest.mark.asyncio
     async def test_get_current_user_returns_user_without_password(self):
         """Test that returned User object doesn't contain password."""
+        from unittest.mock import AsyncMock
+
+        from security import UserInDB
+
         token = create_access_token({"sub": "admin", "user_id": "1"})
-        user = await get_current_user(token)
+
+        # Mock user service
+        mock_user_service = AsyncMock()
+        mock_user_in_db = UserInDB(
+            id="1",
+            username="admin",
+            email="admin@example.com",
+            full_name="Admin User",
+            hashed_password="hashed_password",
+            is_active=True,
+            is_superuser=True,
+            created_at=datetime.utcnow(),
+        )
+        mock_user_service.get_user_by_email = AsyncMock(return_value=mock_user_in_db)
+
+        # Patch get_user_service to return our mock
+        with patch("container.get_user_service", return_value=mock_user_service):
+            user = await get_current_user(token)
 
         # User object should not have hashed_password attribute
         assert not hasattr(user, "hashed_password")

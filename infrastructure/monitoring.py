@@ -250,5 +250,9 @@ class MetricsCollector:
     @classmethod
     def reset_singleton(cls) -> None:
         """Reset singleton for testing purposes."""
+        if cls._instance is not None:
+            # Unregister all collectors from the registry
+            for collector in list(REGISTRY._collector_to_names.keys()):
+                REGISTRY.unregister(collector)
         cls._instance = None
         cls._initialized = False

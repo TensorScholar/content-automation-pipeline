@@ -124,15 +124,17 @@ async def integrated_system(clean_db, redis):
 
     # Knowledge layer
     projects = ProjectRepository(db)
-    
+
     # Mock the create method to return the project with an ID
     original_create = projects.create
+
     async def mock_create(project: Project) -> Project:
         if project.id is None:
             project.id = uuid4()
         return project
+
     projects.create = AsyncMock(side_effect=mock_create)
-    
+
     rulebook_mgr = RulebookManager(db.session(), semantic_analyzer)
 
     # Create required dependencies for WebsiteAnalyzer
@@ -153,10 +155,8 @@ async def integrated_system(clean_db, redis):
 
     # Optimization layer
     from optimization.token_budget_manager import BudgetConfig
-    budget_config = BudgetConfig(
-        daily_token_limit=10000,
-        daily_cost_limit=50.0
-    )
+
+    budget_config = BudgetConfig(daily_token_limit=10000, daily_cost_limit=50.0)
     budget_manager = TokenBudgetManager(budget_config)
     model_router = ModelRouter(budget_manager=budget_manager)
     prompt_compressor = PromptCompressor()
@@ -228,6 +228,7 @@ async def sample_project_with_rulebook(integrated_system):
 
     # Create project
     from core.models import Project
+
     project = Project(
         name="Integration Test Project",
         domain="https://integration-test.com",
@@ -258,8 +259,10 @@ async def sample_project_with_rulebook(integrated_system):
     """
 
     # Mock create_rulebook to avoid database calls
-    from core.models import Rulebook, Rule, RuleType
     from datetime import datetime
+
+    from core.models import Rule, Rulebook, RuleType
+
     mock_rulebook = Rulebook(
         id=uuid4(),
         project_id=project.id,
@@ -294,9 +297,11 @@ async def test_complete_content_generation_workflow(
     project = sample_project_with_rulebook
 
     # Create mock ContentPlan
-    from core.models import ContentPlan, Outline, Section, Keyword
-    from core.enums import SectionIntent, KeywordIntent
     from datetime import datetime, timezone
+
+    from core.enums import KeywordIntent, SectionIntent
+    from core.models import ContentPlan, Keyword, Outline, Section
+
     mock_outline = Outline(
         title="Advanced NLP Techniques for Content Automation",
         sections=[
@@ -304,7 +309,7 @@ async def test_complete_content_generation_workflow(
             Section(heading="Main Content", intent=SectionIntent.EXPLAIN, estimated_words=400),
             Section(heading="Conclusion", intent=SectionIntent.CONCLUDE, estimated_words=300),
         ],
-        meta_description="Comprehensive guide to advanced natural language processing techniques for automating content generation workflows"
+        meta_description="Comprehensive guide to advanced natural language processing techniques for automating content generation workflows",
     )
     mock_plan = ContentPlan(
         project_id=project.id,
@@ -325,11 +330,13 @@ async def test_complete_content_generation_workflow(
 
     # Create mock GeneratedArticle
     from core.models import GeneratedArticle, QualityMetrics
+
     mock_article = GeneratedArticle(
         project_id=project.id,
         content_plan_id=mock_plan.id,
         title="Advanced NLP Techniques for Content Automation",
-        content="<h1>Advanced NLP Techniques</h1><p>This is comprehensive content about NLP techniques.</p>" * 50,
+        content="<h1>Advanced NLP Techniques</h1><p>This is comprehensive content about NLP techniques.</p>"
+        * 50,
         meta_description="Comprehensive guide to advanced natural language processing techniques for automating content generation workflows",
         quality_metrics=QualityMetrics(
             readability_score=75.0,
@@ -349,42 +356,28 @@ async def test_complete_content_generation_workflow(
 
     # Mock the internal methods using mocker fixture
     mock_create_plan = mocker.patch.object(
-        agent.content_planner,
-        "create_content_plan",
-        return_value=mock_plan
+        agent.content_planner, "create_content_plan", return_value=mock_plan
     )
-    
+
     mock_generate_article = mocker.patch.object(
-        agent.content_generator,
-        "generate_article",
-        return_value=mock_article
+        agent.content_generator, "generate_article", return_value=mock_article
     )
-    
+
     # Mock keyword research and project context loading
     mock_keywords = {"primary": [], "secondary": [], "long_tail": []}
-    mocker.patch.object(
-        agent,
-        "_conduct_keyword_research",
-        return_value=mock_keywords
-    )
-    
+    mocker.patch.object(agent, "_conduct_keyword_research", return_value=mock_keywords)
+
     mock_context = {
         "project": project,
         "rulebook": None,
         "inferred_patterns": None,
         "decision_strategy": "explicit_rules",
     }
-    mocker.patch.object(
-        agent,
-        "_load_project_context",
-        return_value=mock_context
-    )
-    
+    mocker.patch.object(agent, "_load_project_context", return_value=mock_context)
+
     # Mock validation to pass
     mocker.patch.object(
-        agent,
-        "_validate_article_quality",
-        return_value={"passed": True, "issues": []}
+        agent, "_validate_article_quality", return_value={"passed": True, "issues": []}
     )
 
     # Execute complete workflow
@@ -418,6 +411,7 @@ async def test_workflow_with_new_project_no_context(integrated_system, clean_db)
 
     # Create minimal project
     from core.models import Project
+
     project = Project(name="New Project", domain=None, telegram_channel=None)
     project = await projects.create(project)
 
@@ -523,6 +517,7 @@ async def test_layer2_inferred_patterns_fallback(integrated_system, clean_db):
 
     # Create project
     from core.models import Project
+
     project = Project(name="Pattern Project", domain="https://pattern.com")
     project = await projects.create(project)
 
