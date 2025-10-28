@@ -78,6 +78,17 @@ class Decision:
     evidence_chain: List[Evidence]
     reasoning: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def source(self) -> str:
+        """Source layer as string value."""
+        return self.primary_layer.value
+
+    @property
+    def confidence(self) -> float:
+        """Alias for confidence_score for backward compatibility."""
+        return self.confidence_score
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize decision for logging/storage."""
@@ -268,6 +279,11 @@ class DecisionEngine:
         try:
             logger.info(f"Decision query: '{query}' for project {project_id}")
 
+            # Handle empty queries gracefully
+            if not query or not query.strip():
+                query = "general content guidance"
+                logger.warning(f"Empty query detected, defaulting to: '{query}'")
+
             # Generate query embedding
             query_embedding = await semantic_analyzer.embed(query, normalize=True)
 
@@ -300,6 +316,14 @@ class DecisionEngine:
             # Generate reasoning
             reasoning = self._generate_reasoning(evidence, choice, confidence)
 
+            # Populate metadata for provenance tracking
+            metadata = {
+                "query": query,
+                "decision_type": rule_type.value if rule_type else "general",
+                "timestamp": datetime.utcnow().isoformat(),
+                "evidence_count": len(evidence),
+            }
+
             decision = Decision(
                 query=query,
                 choice=choice,
@@ -308,6 +332,7 @@ class DecisionEngine:
                 primary_layer=primary_layer,
                 evidence_chain=evidence,
                 reasoning=reasoning,
+                metadata=metadata,
             )
 
             logger.info(

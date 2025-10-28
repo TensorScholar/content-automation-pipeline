@@ -340,6 +340,21 @@ class Outline(BaseModelConfig):
         return all(section.is_generated for section in self.sections)
 
 
+class ProjectContext(BaseModelConfig):
+    """
+    Synthesized project context for content generation.
+
+    Contains all relevant context information needed for content planning.
+    """
+
+    target_audience: str = Field(
+        default="general audience", description="Target audience description"
+    )
+    tone: str = Field(default="professional", description="Content tone")
+    style_guide: str = Field(default="standard", description="Style guide")
+    custom_instructions: Optional[str] = Field(default=None, description="Custom instructions")
+
+
 class ContentPlan(BaseModelConfig):
     """
     Strategic content plan for a topic.
@@ -472,6 +487,18 @@ class GeneratedArticle(BaseModelConfig):
             return 0.0
         return self.total_cost_usd / self.quality_metrics.word_count
 
+    @computed_field
+    @property
+    def word_count(self) -> int:
+        """Get word count from quality metrics."""
+        return self.quality_metrics.word_count
+    
+    @computed_field
+    @property
+    def readability_score(self) -> float:
+        """Get readability score from quality metrics."""
+        return self.quality_metrics.readability_score
+    
     @computed_field
     @property
     def is_distributed(self) -> bool:

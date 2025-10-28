@@ -423,6 +423,22 @@ class SemanticAnalyzer:
         logger.info(f"Deduplication: kept {len(keep_indices)}/{len(texts)} texts")
         return keep_indices
 
+    @staticmethod
+    def normalize_vector(vector: np.ndarray) -> np.ndarray:
+        """
+        Normalize vector to unit length.
+
+        Args:
+            vector: Input vector
+
+        Returns:
+            Normalized vector (L2 norm = 1)
+        """
+        norm = np.linalg.norm(vector)
+        if norm == 0:
+            return vector
+        return vector / norm
+
 
 # =========================================================================
 # SEMANTIC SEARCH
@@ -468,23 +484,6 @@ async def semantic_search(
 # =========================================================================
 # UTILITY METHODS
 # =========================================================================
-
-
-@staticmethod
-def normalize_vector(vector: np.ndarray) -> np.ndarray:
-    """
-    Normalize vector to unit length.
-
-    Args:
-        vector: Input vector
-
-    Returns:
-        Normalized vector (L2 norm = 1)
-    """
-    norm = np.linalg.norm(vector)
-    if norm == 0:
-        return vector
-    return vector / norm
 
 
 @staticmethod

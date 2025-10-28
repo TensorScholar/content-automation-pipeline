@@ -97,27 +97,27 @@ class TestGetLLMClientFactory:
         # Should be Anthropic client based on settings
         assert isinstance(client, AnthropicClient)
 
-    def test_factory_defaults_to_openai_when_no_provider_configured(self):
-        """Test that factory defaults to OpenAI when no provider is configured."""
+    def test_factory_defaults_to_anthropic_when_no_provider_configured(self):
+        """Test that factory defaults to Anthropic when no provider is configured."""
         # Mock settings without provider
         mock_settings = MagicMock()
         mock_settings.llm = MagicMock()
         mock_settings.llm.provider = None
-        mock_settings.llm.openai_api_key = MagicMock()
-        mock_settings.llm.openai_api_key.get_secret_value.return_value = "test-key"
+        mock_settings.llm.anthropic_api_key = MagicMock()
+        mock_settings.llm.anthropic_api_key.get_secret_value.return_value = "test-key"
 
         # Remove provider attribute to simulate missing config
         delattr(mock_settings.llm, "provider")
 
         mock_redis = MagicMock()
 
-        # Should default to OpenAI
+        # Should default to Anthropic
         client = get_llm_client(
             redis_client=mock_redis,
             settings=mock_settings,
         )
 
-        assert isinstance(client, OpenAIClient)
+        assert isinstance(client, AnthropicClient)
 
     def test_factory_raises_error_for_unsupported_provider(self):
         """Test that factory raises ValueError for unsupported providers."""

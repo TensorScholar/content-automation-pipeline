@@ -21,6 +21,13 @@ async def test_circuit_breaker_opens_on_repeated_failures(redis):
     mock_llm_api = AsyncMock()
     mock_llm_api.chat.completions.create.side_effect = LLMTimeoutError("API timed out")
 
+    # Mock Redis to return proper circuit breaker state
+    from infrastructure.llm_client import CircuitState
+
+    redis.get.return_value = None  # Start with CLOSED state
+    redis.incr.return_value = 1
+    redis.set.return_value = True
+
     # Initialize LLM client with low retries and low failure threshold for faster testing
     llm_client = get_llm_client(
         provider="openai", redis_client=redis, cache_manager=None, max_retries=1
@@ -34,8 +41,11 @@ async def test_circuit_breaker_opens_on_repeated_failures(redis):
     with pytest.raises(LLMTimeoutError):
         await llm_client.complete(prompt="test 2", model="gpt-4")
 
+    # Mock Redis to return OPEN state after failures
+    redis.get.return_value = CircuitState.OPEN.value
+
     # The circuit should now be open. This call should fail instantly.
-    with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN"):
+    with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN - service unavailable"):
         await llm_client.complete(prompt="test 3", model="gpt-4")
 
     # Ensure the API was not called for the third attempt
@@ -84,7 +94,7 @@ async def test_circuit_breaker_recovers_after_timeout(redis):
         await llm_client.complete(prompt="test 2", model="gpt-4")
 
     # Circuit should be open now
-    with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN"):
+    with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN - service unavailable"):
         await llm_client.complete(prompt="test 3", model="gpt-4")
 
     # Wait for recovery timeout
@@ -126,7 +136,7 @@ async def test_circuit_breaker_separate_per_provider(redis):
         await openai_client.complete(prompt="test", model="gpt-4")
 
     # OpenAI circuit should be open
-    with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN"):
+    with pytest.raises(LLMProviderError, match="Circuit breaker is OPEN - service unavailable"):
         await openai_client.complete(prompt="test", model="gpt-4")
 
     # Anthropic should still work (separate circuit breaker)

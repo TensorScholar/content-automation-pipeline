@@ -129,7 +129,7 @@ class ContentPlanner:
                 target_word_count=plan_data.get("target_word_count", 1500),
                 readability_target="grade_10-12",
                 estimated_cost_usd=0.0,
-                created_at=datetime.utcnow(timezone.utc),
+                created_at=datetime.now(timezone.utc),
             )
 
             # 6. Save and return

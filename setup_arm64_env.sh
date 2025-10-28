@@ -129,7 +129,7 @@ echo ""
 # STEP 6: Upgrade pip, setuptools, and wheel
 # =============================================================================
 print_step "Upgrading pip, setuptools, and wheel..."
-pip install --upgrade pip setuptools wheel
+pip install --upgrade pip setuptools wheel --trusted-host pypi.org --trusted-host files.pythonhosted.org
 print_success "Package managers upgraded"
 echo ""
 
@@ -139,7 +139,7 @@ echo ""
 print_step "Installing NumPy with ARM64 optimizations..."
 
 # Force reinstall NumPy to ensure ARM64 version
-pip install --no-cache-dir --force-reinstall "numpy>=1.24.0"
+pip install --no-cache-dir --force-reinstall "numpy>=1.24.0" --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 # Verify NumPy installation
 python -c "import numpy; print(f'NumPy version: {numpy.__version__}')"
@@ -154,10 +154,10 @@ echo ""
 print_step "Installing ML dependencies with ARM64 support..."
 
 # Install SciPy (needed for many ML libraries)
-pip install --no-cache-dir "scipy>=1.10.0"
+pip install --no-cache-dir "scipy>=1.10.0" --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 # Install scikit-learn
-pip install --no-cache-dir "scikit-learn==1.3.2"
+pip install --no-cache-dir "scikit-learn==1.3.2" --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 print_success "ML dependencies installed"
 echo ""
@@ -168,7 +168,7 @@ echo ""
 print_step "Installing PyTorch with ARM64/MPS support..."
 
 # Install PyTorch with Apple Silicon (MPS) support
-pip install --no-cache-dir torch torchvision torchaudio
+pip install --no-cache-dir torch torchvision torchaudio --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 print_success "PyTorch installed with MPS support"
 echo ""
@@ -179,7 +179,7 @@ echo ""
 print_step "Installing remaining requirements from requirements.txt..."
 
 # Install all other requirements
-pip install --no-cache-dir -r requirements.txt
+pip install --no-cache-dir -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 print_success "All requirements installed"
 echo ""

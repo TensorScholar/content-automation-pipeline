@@ -13,6 +13,7 @@ Design Pattern: Test Data Builder + Fixture Factory
 """
 
 import asyncio
+import os
 import random
 import string
 from datetime import datetime, timedelta
@@ -26,6 +27,23 @@ import redis as redis_client
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+# Set test environment variables before importing any modules
+os.environ.update(
+    {
+        "DB_USER": "test_user",
+        "DB_PASSWORD": "test_password",
+        "DB_HOST": "localhost",
+        "DB_PORT": "5432",
+        "DB_DATABASE": "test_db",
+        "REDIS_HOST": "localhost",
+        "REDIS_PORT": "6379",
+        "REDIS_DB": "15",
+        "SECRET_KEY": "test-secret-key",
+        "LLM_ANTHROPIC_API_KEY": "test-key",
+        "LLM_OPENAI_API_KEY": "test-key",
+    }
+)
 
 from core.models import (
     ContentPlan,
@@ -64,6 +82,33 @@ def event_loop():
     loop.close()
 
 
+@pytest.fixture(autouse=True)
+def reset_metrics_collector():
+    """Reset MetricsCollector singleton before each test."""
+    from infrastructure.monitoring import MetricsCollector
+
+    MetricsCollector.reset_singleton()
+    yield
+    MetricsCollector.reset_singleton()
+
+
+@pytest.fixture(autouse=True)
+async def clear_cache():
+    """Clear cache before each test."""
+    from optimization.cache_manager import cache_manager
+
+    # Clear memory cache
+    cache_manager._memory_cache.clear()
+    cache_manager._warm_keys.clear()
+    # Reset stats
+    cache_manager.reset_statistics()
+    yield
+    # Clear again after test
+    cache_manager._memory_cache.clear()
+    cache_manager._warm_keys.clear()
+    cache_manager.reset_statistics()
+
+
 # ============================================================================
 # DATABASE FIXTURES
 # ============================================================================
@@ -72,45 +117,43 @@ def event_loop():
 @pytest_asyncio.fixture
 async def db() -> AsyncGenerator[DatabaseManager, None]:
     """
-    Database fixture with transaction isolation.
+    Database fixture with mocked database manager.
 
-    Each test runs in a transaction that's rolled back after completion,
-    ensuring test isolation without database cleanup overhead.
+    Uses a mock database manager to avoid requiring actual database connection.
     """
-    db_manager = DatabaseManager()
-    await db_manager.initialize()
+    from unittest.mock import AsyncMock, Mock
 
-    # Start transaction
-    await db_manager.execute_raw("BEGIN")
+    # Create a mock database manager
+    mock_db = Mock(spec=DatabaseManager)
+    mock_db.execute = AsyncMock()
+    mock_db.execute_raw = AsyncMock()
+    mock_db.session = Mock()
+    mock_db.session.return_value.__aenter__ = AsyncMock()
+    mock_db.session.return_value.__aexit__ = AsyncMock()
+    mock_db.disconnect = AsyncMock()
 
-    yield db_manager
-
-    # Rollback transaction
-    await db_manager.execute_raw("ROLLBACK")
-    await db_manager.disconnect()
+    yield mock_db
 
 
 @pytest_asyncio.fixture
 async def clean_db() -> AsyncGenerator[DatabaseManager, None]:
     """
-    Clean database fixture without transaction (for integration tests).
+    Clean database fixture with mocked database manager.
 
-    Actually commits changes. Use sparingly and ensure cleanup.
+    Uses a mock database manager to avoid requiring actual database connection.
     """
-    db_manager = DatabaseManager()
-    await db_manager.initialize()
+    from unittest.mock import AsyncMock, Mock
 
-    yield db_manager
+    # Create a mock database manager
+    mock_db = Mock(spec=DatabaseManager)
+    mock_db.execute = AsyncMock()
+    mock_db.execute_raw = AsyncMock()
+    mock_db.session = Mock()
+    mock_db.session.return_value.__aenter__ = AsyncMock()
+    mock_db.session.return_value.__aexit__ = AsyncMock()
+    mock_db.disconnect = AsyncMock()
 
-    # Cleanup all test data
-    await db_manager.execute_raw("TRUNCATE TABLE generated_articles CASCADE")
-    await db_manager.execute_raw("TRUNCATE TABLE content_plans CASCADE")
-    await db_manager.execute_raw("TRUNCATE TABLE rules CASCADE")
-    await db_manager.execute_raw("TRUNCATE TABLE rulebooks CASCADE")
-    await db_manager.execute_raw("TRUNCATE TABLE inferred_patterns CASCADE")
-    await db_manager.execute_raw("TRUNCATE TABLE projects CASCADE")
-
-    await db_manager.disconnect()
+    yield mock_db
 
 
 # ============================================================================
@@ -121,19 +164,25 @@ async def clean_db() -> AsyncGenerator[DatabaseManager, None]:
 @pytest_asyncio.fixture
 async def redis() -> AsyncGenerator[RedisClient, None]:
     """
-    Redis fixture with test database isolation.
+    Redis fixture with mocked Redis client.
 
-    Uses separate Redis database (15) for testing to avoid
-    interfering with development/production data.
+    Uses a mock Redis client to avoid requiring actual Redis connection.
     """
-    redis_manager = RedisClient(db=15)  # Test database
-    await redis_manager.connect()
+    from unittest.mock import AsyncMock, Mock
 
-    yield redis_manager
+    # Create a mock Redis client
+    mock_redis = Mock(spec=RedisClient)
+    mock_redis.connect = AsyncMock()
+    mock_redis.disconnect = AsyncMock()
+    mock_redis.flushdb = AsyncMock()
+    mock_redis.get = AsyncMock()
+    mock_redis.set = AsyncMock()
+    mock_redis.delete = AsyncMock()
+    mock_redis.incr = AsyncMock()
+    mock_redis.expire = AsyncMock()
+    mock_redis.exists = AsyncMock()
 
-    # Cleanup
-    await redis_manager.flushdb()
-    await redis_manager.disconnect()
+    yield mock_redis
 
 
 # ============================================================================

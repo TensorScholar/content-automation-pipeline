@@ -12,7 +12,7 @@ Architectural Pattern: Orchestrator + State Machine with Event Sourcing
 import asyncio
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from loguru import logger
@@ -413,29 +413,37 @@ class ContentAgent:
         logger.debug(f"Planning content structure | topic={topic}")
 
         # Synthesize context for planning
-        # TODO: Implement synthesize_context method in ContextSynthesizer
-        context = None  # await self.context_synthesizer.synthesize_context(
-        #     project=project, topic=topic, keywords=keywords["primary"], level="standard"
-        # )
+        from core.models import ProjectContext
+
+        context = ProjectContext(
+            target_audience="technical professionals",
+            tone="professional",
+            style_guide="standard",
+            custom_instructions=custom_instructions,
+        )
 
         # Generate content plan
-        # TODO: Fix ContentPlanner class indentation issues
-        content_plan = None  # await self.content_planner.create_content_plan(...)
+        content_plan = await self.content_planner.create_content_plan(
+            project=project,
+            topic=topic,
+            keywords=keywords["primary"],
+            custom_instructions=custom_instructions,
+        )
 
         self._record_event(
             WorkflowState.CONTENT_PLANNING,
-            f"Content plan created | sections=0",  # TODO: Fix when content_plan is available
+            f"Content plan created | sections={len(content_plan.outline.sections)}",
             {
-                "target_words": 800,  # TODO: Get from content_plan
-                "estimated_cost": 0.0,  # TODO: Get from content_plan
-                "sections": 0,  # TODO: Get from content_plan
+                "target_words": content_plan.target_word_count,
+                "estimated_cost": content_plan.estimated_cost_usd,
+                "sections": len(content_plan.outline.sections),
             },
         )
 
         logger.info(
-            f"Content planned | sections=0 | "  # TODO: Fix when content_plan is available
-            f"target_words=800 | "  # TODO: Fix when content_plan is available
-            f"estimated_cost=$0.0000"  # TODO: Fix when content_plan is available
+            f"Content planned | sections={len(content_plan.outline.sections)} | "
+            f"target_words={content_plan.target_word_count} | "
+            f"estimated_cost=${content_plan.estimated_cost_usd:.4f}"
         )
 
         return content_plan
@@ -448,49 +456,18 @@ class ContentAgent:
 
         Implements budget-aware generation with quality gates.
         """
-        logger.debug(
-            f"Generating article | plan_id=None"
-        )  # TODO: Fix when content_plan is available
+        logger.debug(f"Generating article | plan_id={content_plan.id}")
 
-        # TODO: Implement content generation when content_plan is available
-        # For now, create a mock article to test the workflow
-        from datetime import datetime, timezone
-        from uuid import uuid4
-
-        from core.models import GeneratedArticle, QualityMetrics
-
-        article = GeneratedArticle(
-            id=uuid4(),
-            project_id=project.id,
-            content_plan_id=uuid4(),  # Mock content plan ID
-            title=f"Article about {topic}",
-            content=f"This is a mock article about {topic}. The full content generation workflow is not yet implemented. This article contains placeholder content to test the basic workflow functionality.",
-            meta_description=f"A comprehensive guide about {topic} covering key concepts and best practices.",
-            quality_metrics=QualityMetrics(
-                readability_score=85.0,
-                seo_score=90.0,
-                engagement_score=80.0,
-                factual_accuracy=95.0,
-                coherence_score=88.0,
-                word_count=len(
-                    f"This is a mock article about {topic}. The full content generation workflow is not yet implemented. This article contains placeholder content to test the basic workflow functionality.".split()
-                ),
-                lexical_diversity=0.75,
-                avg_sentence_length=15.0,
-                paragraph_count=3,
-            ),
-            total_tokens_used=150,
-            total_cost_usd=0.01,
-            generation_time_seconds=1.0,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+        # Generate article using ContentGenerator
+        article = await self.content_generator.generate_article(
+            project_id=project.id, content_plan=content_plan, priority=priority
         )
 
         self._record_event(
             WorkflowState.CONTENT_GENERATION,
             f"Article generated | id={article.id}",
             {
-                "word_count": len(article.content.split()),  # Calculate word count from content
+                "word_count": article.word_count,
                 "tokens_used": article.total_tokens_used,
                 "cost": article.total_cost_usd,
                 "generation_time": article.generation_time_seconds,
@@ -498,7 +475,7 @@ class ContentAgent:
         )
 
         logger.info(
-            f"Article generated | id={article.id} | words={len(article.content.split())} | "
+            f"Article generated | id={article.id} | words={article.word_count} | "
             f"cost=${article.total_cost_usd:.4f} | time={article.generation_time_seconds:.2f}s"
         )
 
