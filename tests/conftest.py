@@ -204,6 +204,76 @@ def api_client():
         yield client
 
 
+@pytest.fixture
+def api_client_with_mocked_auth(monkeypatch):
+    """
+    FastAPI test client with mocked auth dependencies.
+    
+    Patches container initialization at the source to prevent real DB connections.
+    """
+    # Patch container before app loads
+    from services.user_service import UserService
+    from unittest.mock import AsyncMock
+    from security import UserInDB, get_password_hash, verify_password
+    from datetime import datetime
+    from uuid import uuid4
+    
+    # Create mock user service
+    mock_user_service = AsyncMock(spec=UserService)
+    created_users = {}
+    
+    async def mock_create_user(user_create):
+        user_id = uuid4()
+        password_hash = get_password_hash(user_create.password)
+        user = UserInDB(
+            id=user_id,
+            username=user_create.email.split("@")[0],
+            email=user_create.email,
+            full_name=user_create.full_name,
+            hashed_password=password_hash,
+            is_active=True,
+            is_superuser=False,
+            created_at=datetime.utcnow(),
+        )
+        created_users[user.email] = user
+        return user
+    
+    async def mock_authenticate_user(username, password):
+        user = created_users.get(username)
+        if user and verify_password(password, user.hashed_password):
+            return user
+        return None
+    
+    async def mock_get_user_by_email(email):
+        return created_users.get(email)
+    
+    mock_user_service.create_user = AsyncMock(side_effect=mock_create_user)
+    mock_user_service.authenticate_user = AsyncMock(side_effect=mock_authenticate_user)
+    mock_user_service.get_user_by_email = AsyncMock(side_effect=mock_get_user_by_email)
+    
+    # Monkeypatch container methods to prevent real DB initialization
+    import container
+    import sys
+    
+    # Override get_user_service to return our mock
+    def patched_get_user_service():
+        return mock_user_service
+    
+    monkeypatch.setattr(container, 'get_user_service', patched_get_user_service)
+    
+    # Reload api.main to apply the patch
+    if 'api.main' in sys.modules:
+        from importlib import reload
+        import api.main
+        reload(api.main)
+        from api.main import app
+    else:
+        from api.main import app
+    
+    with TestClient(app) as client:
+        yield client, created_users
+
+
 # ============================================================================
 # MOCK SERVICE FIXTURES
 # ============================================================================
