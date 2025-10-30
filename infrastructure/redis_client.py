@@ -15,7 +15,7 @@ transparent serialization layer.
 
 import asyncio
 import hashlib
-import pickle
+import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, TypeVar, Union
@@ -298,7 +298,7 @@ class RedisClient:
                 return None
 
             # Deserialize cached response
-            cached = pickle.loads(data)
+            cached = json.loads(data)
 
             # Update access metadata
             await self._update_cache_access(key)
@@ -346,7 +346,7 @@ class RedisClient:
         }
 
         try:
-            serialized = pickle.dumps(cache_object)
+            serialized = json.dumps(cache_object)
 
             async with self._pool.get_connection() as conn:
                 await conn.set(key, serialized, ex=self._default_ttl)
@@ -364,11 +364,11 @@ class RedisClient:
             async with self._pool.get_connection() as conn:
                 data = await conn.get(key)
                 if data:
-                    cached = pickle.loads(data)
+                    cached = json.loads(data)
                     cached["access_count"] = cached.get("access_count", 0) + 1
                     cached["last_accessed"] = asyncio.get_event_loop().time()
 
-                    serialized = pickle.dumps(cached)
+                    serialized = json.dumps(cached)
                     ttl = await conn.ttl(key)
                     await conn.set(key, serialized, ex=max(ttl, 3600))
         except Exception as e:
@@ -396,7 +396,7 @@ class RedisClient:
             True if stored successfully
         """
         try:
-            serialized = pickle.dumps(value)
+            serialized = json.dumps(value)
 
             async with self._pool.get_connection() as conn:
                 await conn.set(key, serialized, ex=ttl or self._default_ttl)
@@ -424,7 +424,7 @@ class RedisClient:
             if data is None:
                 return None
 
-            return pickle.loads(data)
+            return json.loads(data)
 
         except Exception as e:
             logger.error(f"Failed to get key {key}: {e}")
@@ -472,7 +472,7 @@ class RedisClient:
     ) -> bool:
         """Set field in hash."""
         try:
-            serialized = pickle.dumps(value)
+            serialized = json.dumps(value)
             async with self._pool.get_connection() as conn:
                 await conn.hset(key, field, serialized)
             return True
@@ -489,7 +489,7 @@ class RedisClient:
             if data is None:
                 return None
 
-            return pickle.loads(data)
+            return json.loads(data)
         except Exception as e:
             logger.error(f"Failed to get hash field {key}.{field}: {e}")
             return None
@@ -501,7 +501,7 @@ class RedisClient:
                 data = await conn.hgetall(key)
 
             # Deserialize all values
-            return {field.decode(): pickle.loads(value) for field, value in data.items()}
+            return {field.decode(): json.loads(value) for field, value in data.items()}
         except Exception as e:
             logger.error(f"Failed to get all hash fields for {key}: {e}")
             return {}

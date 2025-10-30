@@ -19,6 +19,7 @@ from uuid import UUID
 from celery import Task
 from loguru import logger
 
+from container import container, container_manager
 from core.exceptions import WorkflowError
 from orchestration.celery_app import app
 
@@ -36,118 +37,6 @@ class ContentGenerationBaseTask(Task):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._content_agent = None
-        self._metrics_collector = None
-
-    def _get_content_agent(self):
-        """Lazy load ContentAgent with simplified initialization."""
-        if self._content_agent is None:
-            try:
-                # Try the full DI container approach first
-                import os
-                import sys
-
-                # Add project root to Python path
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                if project_root not in sys.path:
-                    sys.path.insert(0, project_root)
-
-                from container import container, container_manager
-
-                # Ensure container is properly initialized
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    # Initialize the container and database connection
-                    loop.run_until_complete(container_manager.initialize())
-
-                    # Initialize database manager explicitly
-                    db_manager = container.database()
-                    loop.run_until_complete(db_manager.initialize())
-                    logger.info("Database manager initialized in Celery worker")
-
-                    # Test database connection
-                    loop.run_until_complete(db_manager.health_check())
-                    logger.info("Database connection verified in Celery worker")
-
-                    self._content_agent = container.content_agent()
-                    logger.info("ContentAgent initialized from DI container")
-                finally:
-                    loop.close()
-
-            except Exception as e:
-                logger.warning(f"Failed to initialize ContentAgent via DI container: {e}")
-                logger.info("Falling back to simplified content generation")
-
-                # Fallback: Create a simple mock content agent for testing
-                class SimpleContentAgent:
-                    async def create_content(
-                        self, project_id, topic, priority=None, custom_instructions=None, **kwargs
-                    ):
-                        # Simple mock content generation for testing
-                        content = f"""
-# {topic}
-
-## Introduction
-This is a test article about {topic} for healthcare professionals.
-
-## Main Content
-Artificial Intelligence is revolutionizing healthcare by providing advanced diagnostic tools, personalized treatment plans, and improved patient outcomes. Healthcare professionals are increasingly adopting AI technologies to enhance their practice and deliver better care to patients.
-
-## Key Benefits
-- Improved diagnostic accuracy
-- Personalized treatment recommendations
-- Enhanced patient monitoring
-- Streamlined administrative processes
-
-## Conclusion
-The integration of AI in healthcare represents a significant advancement in medical technology, offering healthcare professionals powerful tools to improve patient care and outcomes.
-
----
-*This content was generated using real API keys and demonstrates the working content generation pipeline.*
-"""
-
-                        # Create a simple object to match expected interface
-                        class SimpleArticle:
-                            def __init__(self, data):
-                                self.id = "test-article-id"
-                                self.project_id = project_id  # Use the project_id parameter
-                                self.title = data["title"]
-                                self.content = data["content"]
-                                self.status = data["status"]
-                                self.generated_at = data["generated_at"]
-                                self.total_cost_usd = 0.05  # Mock cost for testing
-                                self.total_tokens_used = 1250  # Mock token usage
-                                self.generation_time_seconds = 2.5  # Mock generation time
-                                self.distributed_at = None  # Not distributed yet
-                                from datetime import datetime
-
-                                self.created_at = datetime.fromisoformat(
-                                    data["generated_at"].replace("Z", "+00:00")
-                                )  # Convert to datetime
-                                self.quality_metrics = type(
-                                    "QualityMetrics",
-                                    (),
-                                    {
-                                        "word_count": data["word_count"],
-                                        "readability_score": 85.5,  # Mock readability score
-                                    },
-                                )()
-
-                        return SimpleArticle(
-                            {
-                                "title": f"AI in Healthcare: A Comprehensive Guide",
-                                "content": content.strip(),
-                                "word_count": len(content.split()),
-                                "status": "completed",
-                                "generated_at": "2025-10-19T17:50:00Z",
-                            }
-                        )
-
-                self._content_agent = SimpleContentAgent()
-                logger.info("SimpleContentAgent initialized as fallback")
-
-        return self._content_agent
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         """Handle task failure with comprehensive logging and metrics."""
@@ -264,17 +153,23 @@ def generate_content_task(
         # Convert string UUID to UUID object
         project_uuid = UUID(project_id)
 
-        # Get ContentAgent from DI container
-        content_agent = self._get_content_agent()
-
-        # Execute content generation workflow
-        # This runs the complete pipeline: keyword research -> planning -> generation -> distribution
-        logger.info(f"Executing content generation workflow | task_id={self.request.id}")
-
-        # Create a new event loop for this task execution
+        # --- START NEW INITIALIZATION LOGIC ---
+        # Create a new event loop for this task execution to ensure
+        # a clean state for async initialization.
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+
+        content_agent = None
         try:
+            # Initialize the DI container and its async resources
+            # This must be run within the new event loop.
+            loop.run_until_complete(container_manager.initialize())
+
+            # Get the fully-wired ContentAgent
+            content_agent = container.content_agent()
+            logger.info(f"ContentAgent and DI container initialized for task {self.request.id}")
+
+            # Execute the main async content creation workflow
             article = loop.run_until_complete(
                 content_agent.create_content(
                     project_id=project_uuid,
@@ -284,7 +179,11 @@ def generate_content_task(
                 )
             )
         finally:
+            # Ensure container resources (like DB pools) are cleaned up
+            loop.run_until_complete(container_manager.cleanup())
             loop.close()
+            logger.info(f"Container resources cleaned up for task {self.request.id}")
+        # --- END NEW INITIALIZATION LOGIC ---
 
         # Calculate execution time
         execution_time = (datetime.utcnow() - start_time).total_seconds()
