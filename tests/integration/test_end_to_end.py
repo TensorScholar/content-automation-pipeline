@@ -1121,121 +1121,67 @@ async def test_workflow_state_machine_contract(integrated_system, sample_project
 @pytest.mark.asyncio
 async def test_full_auth_workflow_register_login_create_project(api_client):
     """
-    Test complete authentication workflow: register → login → access protected endpoint.
-
-    Validates:
-    - User registration
-    - JWT token generation
-    - Token-based access to protected endpoints
-    - End-to-end authentication flow
+    Test complete authentication workflow: register -> login -> access protected endpoint.
+    This test is refactored to use FastAPI dependency overrides for the UserService.
     """
     from datetime import datetime
+    from typing import Optional
     from unittest.mock import AsyncMock
     from uuid import uuid4
 
     from api.main import app
-    from security import User, UserInDB, get_password_hash, verify_password
+    from api.routes.auth import get_user_service_dependency
+    from core.models import UserCreate
+    from security import User, UserInDB, decode_access_token, get_password_hash, verify_password
     from services.user_service import UserService
 
-    # Use a simple test password for testing (bypass bcrypt for mocking)
-    TEST_PASSWORD = "SecurePassword123!"
-    # Use a simple string hash for testing to avoid bcrypt serialization issues
-    CORRECT_HASH = "test_bcrypt_hash_for_testing_purposes_only"
+    # This test requires a running database, but we mock the service layer
+    # to isolate the auth routes.
 
-    # Store user data as dicts to avoid serialization issues
-    created_users_data = {}
+    mock_user_service = AsyncMock(spec=UserService)
+    created_users_db = {}  # Mock in-memory DB
 
-    async def mock_create_user(user_create):
-        # Use pre-calculated hash
-        user_id = str(uuid4())
+    async def mock_create_user(user_create: UserCreate) -> User:
+        user_id = uuid4()
+        hashed_password = get_password_hash(user_create.password)
+        user_db = UserInDB(
+            id=user_id,
+            email=user_create.email,
+            hashed_password=hashed_password,
+            full_name=user_create.full_name,
+            is_active=True,
+            is_superuser=False,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        created_users_db[user_db.email] = user_db
 
-        # Store user data
-        user_data = {
-            "id": user_id,
-            "username": user_create.email.split("@")[0],
-            "email": user_create.email,
-            "full_name": user_create.full_name,
-            "hashed_password": CORRECT_HASH,
-            "is_active": True,
-            "is_superuser": False,
-            "created_at": datetime.utcnow(),
-        }
-        created_users_data[user_create.email] = user_data
-
-        # Return public schema
+        # Return the public User model
         return User(
             id=user_id,
-            username=user_data["username"],
-            email=user_data["email"],
-            full_name=user_data["full_name"],
-            is_active=user_data["is_active"],
-            is_superuser=user_data["is_superuser"],
-            created_at=user_data["created_at"],
+            email=user_db.email,
+            full_name=user_db.full_name,
+            is_active=user_db.is_active,
+            is_superuser=user_db.is_superuser,
+            created_at=user_db.created_at,
+            updated_at=user_db.updated_at,
         )
 
-    async def mock_authenticate_user(username, password):
-        # Simple password check for testing (bypass bcrypt)
-        user_data = created_users_data.get(username)
-        if user_data and password == TEST_PASSWORD:
-            # Return UserInDB object for login
-            return UserInDB(**user_data)
+    async def mock_authenticate_user(username, password) -> Optional[UserInDB]:
+        user_db = created_users_db.get(username)
+        if user_db and verify_password(password, user_db.hashed_password):
+            return user_db
         return None
 
-    async def mock_get_user_by_email(email):
-        user_data = created_users_data.get(email)
-        if user_data:
-            return UserInDB(**user_data)
-        return None
+    async def mock_get_user_by_email(email) -> Optional[UserInDB]:
+        return created_users_db.get(email)
 
-    # Override dependency using FastAPI's dependency override mechanism
-    from api.routes.auth import get_user_service_dependency
-    from security import decode_access_token, get_current_active_user, get_current_user
+    mock_user_service.create_user = mock_create_user
+    mock_user_service.authenticate_user = mock_authenticate_user
+    mock_user_service.get_user_by_email = mock_get_user_by_email
 
-    def get_mock_user_service():
-        # Return a fresh object with methods each time to avoid caching issues
-        class FreshMockUserService:
-            async def create_user(self, user_create):
-                return await mock_create_user(user_create)
-
-            async def authenticate_user(self, username, password):
-                return await mock_authenticate_user(username, password)
-
-            async def get_user_by_email(self, email):
-                return await mock_get_user_by_email(email)
-
-        return FreshMockUserService()
-
-    # Create a function that decodes token and returns the user
-    async def get_mock_current_user(token: str = None):
-        if not token:
-            return None
-        try:
-            token_data = decode_access_token(token)
-            user_data = created_users_data.get(token_data.get("username") or token_data.get("sub"))
-            if user_data:
-                return User(
-                    id=user_data["id"],
-                    username=user_data["username"],
-                    email=user_data["email"],
-                    full_name=user_data["full_name"],
-                    is_active=user_data["is_active"],
-                    is_superuser=user_data["is_superuser"],
-                    created_at=user_data["created_at"],
-                )
-        except Exception:
-            pass
-        raise Exception("Could not validate credentials")
-
-    async def get_mock_current_active_user(current_user=None):
-        if current_user is None:
-            return None
-        if not current_user.is_active:
-            raise Exception("User is not active")
-        return current_user
-
-    app.dependency_overrides[get_user_service_dependency] = get_mock_user_service
-    app.dependency_overrides[get_current_user] = get_mock_current_user
-    app.dependency_overrides[get_current_active_user] = get_mock_current_active_user
+    # Override the dependency
+    app.dependency_overrides[get_user_service_dependency] = lambda: mock_user_service
 
     try:
         # Step 1: Register a new user
@@ -1246,18 +1192,17 @@ async def test_full_auth_workflow_register_login_create_project(api_client):
         }
 
         register_response = api_client.post("/auth/register", json=registration_data)
-        # Note: FastAPI defaults to 200 for successful POST unless status_code is specified
-        assert register_response.status_code in [200, 201]
+        assert register_response.status_code in [200, 201]  # 200 is default, 201 is also common
         user_data = register_response.json()
         assert user_data["email"] == "testuser@example.com"
-        assert "hashed_password" not in user_data  # Password should not be in response
+        assert "hashed_password" not in user_data
 
         # Step 2: Login to get JWT token
         login_data = {"username": "testuser@example.com", "password": "SecurePassword123!"}
 
         token_response = api_client.post(
             "/auth/token",
-            json=login_data,  # Send as JSON
+            data=login_data,  # OAuth2PasswordRequestForm uses form data
         )
         assert token_response.status_code == 200
         token_data = token_response.json()
@@ -1279,7 +1224,7 @@ async def test_full_auth_workflow_register_login_create_project(api_client):
 
     finally:
         # Cleanup dependency overrides
-        app.dependency_overrides.clear()
+        app.dependency_overrides = {}
 
 
 @pytest.mark.integration

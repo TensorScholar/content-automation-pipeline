@@ -23,7 +23,6 @@ from security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     Token,
     User,
-    authenticate_user,
     create_access_token,
     get_current_active_user,
     get_current_superuser,
@@ -53,37 +52,18 @@ def get_user_service_dependency() -> UserService:
     description="Authenticate user and generate JWT access token",
 )
 async def login_for_access_token(
-    request: dict, user_service: UserService = Depends(get_user_service_dependency)
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    user_service: UserService = Depends(get_user_service_dependency),
 ) -> Token:
     """
     Generate access token for authenticated user.
 
     This endpoint implements OAuth2 password flow for authentication.
     Users provide username and password to receive a JWT access token.
-
-    Args:
-        form_data: OAuth2 password form with username and password
-        user_service: UserService for database authentication
-
-    Returns:
-        Token: JWT access token with metadata
-
-    Raises:
-        HTTPException: If authentication fails
     """
-    # Extract username and password from request
-    username = request.get("username")
-    password = request.get("password")
+    user = await user_service.authenticate_user(form_data.username, form_data.password)
 
-    if not username or not password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Username and password required"
-        )
-
-    # Authenticate user using database
-    user = await user_service.authenticate_user(username, password)
-
-    if not user:
+    if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -94,8 +74,8 @@ async def login_for_access_token(
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={
-            "sub": user.email,  # Use email as subject for consistency
-            "user_id": str(user.id),  # Convert UUID to string
+            "sub": user.email,  # Use email as subject
+            "user_id": str(user.id),
             "scopes": ["read", "write"] if user.is_superuser else ["read"],
         },
         expires_delta=access_token_expires,
@@ -107,45 +87,6 @@ async def login_for_access_token(
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         scope="read write" if user.is_superuser else "read",
     )
-
-
-@router.post(
-    "/test-auth",
-    summary="Test authentication",
-    description="Simple test endpoint to debug authentication issues",
-)
-async def test_auth(
-    request: dict, user_service: UserService = Depends(get_user_service_dependency)
-) -> dict:
-    """
-    Test authentication endpoint for debugging.
-    """
-    try:
-        username = request.get("username")
-        password = request.get("password")
-
-        if not username or not password:
-            return {"error": "Username and password required"}
-
-        # Test user lookup
-        user = await user_service.get_user_by_email(username)
-        if not user:
-            return {"error": "User not found"}
-
-        # Test password verification
-        from security import verify_password
-
-        password_valid = verify_password(password, user.hashed_password)
-
-        return {
-            "user_found": True,
-            "password_valid": password_valid,
-            "user_id": str(user.id),
-            "user_email": user.email,
-            "user_active": user.is_active,
-        }
-    except Exception as e:
-        return {"error": str(e), "type": type(e).__name__}
 
 
 @router.post(

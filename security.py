@@ -15,9 +15,11 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 from uuid import uuid4
 
+from dependency_injector.wiring import Provide
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from loguru import logger
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 
@@ -249,144 +251,15 @@ def decode_access_token(token: str) -> TokenData:
         raise credentials_exception
 
 
-def get_mock_user(username: str) -> Optional[UserInDB]:
-    """
-    Get a mock user for testing/development purposes ONLY.
-
-    ⚠️ WARNING: This function should NEVER be used in production!
-    It's only enabled when running in development/testing environments.
-
-    This function simulates a user database lookup for local development
-    and testing. In production, all authentication must go through the
-    database-backed UserService.
-
-    Args:
-        username: The username to look up
-
-    Returns:
-        Optional[UserInDB]: The user data if found (dev/test only), None otherwise
-
-    Raises:
-        RuntimeError: If called in production environment
-    """
-    # SECURITY: Block mock users in production
-    if settings.environment == "production":
-        raise RuntimeError(
-            "Mock users are disabled in production. " "Use database-backed authentication only."
-        )
-
-    # Development/Testing mock user database
-    # These credentials are for local development only
-    mock_users = {
-        "admin": UserInDB(
-            id="dev-admin-001",
-            username="admin",
-            email="admin@example.com",
-            full_name="Development Admin",
-            hashed_password=get_password_hash("password"),
-            is_active=True,
-            is_superuser=True,
-            created_at=datetime.utcnow(),
-            last_login=None,
-        ),
-        "user": UserInDB(
-            id="dev-user-001",
-            username="user",
-            email="user@example.com",
-            full_name="Development User",
-            hashed_password=get_password_hash("userpass"),
-            is_active=True,
-            is_superuser=False,
-            created_at=datetime.utcnow(),
-            last_login=None,
-        ),
-        "testuser@example.com": UserInDB(
-            id="2d322c0f-3816-406a-8532-fcfbb51e2946",
-            username="testuser",
-            email="testuser@example.com",
-            full_name="Test User",
-            hashed_password=get_password_hash("SecurePass123"),
-            is_active=True,
-            is_superuser=True,
-            created_at=datetime.utcnow(),
-            last_login=None,
-        ),
-    }
-
-    return mock_users.get(username)
-
-
-def authenticate_user(username: str, password: str, user_service=None) -> Optional[UserInDB]:
-    """
-    Authenticate a user with username and password.
-
-    Args:
-        username: The username to authenticate
-        password: The password to verify
-        user_service: UserService instance for database operations
-
-    Returns:
-        Optional[UserInDB]: The authenticated user if valid, None otherwise
-    """
-    if user_service is None:
-        # Fallback to mock user for backward compatibility
-        user = get_mock_user(username)
-        if not user:
-            return None
-        if not verify_password(password, user.hashed_password):
-            return None
-        return user
-
-    # Use database-driven authentication
-    import asyncio
-
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're in an async context, we need to handle this differently
-            # This is a limitation - in a real app, this should be called from async context
-            user = get_mock_user(username)
-            if not user:
-                return None
-            if not verify_password(password, user.hashed_password):
-                return None
-            return user
-        else:
-            # We can run async code
-            return loop.run_until_complete(user_service.authenticate_user(username, password))
-    except Exception:
-        # Fallback to mock user on any error
-        user = get_mock_user(username)
-        if not user:
-            return None
-        if not verify_password(password, user.hashed_password):
-            return None
-        return user
-
-
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    user_service: "Optional[Any]" = None,  # Type hint as Optional to avoid circular import
+    user_service: "UserService" = Depends(Provide["Container.user_service"]),
 ) -> User:
     """
-    FastAPI dependency to get the current authenticated user.
+    FastAPI dependency to get the current authenticated user from the token.
 
-    This dependency extracts the JWT token from the Authorization header,
-    validates it, and returns the user data.
-
-    Args:
-        token: The JWT token from the Authorization header
-        user_service: UserService instance (injected by FastAPI or provided explicitly)
-
-    Returns:
-        User: The authenticated user data
-
-    Raises:
-        HTTPException: If authentication fails
-
-    Note:
-        This function uses lazy import to avoid circular dependencies.
-        The user_service is obtained from the DI container only when needed.
+    Validates the JWT token, extracts the user email (subject), and fetches
+    the user from the database via the UserService.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -397,38 +270,30 @@ async def get_current_user(
     try:
         # Decode the token
         token_data = decode_access_token(token)
+        if token_data.username is None:
+            raise credentials_exception
 
-        # Lazy import to avoid circular dependency at module load time
-        # This is safe because it's only called during request handling
-        if user_service is None:
-            from container import get_user_service
-
-            user_service = get_user_service()
-
-        # Use database-driven user lookup
+        # Get user from database via injected UserService
         user_in_db = await user_service.get_user_by_email(token_data.username)
         if user_in_db is None:
             raise credentials_exception
 
-        # Return user data without sensitive information
+        # Return public user model
         return User(
-            id=str(user_in_db.id),
+            id=user_in_db.id,
             username=user_in_db.username,
             email=user_in_db.email,
             full_name=user_in_db.full_name,
             is_active=user_in_db.is_active,
             is_superuser=user_in_db.is_superuser,
             created_at=user_in_db.created_at,
-            last_login=None,  # Not tracked in current implementation
+            updated_at=user_in_db.updated_at if hasattr(user_in_db, "updated_at") else None,
         )
 
-    except HTTPException:
-        raise
+    except JWTError:
+        raise credentials_exception
     except Exception as e:
-        # Log the exception for debugging
-        import logging
-
-        logging.error(f"Authentication error: {str(e)}")
+        logger.error(f"Authentication error in get_current_user: {e}")
         raise credentials_exception
 
 
@@ -658,9 +523,6 @@ __all__ = [
     # JWT utilities
     "create_access_token",
     "decode_access_token",
-    # Authentication
-    "authenticate_user",
-    "get_mock_user",
     # FastAPI dependencies
     "get_current_user",
     "get_current_active_user",
