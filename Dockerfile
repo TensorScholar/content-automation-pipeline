@@ -26,13 +26,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy requirements and install dependencies
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r /tmp/requirements.txt
+# Install Poetry
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install poetry==1.8.3
+
+# Copy poetry files
+COPY pyproject.toml poetry.lock* ./
+
+# Install project dependencies (excluding dev) using Poetry
+# This installs dependencies into the venv at /opt/venv
+RUN poetry install --no-dev --no-interaction --no-root
 
 # Download spaCy language model
-RUN pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+RUN poetry run python -m spacy download en_core_web_sm
 
 # Note: sentence-transformers model will be downloaded on first use
 
@@ -92,4 +98,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Default command: Run API server
-CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["poetry", "run", "python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

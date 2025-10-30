@@ -59,7 +59,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-api-prod
     restart: always
-    command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker api.main:app -b 0.0.0.0:8000
+    command: poetry run gunicorn -w 4 -k uvicorn.workers.UvicornWorker api.main:app -b 0.0.0.0:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,7 +120,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-worker-prod
     restart: always
-    command: celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4
+    command: poetry run celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,7 +156,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-celery-beat-prod
     restart: always
-    command: celery -A orchestration.celery_app.app beat --loglevel=info
+    command: poetry run celery -A orchestration.celery_app.app beat --loglevel=info
     depends_on:
       redis:
         condition: service_healthy
@@ -178,7 +178,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-flower-prod
     restart: always
-    command: celery -A orchestration.celery_app.app flower --port=5555
+    command: poetry run celery -A orchestration.celery_app.app flower --port=5555
     depends_on:
       redis:
         condition: service_healthy

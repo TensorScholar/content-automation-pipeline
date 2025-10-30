@@ -120,7 +120,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-celery
     restart: unless-stopped
-    command: celery -A orchestration.task_queue.celery_app worker --loglevel=info --concurrency=4
+    command: poetry run celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,7 +156,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-celery-beat
     restart: unless-stopped
-    command: celery -A orchestration.task_queue.celery_app beat --loglevel=info
+    command: poetry run celery -A orchestration.celery_app.app beat --loglevel=info
     depends_on:
       redis:
         condition: service_healthy
@@ -177,7 +177,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-flower
     restart: unless-stopped
-    command: celery -A orchestration.task_queue.celery_app flower --port=5555
+    command: poetry run celery -A orchestration.celery_app.app flower --port=5555
     depends_on:
       redis:
         condition: service_healthy

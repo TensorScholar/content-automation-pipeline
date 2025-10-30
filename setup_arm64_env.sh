@@ -176,12 +176,15 @@ echo ""
 # =============================================================================
 # STEP 10: Install remaining requirements
 # =============================================================================
-print_step "Installing remaining requirements from requirements.txt..."
+print_step "Installing remaining requirements using Poetry..."
 
-# Install all other requirements
-pip install --no-cache-dir -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org
+# Install poetry itself
+pip install poetry==1.8.3
 
-print_success "All requirements installed"
+# Install dependencies using poetry
+poetry install --no-root
+
+print_success "All requirements installed via Poetry"
 echo ""
 
 # =============================================================================
@@ -189,8 +192,7 @@ echo ""
 # =============================================================================
 print_step "Installing spaCy English model..."
 
-python -m spacy download en_core_web_sm || \
-    pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+poetry run python -m spacy download en_core_web_sm
 
 print_success "spaCy model installed"
 echo ""
@@ -202,31 +204,31 @@ print_step "Verifying installation..."
 echo ""
 
 echo "Testing NumPy import..."
-python -c "import numpy; print(f'✓ NumPy {numpy.__version__} (architecture verified)')" || {
+poetry run python -c "import numpy; print(f'✓ NumPy {numpy.__version__} (architecture verified)')" || {
     print_error "NumPy import failed"
     exit 1
 }
 
 echo "Testing PyTorch import..."
-python -c "import torch; print(f'✓ PyTorch {torch.__version__}'); print(f'  MPS Available: {torch.backends.mps.is_available()}')" || {
+poetry run python -c "import torch; print(f'✓ PyTorch {torch.__version__}'); print(f'  MPS Available: {torch.backends.mps.is_available()}')" || {
     print_error "PyTorch import failed"
     exit 1
 }
 
 echo "Testing scikit-learn import..."
-python -c "import sklearn; print(f'✓ scikit-learn {sklearn.__version__}')" || {
+poetry run python -c "import sklearn; print(f'✓ scikit-learn {sklearn.__version__}')" || {
     print_error "scikit-learn import failed"
     exit 1
 }
 
 echo "Testing FastAPI import..."
-python -c "import fastapi; print(f'✓ FastAPI {fastapi.__version__}')" || {
+poetry run python -c "import fastapi; print(f'✓ FastAPI {fastapi.__version__}')" || {
     print_error "FastAPI import failed"
     exit 1
 }
 
 echo "Testing sentence-transformers import..."
-python -c "from sentence_transformers import SentenceTransformer; print('✓ sentence-transformers imported successfully')" || {
+poetry run python -c "from sentence_transformers import SentenceTransformer; print('✓ sentence-transformers imported successfully')" || {
     print_error "sentence-transformers import failed"
     exit 1
 }
@@ -241,7 +243,7 @@ echo ""
 print_step "Testing application import..."
 echo ""
 
-python -c "
+poetry run python -c "
 import sys
 sys.path.insert(0, '.')
 try:
