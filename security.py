@@ -184,6 +184,8 @@ def create_access_token(
             "jti": jti or str(uuid4()),
             "ip_address": ip_address,
             "user_agent": user_agent,
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
         }
     )
 
@@ -212,7 +214,13 @@ def decode_access_token(token: str) -> TokenData:
     )
 
     try:
-        payload = jwt.decode(token, settings.secret_key.get_secret_value(), algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.secret_key.get_secret_value(),
+            algorithms=[ALGORITHM],
+            audience=settings.jwt_audience,
+            options={"verify_aud": True},
+        )
 
         username: str = payload.get("sub")
         user_id: str = payload.get("user_id")
@@ -223,8 +231,12 @@ def decode_access_token(token: str) -> TokenData:
         jti: str = payload.get("jti")
         ip_address: str = payload.get("ip_address")
         user_agent: str = payload.get("user_agent")
+        iss: str = payload.get("iss")
 
         if username is None:
+            raise credentials_exception
+        # Issuer check
+        if iss != settings.jwt_issuer:
             raise credentials_exception
 
         # Convert timestamps to datetime

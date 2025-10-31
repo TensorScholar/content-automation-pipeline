@@ -266,6 +266,8 @@ class Settings(BaseSettings):
     secret_key: SecretStr = Field(default=SecretStr("dev-insecure-secret"), description="Application secret key")
     allowed_hosts: list[str] = Field(default=["localhost", "127.0.0.1"])
     cors_origins: list[str] = Field(default=["http://localhost:3000"])
+    jwt_issuer: str = Field(default="content-automation-engine")
+    jwt_audience: str = Field(default="api")
 
     model_config = SettingsConfigDict(
         env_file=".env",
