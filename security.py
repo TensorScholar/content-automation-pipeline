@@ -11,6 +11,7 @@ Architectural Pattern: Security Utilities + Cross-Cutting Concerns
 Security Foundation: OAuth2 + JWT + Password Hashing
 """
 
+import hashlib
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 from uuid import uuid4
@@ -102,7 +103,7 @@ class Token(BaseModel):
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verify a plain password against its hash.
+    Verify a plain password against its hash (using SHA-256 pre-hash).
 
     Args:
         plain_password: The plain text password to verify
@@ -111,40 +112,35 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         bool: True if password matches, False otherwise
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        # Hash the plain password with SHA-256 to get the digest
+        password_hash_sha256 = hashlib.sha256(plain_password.encode("utf-8")).digest()
+
+        # Verify the SHA-256 digest against the bcrypt hash
+        return pwd_context.verify(password_hash_sha256, hashed_password)
+    except Exception:
+        # Handles potential errors during verification (e.g., invalid hash format)
+        return False
 
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password using bcrypt.
+    Hash a password using bcrypt, safely handling long passwords.
 
-    Bcrypt has a 72-byte password limit. This function properly handles
-    UTF-8 multi-byte characters by truncating at character boundaries,
-    not byte boundaries, to prevent password corruption.
+    Uses a SHA-256 pre-hash to ensure compatibility with bcrypt's
+    72-byte limit, preventing truncation vulnerabilities.
 
     Args:
         password: The plain text password to hash
 
     Returns:
         str: The hashed password
-
-    Note:
-        If password exceeds 72 bytes when UTF-8 encoded, it will be
-        truncated at the last complete character that fits within 72 bytes.
     """
-    # Bcrypt has a 72-byte password limit
-    # Truncate at character boundary, NOT byte boundary to preserve UTF-8 integrity
-    password_bytes = password.encode("utf-8")
+    # Hash the password with SHA-256 to get a fixed-length input digest
+    password_hash_sha256 = hashlib.sha256(password.encode("utf-8")).digest()
 
-    if len(password_bytes) > 72:
-        # Truncate character by character until we fit within 72 bytes
-        # This ensures we don't split multi-byte UTF-8 characters
-        truncated = password
-        while len(truncated.encode("utf-8")) > 72:
-            truncated = truncated[:-1]
-        password = truncated
-
-    return pwd_context.hash(password)
+    # Hash the SHA-256 digest with bcrypt
+    return pwd_context.hash(password_hash_sha256)
 
 
 def create_access_token(

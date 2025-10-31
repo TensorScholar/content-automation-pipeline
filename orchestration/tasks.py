@@ -19,7 +19,7 @@ from uuid import UUID
 from celery import Task
 from loguru import logger
 
-from container import container, container_manager
+from container import container
 from core.exceptions import WorkflowError
 from orchestration.celery_app import app
 
@@ -153,37 +153,26 @@ def generate_content_task(
         # Convert string UUID to UUID object
         project_uuid = UUID(project_id)
 
-        # --- START NEW INITIALIZATION LOGIC ---
-        # Create a new event loop for this task execution to ensure
-        # a clean state for async initialization.
+        # --- START MODIFIED LOGIC ---
+        # Get the agent from the already-initialized container.
+        # This is now safe because the worker process initialized it.
+        content_agent = container.content_agent()
+
+        # Create a new event loop for this specific task execution
+        # to run the async content_agent.create_content method.
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        content_agent = None
-        try:
-            # Initialize the DI container and its async resources
-            # This must be run within the new event loop.
-            loop.run_until_complete(container_manager.initialize())
-
-            # Get the fully-wired ContentAgent
-            content_agent = container.content_agent()
-            logger.info(f"ContentAgent and DI container initialized for task {self.request.id}")
-
-            # Execute the main async content creation workflow
-            article = loop.run_until_complete(
-                content_agent.create_content(
-                    project_id=project_uuid,
-                    topic=topic,
-                    priority=priority,
-                    custom_instructions=custom_instructions,
-                )
+        article = loop.run_until_complete(
+            content_agent.create_content(
+                project_id=project_uuid,
+                topic=topic,
+                priority=priority,
+                custom_instructions=custom_instructions,
             )
-        finally:
-            # Ensure container resources (like DB pools) are cleaned up
-            loop.run_until_complete(container_manager.cleanup())
-            loop.close()
-            logger.info(f"Container resources cleaned up for task {self.request.id}")
-        # --- END NEW INITIALIZATION LOGIC ---
+        )
+        loop.close()
+        # --- END MODIFIED LOGIC ---
 
         # Calculate execution time
         execution_time = (datetime.utcnow() - start_time).total_seconds()
