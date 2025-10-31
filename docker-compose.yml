@@ -101,14 +101,14 @@ services:
       start_period: 40s
     networks:
       - content-automation-network
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 2G
+    # deploy:  # Swarm-only; ignored by docker-compose
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 4G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 2G
 
   # --------------------------------------------------------------------------
   # Celery Worker
@@ -137,14 +137,14 @@ services:
       - ./data:/app/data
     networks:
       - content-automation-network
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 2G
+    # deploy:  # Swarm-only; ignored by docker-compose
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 4G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 2G
 
   # --------------------------------------------------------------------------
   # Celery Beat (Scheduler)
