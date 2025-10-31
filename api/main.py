@@ -55,6 +55,10 @@ from orchestration.content_agent import ContentAgent
 from services.content_service import ContentService
 from services.project_service import ProjectService
 from security import SECURITY_HEADERS
+from container import (
+    DatabaseManager as _DB,
+    RedisClient as _RC,
+)
 
 # ============================================================================
 # MIDDLEWARE STACK (Cross-Cutting Concerns)
@@ -1737,6 +1741,41 @@ if not settings.is_production:
     """
 
 
+# Health alias at root to match Docker healthcheck and docs
+@app.get("/health", response_model=HealthCheckResponse)
+async def root_health(request: Request):
+    try:
+        db = get_database()
+        redis = get_redis()
+        dependencies = {}
+        try:
+            await db.health_check()
+            dependencies["database"] = "healthy"
+        except Exception as e:
+            dependencies["database"] = f"unhealthy: {e}"
+        try:
+            ok = await redis.ping()
+            dependencies["redis"] = "healthy" if ok else "unhealthy"
+        except Exception as e:
+            dependencies["redis"] = f"unhealthy: {e}"
+        overall_status = (
+            "healthy" if all("healthy" in v for v in dependencies.values()) else "degraded"
+        )
+        return HealthCheckResponse(
+            status=overall_status,
+            timestamp=datetime.utcnow(),
+            version="1.0.0",
+            dependencies=dependencies,
+        )
+    except Exception:
+        return HealthCheckResponse(
+            status="degraded",
+            timestamp=datetime.utcnow(),
+            version="1.0.0",
+            dependencies={"error": "unexpected"},
+        )
+
+
 # Middleware stack (order matters: last added = first executed)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(RateLimitMiddleware, rate_limit=100, window=60)
@@ -1749,6 +1788,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class HostValidationMiddleware(BaseHTTPMiddleware):
+    """Validate Host header against settings.allowed_hosts."""
+
+    async def dispatch(self, request: Request, call_next):
+        host = request.headers.get("host", "").split(":")[0].lower()
+        if settings.allowed_hosts and host and host not in [h.lower() for h in settings.allowed_hosts]:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Invalid Host header"})
+        return await call_next(request)
+
+
+# Add host validation as the first executed middleware
+app.add_middleware(HostValidationMiddleware)
 
 
 # ============================================================================
