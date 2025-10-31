@@ -103,6 +103,7 @@ class Container(containers.DeclarativeContainer):
 
     cache: providers.Singleton[CacheManager] = providers.Singleton(
         CacheManager,
+        redis_client=redis,  # <--- ADD THIS
         max_memory_entries=1000,
         metrics_collector=metrics,
     )
@@ -136,7 +137,10 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Intelligence layer providers (factories) - moved before rulebook_manager
-    semantic_analyzer: providers.Factory[SemanticAnalyzer] = providers.Factory(SemanticAnalyzer)
+    semantic_analyzer: providers.Factory[SemanticAnalyzer] = providers.Factory(
+        SemanticAnalyzer,
+        redis_client=redis,  # <--- ADD THIS
+    )
 
     rulebook_manager: providers.Factory[RulebookManager] = providers.Factory(
         RulebookManager,
@@ -148,8 +152,9 @@ class Container(containers.DeclarativeContainer):
 
     website_analyzer: providers.Factory[WebsiteAnalyzer] = providers.Factory(
         WebsiteAnalyzer,
-        session=database,
-        pattern_extractor=pattern_extractor,
+        pattern_extractor=pattern_extractor,  # <--- Re-order for clarity
+        project_repository=project_repository,  # <--- ADD THIS
+        scraping_settings=config.provided.scraping,  # <--- ADD THIS
     )
 
     user_repository: providers.Factory[UserRepository] = providers.Factory(
@@ -158,7 +163,11 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Intelligence layer providers (factories)
-    best_practices_kb: providers.Factory[BestPracticesKB] = providers.Factory(BestPracticesKB)
+    best_practices_kb: providers.Factory[BestPracticesKB] = providers.Factory(
+        BestPracticesKB,
+        redis_client=redis,  # <--- ADD THIS
+        semantic_analyzer=semantic_analyzer,  # <--- ADD THIS
+    )
 
     decision_engine: providers.Factory[DecisionEngine] = providers.Factory(
         DecisionEngine,

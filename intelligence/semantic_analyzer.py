@@ -24,7 +24,7 @@ from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.metrics.pairwise import cosine_similarity as sklearn_cosine_similarity
 
 from core.exceptions import ValidationError
-from infrastructure.redis_client import redis_client
+from infrastructure.redis_client import RedisClient
 
 
 class SimilarityMetric(str, Enum):
@@ -53,16 +53,18 @@ class SemanticAnalyzer:
     - Normalization: Automatic vector normalization
     """
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, redis_client: RedisClient, model_name: str = "all-MiniLM-L6-v2"):
         """
         Initialize semantic analyzer with embedding model.
 
         Args:
+            redis_client: Redis client instance for caching embeddings
             model_name: SentenceTransformer model identifier
         """
         try:
             self.model = SentenceTransformer(model_name)
             self.embedding_dim = self.model.get_sentence_embedding_dimension()
+            self.redis_client = redis_client
             self.cache_enabled = True
 
             logger.info(f"Semantic analyzer initialized: {model_name} ({self.embedding_dim}d)")
@@ -112,7 +114,7 @@ class SemanticAnalyzer:
         # Check cache
         if use_cache and self.cache_enabled:
             cache_key = self._compute_cache_key(text, normalize)
-            cached = await redis_client.get_embedding(cache_key, shape=(self.embedding_dim,))
+            cached = await self.redis_client.get_embedding(cache_key, shape=(self.embedding_dim,))
 
             if cached is not None:
                 logger.debug(f"Cache hit: {cache_key[:16]}...")
@@ -125,7 +127,7 @@ class SemanticAnalyzer:
 
         # Cache for future use
         if use_cache and self.cache_enabled:
-            await redis_client.store_embedding(
+            await self.redis_client.store_embedding(
                 key=cache_key, embedding=embedding, ttl=86400 * 90  # 90 days
             )
 
@@ -149,7 +151,7 @@ class SemanticAnalyzer:
         if use_cache and self.cache_enabled:
             for idx, text in enumerate(texts):
                 cache_key = self._compute_cache_key(text, normalize)
-                cached = await redis_client.get_embedding(cache_key, shape=(self.embedding_dim,))
+                cached = await self.redis_client.get_embedding(cache_key, shape=(self.embedding_dim,))
 
                 if cached is not None:
                     results[idx] = cached
@@ -178,7 +180,7 @@ class SemanticAnalyzer:
 
                 if use_cache and self.cache_enabled:
                     cache_key = self._compute_cache_key(texts[idx], normalize)
-                    await redis_client.store_embedding(cache_key, embedding, ttl=86400 * 90)
+                    await self.redis_client.store_embedding(cache_key, embedding, ttl=86400 * 90)
 
         return results
 
@@ -568,10 +570,3 @@ def enable_cache(self):
     """Enable embedding caching."""
     self.cache_enabled = True
     logger.info("Embedding cache enabled")
-
-
-# =========================================================================
-# GLOBAL INSTANCE
-# =========================================================================
-# Singleton instance for application-wide use
-semantic_analyzer = SemanticAnalyzer()
