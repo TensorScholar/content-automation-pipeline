@@ -23,7 +23,6 @@ from core.models import ContentPlan, GeneratedArticle, InferredPatterns, Keyword
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
 
-# from execution.distributer import Distributor  # File was deleted
 from execution.keyword_researcher import KeywordResearcher
 from infrastructure.database import DatabaseManager
 from infrastructure.monitoring import MetricsCollector
@@ -97,7 +96,6 @@ class ContentAgent:
         keyword_researcher: KeywordResearcher,
         content_planner: ContentPlanner,
         content_generator: ContentGenerator,
-        # distributor: Distributor,  # File was deleted
         budget_manager: TokenBudgetManager,
         metrics_collector: MetricsCollector,
         config: Optional[ContentAgentConfig] = None,
@@ -110,7 +108,6 @@ class ContentAgent:
         self.keyword_researcher = keyword_researcher
         self.content_planner = content_planner
         self.content_generator = content_generator
-        # self.distributor = distributor  # File was deleted
         self.budget_manager = budget_manager
         self.metrics = metrics_collector
         self.metrics_collector = metrics_collector  # Alias for compatibility
@@ -587,42 +584,8 @@ class ContentAgent:
         """
         Distributes the article to all configured channels for the project.
         """
-        channels_used: list[str] = []
-        distribution_results: list[dict[str, Any]] = []
-
-        # 1. Telegram Distribution (Existing)
-        if project.telegram_channel:
-            try:
-                tg_result = await self.distributor.distribute_to_telegram(
-                    article=article, channel=project.telegram_channel
-                )
-                channels_used.append("telegram")
-                distribution_results.append(tg_result)
-                logger.info(f"Article distributed to Telegram: {project.telegram_channel}")
-            except Exception as e:
-                logger.error(f"Telegram distribution failed: {e}")
-
-        # 2. WordPress Distribution (New)
-        if project.wordpress_url:
-            try:
-                wp_result = await self.distributor.distribute_to_wordpress(
-                    article=article, project=project
-                )
-                if wp_result.get("status") == "published":
-                    channels_used.append("wordpress")
-                    distribution_results.append(wp_result)
-            except Exception as e:
-                logger.error(f"WordPress distribution failed: {e}")
-
-        # ... (Future channels) ...
-
-        self._record_event(
-            WorkflowState.DISTRIBUTION,
-            f"Article distributed to: {', '.join(channels_used) or 'None'}",
-            {"channels": channels_used, "results": distribution_results},
-        )
-
-        return channels_used, distribution_results
+        logger.warning(f"Skipping distribution for article {article.id}: Distributor module is disabled.")
+        return [], []
 
     async def _transition_state(self, new_state: WorkflowState):
         """Transition workflow to new state with event recording."""

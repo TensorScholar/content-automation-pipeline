@@ -20,7 +20,6 @@ from loguru import logger
 
 from knowledge.article_repository import ArticleRepository
 
-# from orchestration.task_queue import TaskManager  # File was deleted
 
 
 class ContentService:
@@ -34,7 +33,6 @@ class ContentService:
     def __init__(
         self,
         article_repository: ArticleRepository,
-        # task_manager: TaskManager,  # File was deleted
         project_service: Optional["ProjectService"] = None,
     ):
         """
@@ -42,11 +40,9 @@ class ContentService:
 
         Args:
             article_repository: Repository for article data access
-            task_manager: Manager for task operations
             project_service: Optional project service for fetching project details
         """
         self.articles = article_repository
-        self.tasks = task_manager
         self.project_service = project_service
         logger.debug("ContentService initialized")
 
@@ -78,8 +74,11 @@ class ContentService:
                 detail="schedule_after must be in the future",
             )
 
-        # Submit batch task
-        batch_id = self.tasks.submit_batch(project_id=project_id, topics=topics, priority=priority)
+        # Batch processing is not yet implemented
+        logger.warning("Batch processing is not yet implemented. Skipping.")
+        import uuid
+
+        batch_id = str(uuid.uuid4())
 
         return {
             "batch_id": batch_id,
@@ -99,16 +98,13 @@ class ContentService:
         Returns:
             Batch status information
         """
-        batch_status = self.tasks.get_task_status(batch_id)
-
-        # TODO: Implement batch task status aggregation
-        # For now, return basic status
+        logger.warning(f"Batch status check is not yet implemented (Batch ID: {batch_id}).")
 
         return {
             "batch_id": batch_id,
-            "status": batch_status.get("state"),
+            "status": "not_implemented",
             "progress": {
-                "completed": 0,  # TODO: Calculate from child tasks
+                "completed": 0,
                 "failed": 0,
                 "pending": 0,
                 "total": 0,
@@ -163,9 +159,6 @@ class ContentService:
 
         if not article:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
-
-        # TODO: Implement revision task
-        # task_id = self.tasks.submit_revision(...)
 
         return {
             "article_id": str(article_id),

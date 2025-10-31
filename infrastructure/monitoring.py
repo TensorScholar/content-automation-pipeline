@@ -30,21 +30,8 @@ class MetricsCollector:
     - System health metrics
     """
 
-    _instance = None
-    _initialized = False
-
-    def __new__(cls):
-        """Singleton pattern to prevent duplicate metrics registration."""
-        if cls._instance is None:
-            cls._instance = super(MetricsCollector, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self):
         """Initialize metrics collector with Prometheus metrics."""
-        if MetricsCollector._initialized:
-            return
-
-        MetricsCollector._initialized = True
         # Workflow metrics
         self.workflow_duration_seconds = Histogram(
             "workflow_duration_seconds",
@@ -250,9 +237,6 @@ class MetricsCollector:
     @classmethod
     def reset_singleton(cls) -> None:
         """Reset singleton for testing purposes."""
-        if cls._instance is not None:
-            # Unregister all collectors from the registry
-            for collector in list(REGISTRY._collector_to_names.keys()):
-                REGISTRY.unregister(collector)
-        cls._instance = None
-        cls._initialized = False
+        # Unregister all collectors from the registry
+        for collector in list(REGISTRY._collector_to_names.keys()):
+            REGISTRY.unregister(collector)

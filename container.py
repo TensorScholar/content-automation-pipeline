@@ -25,7 +25,6 @@ T = TypeVar("T")
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
 
-# from execution.distributer import Distributor  # File was deleted
 from execution.keyword_researcher import KeywordResearcher
 
 # Infrastructure layer imports
@@ -74,7 +73,6 @@ from services.content_service import ContentService
 from services.project_service import ProjectService
 from services.user_service import UserService
 
-# from orchestration.task_queue import TaskManager  # File was deleted, using tasks.py instead
 
 
 class Container(containers.DeclarativeContainer):
@@ -215,16 +213,7 @@ class Container(containers.DeclarativeContainer):
         metrics_collector=metrics,
     )
 
-    # distributor: providers.Factory[Distributor] = providers.Factory(
-    #     Distributor,  # File was deleted
-    #     telegram_bot_token=config.provided.telegram.bot_token.provided.get_secret_value(),
-    #     metrics_collector=metrics,
-    # )
-
     # Orchestration layer providers (factories)
-    # task_manager: providers.Factory[TaskManager] = providers.Factory(
-    #     TaskManager  # File was deleted
-    # )
 
     content_agent: providers.Factory[ContentAgent] = providers.Factory(
         ContentAgent,
@@ -236,7 +225,6 @@ class Container(containers.DeclarativeContainer):
         keyword_researcher=keyword_researcher,
         content_planner=content_planner,
         content_generator=content_generator,
-        # distributor=distributor,  # File was deleted
         budget_manager=token_budget_manager,
         metrics_collector=metrics,
         config=providers.Factory(ContentAgentConfig),
@@ -251,7 +239,6 @@ class Container(containers.DeclarativeContainer):
     content_service: providers.Factory[ContentService] = providers.Factory(
         ContentService,
         article_repository=article_repository,
-        # task_manager=task_manager,  # File was deleted
         project_service=project_service,
     )
 
@@ -571,21 +558,6 @@ def get_content_generator(
     return generator
 
 
-# @inject
-# def get_distributor(
-#     # distributor: Distributor = Provide[Container.distributor]  # File was deleted
-# ) -> Distributor:
-#     """Get distributor instance."""
-#     return distributor
-
-
-# @inject
-# def get_task_manager(
-#     manager: TaskManager = Provide[Container.task_manager]  # File was deleted
-# ) -> TaskManager:
-#     """Get task manager instance."""
-#     return manager
-
 
 @inject
 def get_content_agent(agent: ContentAgent = Provide[Container.content_agent]) -> ContentAgent:
@@ -733,8 +705,6 @@ __all__ = [
     "get_keyword_researcher",
     "get_content_planner",
     "get_content_generator",
-    # "get_distributor",  # Removed - distributor was deleted
-    # "get_task_manager",  # Removed - task_manager was deleted
     "get_content_agent",
     "get_project_service",
     "get_content_service",

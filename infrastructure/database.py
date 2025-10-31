@@ -152,9 +152,9 @@ class DatabaseManager:
 
                 # Verify pgvector extension
                 result = await conn.execute(
-                    text("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')")
+                    text("SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1")
                 )
-                has_pgvector = result.scalar()
+                has_pgvector = result.scalar() == 1
 
                 if not has_pgvector:
                     logger.warning("pgvector extension not installed")
