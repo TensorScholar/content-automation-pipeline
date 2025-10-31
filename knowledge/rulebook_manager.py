@@ -18,11 +18,13 @@ from typing import Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from loguru import logger
+from sqlalchemy import delete, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import DatabaseError, ValidationError
 from core.models import Rule, Rulebook, RuleType
 from infrastructure.redis_client import redis_client
+from infrastructure.schema import rulebooks_table, rules_table
 
 
 class RulebookManager:
@@ -83,22 +85,20 @@ class RulebookManager:
 
             # Create rulebook record
             rulebook_id = uuid4()
-            query = """
-            INSERT INTO rulebooks (id, project_id, raw_content, version, created_at, updated_at)
-            VALUES (:id, :project_id, :raw_content, :version, NOW(), NOW())
-            RETURNING id, project_id, raw_content, version, created_at, updated_at;
-        """
-
-            result = await self.session.execute(
-                query,
-                {
-                    "id": rulebook_id,
-                    "project_id": project_id,
-                    "raw_content": raw_content,
-                    "version": version,
-                },
+            query = (
+                insert(rulebooks_table)
+                .values(
+                    id=rulebook_id,
+                    project_id=project_id,
+                    content=raw_content,
+                    version=version,
+                    created_at=func.now(),
+                    updated_at=func.now(),
+                )
+                .returning(rulebooks_table)
             )
 
+            result = await self.session.execute(query)
             row = result.fetchone()
 
             # Parse and index rules
@@ -107,12 +107,12 @@ class RulebookManager:
             await self.session.commit()
 
             rulebook = Rulebook(
-                id=row[0],
-                project_id=row[1],
-                raw_content=row[2],
-                version=row[3],
-                created_at=row[4],
-                updated_at=row[5],
+                id=row.id,
+                project_id=row.project_id,
+                raw_content=row.content,
+                version=row.version,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
                 rules=rules,
             )
 
@@ -167,41 +167,33 @@ class RulebookManager:
 
             # Store in database
             rule_id = uuid4()
-            query = """
-                INSERT INTO rules (
-                    id, rulebook_id, rule_type, content, embedding, 
-                    priority, context, created_at
-                ) VALUES (
-                    :id, :rulebook_id, :rule_type, :content, :embedding,
-                    :priority, :context, NOW()
+            query = (
+                insert(rules_table)
+                .values(
+                    id=rule_id,
+                    rulebook_id=rulebook_id,
+                    rule_type=rule_type.value,
+                    content=chunk,
+                    embedding=f"[{','.join(map(str, embedding))}]",  # PostgreSQL array format
+                    priority=priority,
+                    context=context,
+                    created_at=func.now(),
                 )
-                RETURNING id, rulebook_id, rule_type, content, priority, context, created_at;
-            """
-
-            result = await self.session.execute(
-                query,
-                {
-                    "id": rule_id,
-                    "rulebook_id": rulebook_id,
-                    "rule_type": rule_type.value,
-                    "content": chunk,
-                    "embedding": f"[{','.join(map(str, embedding))}]",  # PostgreSQL array format
-                    "priority": priority,
-                    "context": context,
-                },
+                .returning(rules_table)
             )
 
+            result = await self.session.execute(query)
             row = result.fetchone()
 
             rule = Rule(
-                id=row[0],
-                rulebook_id=row[1],
-                rule_type=RuleType(row[2]),
-                content=row[3],
+                id=row.id,
+                rulebook_id=row.rulebook_id,
+                rule_type=RuleType(row.rule_type),
+                content=row.content,
                 embedding=embedding,
-                priority=row[4],
-                context=row[5],
-                created_at=row[6],
+                priority=row.priority,
+                context=row.context,
+                created_at=row.created_at,
             )
 
             rules.append(rule)
@@ -380,14 +372,13 @@ class RulebookManager:
         return None
 
     async def _get_next_version(self, project_id: UUID) -> int:
-        """Get next version number for project's rulebook."""
-        query = """
-            SELECT COALESCE(MAX(version), 0) + 1
-            FROM rulebooks
-            WHERE project_id = :project_id;
-        """
+        """Get next version number for project's rulebook using SQLAlchemy Core."""
+        query = (
+            select(func.coalesce(func.max(rulebooks_table.c.version), 0) + 1)
+            .where(rulebooks_table.c.project_id == project_id)
+        )
 
-        result = await self.session.execute(query, {"project_id": project_id})
+        result = await self.session.execute(query)
         return result.scalar()
 
     # =========================================================================
@@ -486,7 +477,7 @@ class RulebookManager:
         rule_type: RuleType,
     ) -> List[Rule]:
         """
-        Retrieve all rules of specific type for a project.
+        Retrieve all rules of specific type for a project using SQLAlchemy Core.
 
         Args:
             project_id: UUID of project
@@ -496,36 +487,39 @@ class RulebookManager:
             List of Rule objects
         """
         try:
-            query = """
-                SELECT r.id, r.rulebook_id, r.rule_type, r.content, 
-                       r.priority, r.context, r.created_at
-                FROM rules r
-                JOIN rulebooks rb ON r.rulebook_id = rb.id
-                WHERE rb.project_id = :project_id
-                AND r.rule_type = :rule_type
-                ORDER BY r.priority DESC, r.created_at ASC;
-            """
-
-            result = await self.session.execute(
-                query,
-                {
-                    "project_id": project_id,
-                    "rule_type": rule_type.value,
-                },
+            query = (
+                select(
+                    rules_table.c.id,
+                    rules_table.c.rulebook_id,
+                    rules_table.c.rule_type,
+                    rules_table.c.content,
+                    rules_table.c.priority,
+                    rules_table.c.context,
+                    rules_table.c.created_at,
+                )
+                .select_from(
+                    rules_table.join(rulebooks_table, rules_table.c.rulebook_id == rulebooks_table.c.id)
+                )
+                .where(
+                    (rulebooks_table.c.project_id == project_id)
+                    & (rules_table.c.rule_type == rule_type.value)
+                )
+                .order_by(rules_table.c.priority.desc(), rules_table.c.created_at.asc())
             )
 
+            result = await self.session.execute(query)
             rows = result.fetchall()
 
             return [
                 Rule(
-                    id=row[0],
-                    rulebook_id=row[1],
-                    rule_type=RuleType(row[2]),
-                    content=row[3],
+                    id=row.id,
+                    rulebook_id=row.rulebook_id,
+                    rule_type=RuleType(row.rule_type),
+                    content=row.content,
                     embedding=[],
-                    priority=row[4],
-                    context=row[5],
-                    created_at=row[6],
+                    priority=row.priority,
+                    context=row.context,
+                    created_at=row.created_at,
                 )
                 for row in rows
             ]
@@ -539,32 +533,31 @@ class RulebookManager:
     # =========================================================================
 
     async def get_latest_rulebook(self, project_id: UUID) -> Optional[Rulebook]:
-        """Retrieve the latest version of project's rulebook."""
+        """Retrieve the latest version of project's rulebook using SQLAlchemy Core."""
         try:
-            query = """
-                SELECT id, project_id, raw_content, version, created_at, updated_at
-                FROM rulebooks
-                WHERE project_id = :project_id
-                ORDER BY version DESC
-                LIMIT 1;
-            """
+            query = (
+                select(rulebooks_table)
+                .where(rulebooks_table.c.project_id == project_id)
+                .order_by(rulebooks_table.c.version.desc())
+                .limit(1)
+            )
 
-            result = await self.session.execute(query, {"project_id": project_id})
+            result = await self.session.execute(query)
             row = result.fetchone()
 
             if not row:
                 return None
 
             # Load associated rules
-            rules = await self._load_rules(row[0])
+            rules = await self._load_rules(row.id)
 
             return Rulebook(
-                id=row[0],
-                project_id=row[1],
-                raw_content=row[2],
-                version=row[3],
-                created_at=row[4],
-                updated_at=row[5],
+                id=row.id,
+                project_id=row.project_id,
+                raw_content=row.content,
+                version=row.version,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
                 rules=rules,
             )
 
@@ -573,34 +566,41 @@ class RulebookManager:
             return None
 
     async def _load_rules(self, rulebook_id: UUID) -> List[Rule]:
-        """Load all rules for a rulebook."""
-        query = """
-            SELECT id, rulebook_id, rule_type, content, priority, context, created_at
-            FROM rules
-            WHERE rulebook_id = :rulebook_id
-            ORDER BY priority DESC, created_at ASC;
-        """
+        """Load all rules for a rulebook using SQLAlchemy Core."""
+        query = (
+            select(
+                rules_table.c.id,
+                rules_table.c.rulebook_id,
+                rules_table.c.rule_type,
+                rules_table.c.content,
+                rules_table.c.priority,
+                rules_table.c.context,
+                rules_table.c.created_at,
+            )
+            .where(rules_table.c.rulebook_id == rulebook_id)
+            .order_by(rules_table.c.priority.desc(), rules_table.c.created_at.asc())
+        )
 
-        result = await self.session.execute(query, {"rulebook_id": rulebook_id})
+        result = await self.session.execute(query)
         rows = result.fetchall()
 
         return [
             Rule(
-                id=row[0],
-                rulebook_id=row[1],
-                rule_type=RuleType(row[2]),
-                content=row[3],
+                id=row.id,
+                rulebook_id=row.rulebook_id,
+                rule_type=RuleType(row.rule_type),
+                content=row.content,
                 embedding=[],  # Don't load embeddings unless needed
-                priority=row[4],
-                context=row[5],
-                created_at=row[6],
+                priority=row.priority,
+                context=row.context,
+                created_at=row.created_at,
             )
             for row in rows
         ]
 
     async def delete_rulebook(self, rulebook_id: UUID) -> bool:
         """
-        Delete rulebook and all associated rules.
+        Delete rulebook and all associated rules using SQLAlchemy Core.
 
         Cascades via foreign key constraints.
 
@@ -608,8 +608,8 @@ class RulebookManager:
             True if deleted successfully
         """
         try:
-            query = "DELETE FROM rulebooks WHERE id = :rulebook_id;"
-            result = await self.session.execute(query, {"rulebook_id": rulebook_id})
+            query = delete(rulebooks_table).where(rulebooks_table.c.id == rulebook_id)
+            result = await self.session.execute(query)
             await self.session.commit()
 
             if result.rowcount > 0:

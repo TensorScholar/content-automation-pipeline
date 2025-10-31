@@ -16,12 +16,13 @@ from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from loguru import logger
-from sqlalchemy import and_, delete, func, select, text, update
+from sqlalchemy import and_, delete, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import DatabaseError, NotFoundError
 from core.models import InferredPatterns, Project
 from infrastructure.database import DatabaseManager
+from infrastructure.schema import generated_articles_table, inferred_patterns_table, projects_table
 
 
 class ProjectRepository:
@@ -50,7 +51,7 @@ class ProjectRepository:
 
     async def create(self, project: Project) -> Project:
         """
-        Create new project in database.
+        Create new project in database using SQLAlchemy Core.
 
         Args:
             project: Project model with populated fields
@@ -63,43 +64,28 @@ class ProjectRepository:
         """
         try:
             async with self.database_manager.session() as session:
-                # Convert Pydantic model to SQL insert
-                query = """
-                    INSERT INTO projects (
-                        name, domain, telegram_channel, created_at, updated_at
-                    ) VALUES (
-                        :name, :domain, :telegram_channel, NOW(), NOW()
+                project_id = project.id or uuid4()
+                query = (
+                    insert(projects_table)
+                    .values(
+                        id=project_id,
+                        name=project.name,
+                        domain=str(project.domain) if project.domain else None,
+                        telegram_channel=project.telegram_channel,
+                        created_at=func.now(),
+                        updated_at=func.now(),
+                        last_active=func.now(),
                     )
-                    RETURNING id, name, domain, telegram_channel, created_at, 
-                              updated_at, last_active, total_articles_generated,
-                              total_tokens_consumed, total_cost_usd;
-                """
-
-                result = await session.execute(
-                    text(query),
-                    {
-                        "name": project.name,
-                        "domain": str(project.domain) if project.domain else None,
-                        "telegram_channel": project.telegram_channel,
-                    },
+                    .returning(projects_table)
                 )
 
+                result = await session.execute(query)
                 row = result.fetchone()
 
-                # Map back to Pydantic model
-                created_project = Project(
-                    id=row[0],
-                    name=row[1],
-                    domain=row[2],
-                    telegram_channel=row[3],
-                    created_at=row[4],
-                    updated_at=row[5],
-                    last_active=row[6] or row[4],  # Use created_at if last_active is None
-                    total_articles_generated=row[7],
-                    total_tokens_consumed=row[8],
-                    total_cost_usd=float(row[9]) if row[9] else 0.0,
-                )
+                if not row:
+                    raise DatabaseError("Failed to create project, no returning row.")
 
+                created_project = self._row_to_project(row)
                 logger.info(f"Created project: {created_project.name} (ID: {created_project.id})")
                 return created_project
 
@@ -113,7 +99,7 @@ class ProjectRepository:
 
     async def get_by_id(self, project_id: UUID) -> Optional[Project]:
         """
-        Retrieve project by ID.
+        Retrieve project by ID using SQLAlchemy Core.
 
         Args:
             project_id: UUID of project
@@ -123,15 +109,14 @@ class ProjectRepository:
         """
         try:
             async with self.database_manager.session() as session:
-                query = """
-                    SELECT id, name, domain, telegram_channel, created_at, updated_at,
-                           last_active, total_articles_generated, total_tokens_consumed,
-                           total_cost_usd
-                    FROM projects
-                    WHERE id = :project_id AND deleted_at IS NULL;
-                """
+                query = select(projects_table).where(
+                    and_(
+                        projects_table.c.id == project_id,
+                        projects_table.c.deleted_at == None,
+                    )
+                )
 
-                result = await session.execute(text(query), {"project_id": project_id})
+                result = await session.execute(query)
                 row = result.fetchone()
 
                 if not row:
@@ -144,18 +129,17 @@ class ProjectRepository:
             return None
 
     async def get_by_name(self, name: str) -> Optional[Project]:
-        """Retrieve project by unique name."""
+        """Retrieve project by unique name using SQLAlchemy Core."""
         try:
             async with self.database_manager.session() as session:
-                query = """
-                    SELECT id, name, domain, telegram_channel, created_at, updated_at,
-                           last_active, total_articles_generated, total_tokens_consumed,
-                           total_cost_usd
-                    FROM projects
-                    WHERE name = :name AND deleted_at IS NULL;
-                """
+                query = select(projects_table).where(
+                    and_(
+                        projects_table.c.name == name,
+                        projects_table.c.deleted_at == None,
+                    )
+                )
 
-                result = await session.execute(text(query), {"name": name})
+                result = await session.execute(query)
                 row = result.fetchone()
 
                 if not row:
@@ -171,7 +155,7 @@ class ProjectRepository:
         self, limit: int = 100, offset: int = 0, include_inactive: bool = False
     ) -> List[Project]:
         """
-        List all projects with pagination.
+        List all projects with pagination using SQLAlchemy Core.
 
         Args:
             limit: Maximum number of projects to return
@@ -183,22 +167,21 @@ class ProjectRepository:
         """
         try:
             async with self.database_manager.session() as session:
-                query = """
-                    SELECT id, name, domain, telegram_channel, created_at, updated_at,
-                           last_active, total_articles_generated, total_tokens_consumed,
-                           total_cost_usd
-                    FROM projects
-                    WHERE deleted_at IS NULL
-                """
+                query = select(projects_table).where(projects_table.c.deleted_at == None)
 
                 if not include_inactive:
-                    query += (
-                        " AND (last_active IS NULL OR last_active > NOW() - INTERVAL '90 days')"
+                    query = query.where(
+                        (projects_table.c.last_active == None)
+                        | (projects_table.c.last_active > func.now() - text("INTERVAL '90 days'"))
                     )
 
-                query += " ORDER BY last_active DESC NULLS LAST LIMIT :limit OFFSET :offset;"
+                query = (
+                    query.order_by(projects_table.c.last_active.desc().nullslast())
+                    .limit(limit)
+                    .offset(offset)
+                )
 
-                result = await session.execute(text(query), {"limit": limit, "offset": offset})
+                result = await session.execute(query)
                 rows = result.fetchall()
 
             return [self._row_to_project(row) for row in rows]
@@ -213,7 +196,7 @@ class ProjectRepository:
 
     async def update(self, project_id: UUID, updates: dict) -> Optional[Project]:
         """
-        Update project fields.
+        Update project fields using SQLAlchemy Core.
 
         Args:
             project_id: UUID of project to update
@@ -223,37 +206,36 @@ class ProjectRepository:
             Updated Project model or None if not found
         """
         try:
-            # Build dynamic UPDATE query
-            set_clauses = []
-            params = {"project_id": project_id}
+            valid_updates = updates.copy()
+            for field in [
+                "id",
+                "created_at",
+                "total_articles_generated",
+                "total_tokens_consumed",
+                "total_cost_usd",
+                "deleted_at",
+            ]:
+                valid_updates.pop(field, None)
 
-            for field, value in updates.items():
-                if field not in [
-                    "id",
-                    "created_at",
-                    "total_articles_generated",
-                    "total_tokens_consumed",
-                    "total_cost_usd",
-                ]:
-                    set_clauses.append(f"{field} = :{field}")
-                    params[field] = value
-
-            if not set_clauses:
+            if not valid_updates:
                 return await self.get_by_id(project_id)
 
-            set_clauses.append("updated_at = NOW()")
-
-            query = f"""
-                UPDATE projects
-                SET {', '.join(set_clauses)}
-                WHERE id = :project_id AND deleted_at IS NULL
-                RETURNING id, name, domain, telegram_channel, created_at, updated_at,
-                          last_active, total_articles_generated, total_tokens_consumed,
-                          total_cost_usd;
-            """
+            valid_updates["updated_at"] = func.now()
 
             async with self.database_manager.session() as session:
-                result = await session.execute(text(query), params)
+                query = (
+                    update(projects_table)
+                    .where(
+                        and_(
+                            projects_table.c.id == project_id,
+                            projects_table.c.deleted_at == None,
+                        )
+                    )
+                    .values(**valid_updates)
+                    .returning(projects_table)
+                )
+
+                result = await session.execute(query)
                 row = result.fetchone()
 
                 if not row:
@@ -268,20 +250,25 @@ class ProjectRepository:
 
     async def update_last_active(self, project_id: UUID) -> bool:
         """
-        Update project's last_active timestamp (lightweight operation).
+        Update project's last_active timestamp using SQLAlchemy Core.
 
         Returns:
             True if updated successfully
         """
         try:
             async with self.database_manager.session() as session:
-                query = """
-                    UPDATE projects
-                    SET last_active = NOW()
-                    WHERE id = :project_id AND deleted_at IS NULL;
-                """
+                query = (
+                    update(projects_table)
+                    .where(
+                        and_(
+                            projects_table.c.id == project_id,
+                            projects_table.c.deleted_at == None,
+                        )
+                    )
+                    .values(last_active=func.now())
+                )
 
-                result = await session.execute(text(query), {"project_id": project_id})
+                result = await session.execute(query)
                 return result.rowcount > 0
 
         except Exception as e:
@@ -294,7 +281,7 @@ class ProjectRepository:
 
     async def soft_delete(self, project_id: UUID) -> bool:
         """
-        Soft delete project (sets deleted_at timestamp).
+        Soft delete project using SQLAlchemy Core (sets deleted_at timestamp).
 
         Args:
             project_id: UUID of project to delete
@@ -304,13 +291,18 @@ class ProjectRepository:
         """
         try:
             async with self.database_manager.session() as session:
-                query = """
-                    UPDATE projects
-                    SET deleted_at = NOW()
-                    WHERE id = :project_id AND deleted_at IS NULL;
-                """
+                query = (
+                    update(projects_table)
+                    .where(
+                        and_(
+                            projects_table.c.id == project_id,
+                            projects_table.c.deleted_at == None,
+                        )
+                    )
+                    .values(deleted_at=func.now())
+                )
 
-                result = await session.execute(text(query), {"project_id": project_id})
+                result = await session.execute(query)
 
                 if result.rowcount > 0:
                     logger.warning(f"Soft deleted project: {project_id}")
@@ -324,7 +316,7 @@ class ProjectRepository:
 
     async def hard_delete(self, project_id: UUID) -> bool:
         """
-        Permanently delete project and all associated data (DANGEROUS).
+        Permanently delete project using SQLAlchemy Core (DANGEROUS).
 
         Cascades to all related tables via foreign key constraints.
 
@@ -333,9 +325,9 @@ class ProjectRepository:
         """
         try:
             async with self.database_manager.session() as session:
-                query = "DELETE FROM projects WHERE id = :project_id;"
+                query = delete(projects_table).where(projects_table.c.id == project_id)
 
-                result = await session.execute(text(query), {"project_id": project_id})
+                result = await session.execute(query)
 
                 if result.rowcount > 0:
                     logger.warning(f"HARD DELETED project: {project_id}")
@@ -353,44 +345,57 @@ class ProjectRepository:
 
     async def get_statistics(self, project_id: UUID) -> Optional[dict]:
         """
-        Get comprehensive project statistics.
+        Get comprehensive project statistics using SQLAlchemy Core.
 
         Returns:
             Dict with statistics or None if project not found
         """
         try:
             async with self.database_manager.session() as session:
-                query = """
-                    SELECT 
-                        p.total_articles_generated,
-                        p.total_tokens_consumed,
-                        p.total_cost_usd,
-                        COUNT(DISTINCT ga.id) as articles_count,
-                        AVG(ga.word_count) as avg_word_count,
-                        AVG(ga.readability_score) as avg_readability,
-                        SUM(ga.total_tokens_used) as verified_tokens,
-                        SUM(ga.total_cost) as verified_cost
-                    FROM projects p
-                    LEFT JOIN generated_articles ga ON ga.project_id = p.id
-                    WHERE p.id = :project_id AND p.deleted_at IS NULL
-                    GROUP BY p.id, p.total_articles_generated, p.total_tokens_consumed, p.total_cost_usd;
-                """
+                p = projects_table
+                ga = generated_articles_table
 
-                result = await session.execute(text(query), {"project_id": project_id})
+                query = (
+                    select(
+                        p.c.total_articles_generated,
+                        p.c.total_tokens_consumed,
+                        p.c.total_cost_usd,
+                        func.count(ga.c.id).label("articles_count"),
+                        func.avg(ga.c.word_count).label("avg_word_count"),
+                        func.avg(ga.c.readability_score).label("avg_readability"),
+                        func.sum(ga.c.total_tokens_used).label("verified_tokens"),
+                        func.sum(ga.c.total_cost).label("verified_cost"),
+                    )
+                    .select_from(p.outerjoin(ga, ga.c.project_id == p.c.id))
+                    .where(
+                        and_(
+                            p.c.id == project_id,
+                            p.c.deleted_at == None,
+                        )
+                    )
+                    .group_by(
+                        p.c.id,
+                        p.c.total_articles_generated,
+                        p.c.total_tokens_consumed,
+                        p.c.total_cost_usd,
+                    )
+                )
+
+                result = await session.execute(query)
                 row = result.fetchone()
 
                 if not row:
                     return None
 
                 return {
-                    "total_articles": row[0],
-                    "total_tokens": row[1],
-                    "total_cost_usd": float(row[2]) if row[2] else 0.0,
-                    "verified_articles": row[3] or 0,
-                    "avg_word_count": float(row[4]) if row[4] else 0.0,
-                    "avg_readability": float(row[5]) if row[5] else 0.0,
-                    "verified_tokens": row[6] or 0,
-                    "verified_cost_usd": float(row[7]) if row[7] else 0.0,
+                    "total_articles": row.total_articles_generated,
+                    "total_tokens": row.total_tokens_consumed,
+                    "total_cost_usd": float(row.total_cost_usd) if row.total_cost_usd else 0.0,
+                    "verified_articles": row.articles_count or 0,
+                    "avg_word_count": float(row.avg_word_count) if row.avg_word_count else 0.0,
+                    "avg_readability": float(row.avg_readability) if row.avg_readability else 0.0,
+                    "verified_tokens": row.verified_tokens or 0,
+                    "verified_cost_usd": float(row.verified_cost) if row.verified_cost else 0.0,
                 }
 
         except Exception as e:
@@ -398,29 +403,33 @@ class ProjectRepository:
             return None
 
     async def get_global_statistics(self) -> dict:
-        """Get system-wide statistics across all projects."""
+        """Get system-wide statistics across all projects using SQLAlchemy Core."""
         try:
             async with self.database_manager.session() as session:
-                query = """
-                    SELECT 
-                        COUNT(DISTINCT id) as total_projects,
-                        SUM(total_articles_generated) as total_articles,
-                        SUM(total_tokens_consumed) as total_tokens,
-                        SUM(total_cost_usd) as total_cost,
-                        AVG(total_articles_generated) as avg_articles_per_project
-                    FROM projects
-                    WHERE deleted_at IS NULL;
-                """
+                query = (
+                    select(
+                        func.count(projects_table.c.id).label("total_projects"),
+                        func.sum(projects_table.c.total_articles_generated).label("total_articles"),
+                        func.sum(projects_table.c.total_tokens_consumed).label("total_tokens"),
+                        func.sum(projects_table.c.total_cost_usd).label("total_cost"),
+                        func.avg(projects_table.c.total_articles_generated).label(
+                            "avg_articles_per_project"
+                        ),
+                    )
+                    .where(projects_table.c.deleted_at == None)
+                )
 
-                result = await session.execute(text(query))
+                result = await session.execute(query)
                 row = result.fetchone()
 
                 return {
-                    "total_projects": row[0] or 0,
-                    "total_articles": row[1] or 0,
-                    "total_tokens": row[2] or 0,
-                    "total_cost_usd": float(row[3]) if row[3] else 0.0,
-                    "avg_articles_per_project": float(row[4]) if row[4] else 0.0,
+                    "total_projects": row.total_projects or 0,
+                    "total_articles": row.total_articles or 0,
+                    "total_tokens": row.total_tokens or 0,
+                    "total_cost_usd": float(row.total_cost) if row.total_cost else 0.0,
+                    "avg_articles_per_project": float(row.avg_articles_per_project)
+                    if row.avg_articles_per_project
+                    else 0.0,
                 }
 
         except Exception as e:
@@ -576,24 +585,29 @@ class ProjectRepository:
     def _row_to_project(row) -> Project:
         """Convert database row to Project model."""
         return Project(
-            id=row[0],
-            name=row[1],
-            domain=row[2],
-            telegram_channel=row[3],
-            created_at=row[4],
-            updated_at=row[5],
-            last_active=row[6] or row[4],  # Use created_at if last_active is None
-            total_articles_generated=row[7],
-            total_tokens_consumed=row[8],
-            total_cost_usd=float(row[9]) if row[9] else 0.0,
+            id=row.id,
+            name=row.name,
+            domain=row.domain,
+            telegram_channel=row.telegram_channel,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            last_active=row.last_active or row.created_at,  # Use created_at if last_active is None
+            total_articles_generated=row.total_articles_generated,
+            total_tokens_consumed=row.total_tokens_consumed,
+            total_cost_usd=float(row.total_cost_usd) if row.total_cost_usd else 0.0,
         )
 
     async def exists(self, project_id: UUID) -> bool:
-        """Check if project exists (and not soft-deleted)."""
+        """Check if project exists (and not soft-deleted) using SQLAlchemy Core."""
         try:
             async with self.database_manager.session() as session:
-                query = "SELECT 1 FROM projects WHERE id = :project_id AND deleted_at IS NULL;"
-                result = await session.execute(text(query), {"project_id": project_id})
+                query = select(1).where(
+                    and_(
+                        projects_table.c.id == project_id,
+                        projects_table.c.deleted_at == None,
+                    )
+                )
+                result = await session.execute(query)
                 return result.fetchone() is not None
         except Exception as e:
             logger.error(f"Failed to check project existence: {e}")

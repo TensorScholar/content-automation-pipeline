@@ -10,6 +10,7 @@ from typing import Optional
 
 from sqlalchemy import (
     JSON,
+    JSONB,
     UUID,
     Boolean,
     Column,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Float,
     Integer,
     MetaData,
+    Numeric,
     String,
     Table,
     Text,
@@ -73,8 +75,12 @@ projects_table = Table(
     Column("wordpress_username", String(255)),
     Column("wordpress_app_password", String(500)),  # Stored as encrypted string
     Column("total_articles_generated", Integer, default=0),
+    Column("total_tokens_consumed", Integer, default=0),
+    Column("total_cost_usd", Numeric(10, 2), default=0),
     Column("created_at", DateTime, default=func.now()),
     Column("updated_at", DateTime, default=func.now(), onupdate=func.now()),
+    Column("last_active", DateTime),
+    Column("deleted_at", DateTime),
 )
 
 # Rulebooks Table
@@ -101,6 +107,36 @@ inferred_patterns_table = Table(
     Column("confidence", Float),
     Column("sample_size", Integer),
     Column("analyzed_at", DateTime, default=func.now()),
+)
+
+# Content Plans Table
+content_plans_table = Table(
+    "content_plans",
+    metadata,
+    Column("id", UUID, primary_key=True),
+    Column("project_id", UUID, nullable=False),
+    Column("topic", String(500), nullable=False),
+    Column("outline_json", JSONB, nullable=False),
+    Column("primary_keywords", JSONB),
+    Column("secondary_keywords", JSONB),
+    Column("target_word_count", Integer, default=1500),
+    Column("readability_target", String(50)),
+    Column("estimated_cost", Numeric(6, 4)),
+    Column("created_at", DateTime, default=func.now()),
+)
+
+# Rules Table
+rules_table = Table(
+    "rules",
+    metadata,
+    Column("id", UUID, primary_key=True),
+    Column("rulebook_id", UUID, nullable=False),
+    Column("rule_type", String(50), nullable=False),
+    Column("content", Text, nullable=False),
+    Column("embedding", Text),  # Stored as text representation of vector
+    Column("priority", Integer, default=5),
+    Column("context", Text),
+    Column("created_at", DateTime, default=func.now()),
 )
 
 # Users Table
