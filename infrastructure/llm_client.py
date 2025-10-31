@@ -494,6 +494,7 @@ class LLMClient(AbstractLLMClient):
         # Initialize caching and metrics
         self.cache_manager = cache_manager
         self.metrics_collector = metrics_collector
+        self.redis_client = redis_client
 
         # Initialize settings and pricing
         self.settings = settings
