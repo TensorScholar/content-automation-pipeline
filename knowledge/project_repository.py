@@ -497,7 +497,7 @@ class ProjectRepository:
                         "sentence_length_std": patterns["sentence_length_std"],
                         "lexical_diversity": patterns["lexical_diversity"],
                         "readability_score": patterns["readability_score"],
-                        "tone_embedding": f"[{','.join(map(str, patterns['tone_embedding']))}]",
+                        "tone_embedding": patterns["tone_embedding"],
                         "structure_patterns": str(structure_json).replace("'", '"'),
                         "confidence": patterns["confidence"],
                         "sample_size": patterns["sample_size"],
@@ -543,7 +543,7 @@ class ProjectRepository:
             async with self.database_manager.session() as session:
                 query = """
                     SELECT id, project_id, avg_sentence_length, sentence_length_std,
-                           lexical_diversity, readability_score, confidence, 
+                           lexical_diversity, readability_score, tone_embedding, confidence, 
                            sample_size, analyzed_at
                     FROM inferred_patterns
                     WHERE project_id = :project_id
@@ -558,7 +558,7 @@ class ProjectRepository:
                 if not row:
                     return None
 
-                # Note: Not loading full tone_embedding or structure_patterns for efficiency
+                # Note: Not loading full structure_patterns for efficiency
                 return InferredPatterns(
                     id=row[0],
                     project_id=row[1],
@@ -566,11 +566,11 @@ class ProjectRepository:
                     sentence_length_std=row[3],
                     lexical_diversity=row[4],
                     readability_score=row[5],
-                    tone_embedding=[],  # Load separately if needed
+                    tone_embedding=row[6],
                     structure_patterns=[],
-                    confidence=row[6],
-                    sample_size=row[7],
-                    analyzed_at=row[8],
+                    confidence=row[7],
+                    sample_size=row[8],
+                    analyzed_at=row[9],
                 )
 
         except Exception as e:

@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
+import numpy as np
 from loguru import logger
 from sqlalchemy import delete, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -163,7 +164,7 @@ class RulebookManager:
             context = self._extract_context(chunk)
 
             # Generate embedding
-            embedding = self.embedding_model.encode(chunk).tolist()
+            embedding = self.embedding_model.encode(chunk)
 
             # Store in database
             rule_id = uuid4()
@@ -174,7 +175,7 @@ class RulebookManager:
                     rulebook_id=rulebook_id,
                     rule_type=rule_type.value,
                     content=chunk,
-                    embedding=f"[{','.join(map(str, embedding))}]",  # PostgreSQL array format
+                    embedding=embedding,
                     priority=priority,
                     context=context,
                     created_at=func.now(),
@@ -201,7 +202,7 @@ class RulebookManager:
             # Cache embedding in Redis for fast access
             await redis_client.store_embedding(
                 key=f"rule_emb:{rule_id}",
-                embedding=embedding,
+                embedding=embedding.tolist(),
                 ttl=86400 * 90,  # 90 days
             )
 
@@ -414,14 +415,14 @@ class RulebookManager:
         """
         try:
             # Generate query embedding
-            query_embedding = self.embedding_model.encode(query).tolist()
+            query_embedding = self.embedding_model.encode(query)
 
             # Build SQL query with vector similarity
             sql = """
                 SELECT 
                     r.id, r.rulebook_id, r.rule_type, r.content, 
                     r.priority, r.context, r.created_at,
-                    1 - (r.embedding <=> :query_embedding) AS similarity
+                    1 - (r.embedding <=> :query_embedding::vector) AS similarity
                 FROM rules r
                 JOIN rulebooks rb ON r.rulebook_id = rb.id
                 WHERE rb.project_id = :project_id
@@ -429,7 +430,7 @@ class RulebookManager:
 
             params = {
                 "project_id": project_id,
-                "query_embedding": f"[{','.join(map(str, query_embedding))}]",
+                "query_embedding": query_embedding,
             }
 
             if rule_type:
@@ -437,7 +438,7 @@ class RulebookManager:
                 params["rule_type"] = rule_type.value
 
             sql += """
-                AND (1 - (r.embedding <=> :query_embedding)) >= :threshold
+                AND (1 - (r.embedding <=> :query_embedding::vector)) >= :threshold
                 ORDER BY similarity DESC
                 LIMIT :top_k;
             """
@@ -445,7 +446,7 @@ class RulebookManager:
             params["threshold"] = similarity_threshold
             params["top_k"] = top_k
 
-            result = await self.session.execute(sql, params)
+            result = await self.session.execute(text(sql), params)
             rows = result.fetchall()
 
             # Convert to Rule objects with scores
@@ -573,6 +574,7 @@ class RulebookManager:
                 rules_table.c.rulebook_id,
                 rules_table.c.rule_type,
                 rules_table.c.content,
+                rules_table.c.embedding,
                 rules_table.c.priority,
                 rules_table.c.context,
                 rules_table.c.created_at,
@@ -590,7 +592,7 @@ class RulebookManager:
                 rulebook_id=row.rulebook_id,
                 rule_type=RuleType(row.rule_type),
                 content=row.content,
-                embedding=[],  # Don't load embeddings unless needed
+                embedding=row.embedding,
                 priority=row.priority,
                 context=row.context,
                 created_at=row.created_at,

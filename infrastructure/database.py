@@ -16,6 +16,8 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Optional
 
+import asyncpg
+from pgvector.asyncpg import register_vector
 from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import (
@@ -36,6 +38,11 @@ logger = logging.getLogger(__name__)
 
 # SQLAlchemy declarative base
 Base = declarative_base()
+
+
+async def setup_connection(conn: asyncpg.Connection):
+    """Register the pgvector type handler for asyncpg."""
+    await register_vector(conn)
 
 
 class DatabaseManager:
@@ -74,6 +81,7 @@ class DatabaseManager:
                 pool_recycle=self._settings.database.pool_recycle,
                 pool_pre_ping=True,  # Verify connections before use
                 poolclass=AsyncAdaptedQueuePool,
+                connect_args={"setup": setup_connection},
             )
 
             # Register connection event listeners

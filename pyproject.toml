@@ -46,6 +46,7 @@ python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 python-multipart = "^0.0.6"
 sqlalchemy = "^2.0.44"
 pydantic-settings = "^2.11.0"
+pgvector = "^0.3.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"

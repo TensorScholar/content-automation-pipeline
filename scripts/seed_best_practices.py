@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Dict, List
 from uuid import uuid4
 
+import numpy as np
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
@@ -456,7 +457,7 @@ class BestPracticesSeeder:
             practice["category"],
             practice["subcategory"],
             practice["guideline"],
-            embedding.tolist(),  # Convert numpy array to list for pgvector
+            embedding,  # Pass numpy array directly
             practice["priority"],
             practice["context"],
             datetime.utcnow(),
@@ -519,12 +520,12 @@ class BestPracticesSeeder:
         similar_practices = await self.db.fetch_all(
             """
             SELECT guideline, category, subcategory,
-                   1 - (embedding <=> $1::vector) as similarity
+                   1 - (embedding <=> $1) as similarity
             FROM best_practices
-            ORDER BY embedding <=> $1::vector
+            ORDER BY embedding <=> $1
             LIMIT 3
             """,
-            test_embedding.tolist(),
+            test_embedding,
         )
 
         verification_result = {
