@@ -112,8 +112,8 @@ inferred_patterns_table = Table(
 content_plans_table = Table(
     "content_plans",
     metadata,
-    Column("id", UUID, primary_key=True),
-    Column("project_id", UUID, nullable=False),
+    Column("id", PG_UUID, primary_key=True),
+    Column("project_id", PG_UUID, nullable=False),
     Column("topic", String(500), nullable=False),
     Column("outline_json", JSONB, nullable=False),
     Column("primary_keywords", JSONB),

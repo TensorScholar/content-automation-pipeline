@@ -283,6 +283,23 @@ class Settings(BaseSettings):
             raise ValueError("Debug mode must be disabled in production")
         return v
 
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: SecretStr, info) -> SecretStr:
+        """Require strong, non-default secret key in production."""
+        try:
+            env = info.data.get("environment")
+        except Exception:
+            env = None
+
+        key = v.get_secret_value() if isinstance(v, SecretStr) else str(v)
+        if env == "production":
+            if key == "dev-insecure-secret" or len(key) < 32:
+                raise ValueError(
+                    "SECRET_KEY must be set to a strong value (>=32 chars) in production"
+                )
+        return v
+
     @property
     def is_production(self) -> bool:
         """Check if running in production environment."""

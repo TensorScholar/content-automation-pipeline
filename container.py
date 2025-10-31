@@ -55,7 +55,6 @@ from orchestration.content_agent import ContentAgent, ContentAgentConfig
 
 # Security imports
 from security import (
-    authenticate_user,
     create_access_token,
     decode_access_token,
     get_current_active_user,
@@ -258,8 +257,6 @@ class Container(containers.DeclarativeContainer):
     token_creator: providers.Singleton[callable] = providers.Singleton(create_access_token)
 
     token_decoder: providers.Singleton[callable] = providers.Singleton(decode_access_token)
-
-    user_authenticator: providers.Singleton[callable] = providers.Singleton(authenticate_user)
 
     current_user_provider: providers.Singleton[callable] = providers.Singleton(get_current_user)
 
@@ -623,12 +620,7 @@ def get_token_decoder(decoder: callable = Provide[Container.token_decoder]) -> c
     return decoder
 
 
-@inject
-def get_user_authenticator(
-    authenticator: callable = Provide[Container.user_authenticator],
-) -> callable:
-    """Get user authentication function."""
-    return authenticator
+# Removed get_user_authenticator; authentication is handled via UserService
 
 
 @inject
@@ -718,7 +710,6 @@ __all__ = [
     "get_password_hasher",
     "get_token_creator",
     "get_token_decoder",
-    "get_user_authenticator",
     "get_current_user_dependency",
     "get_current_active_user_dependency",
     "get_current_superuser_dependency",

@@ -54,6 +54,7 @@ from core.models import ContentPlan, GeneratedArticle, Project
 from orchestration.content_agent import ContentAgent
 from services.content_service import ContentService
 from services.project_service import ProjectService
+from security import SECURITY_HEADERS
 
 # ============================================================================
 # MIDDLEWARE STACK (Cross-Cutting Concerns)
@@ -146,32 +147,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Step 2: Get current request count within the window
         current_count = await redis.zcard(key)
 
-            if current_count >= self.rate_limit:
-                logger.warning(f"Rate limit exceeded | client={client_id}")
+        if current_count >= self.rate_limit:
+            logger.warning(f"Rate limit exceeded | client={client_id}")
 
-                # Calculate Retry-After header: Find the score of the oldest request in the set
-                oldest_request = await redis.zrange_withscores(key, 0, 0)
+            # Calculate Retry-After header: Find the score of the oldest request in the set
+            oldest_request = await redis.zrange_withscores(key, 0, 0)
 
-                if oldest_request:
-                    # Oldest request is at the window_start. The next request can be served
-                    # when the window moves past this oldest request.
-                    # Reset time = (oldest_request timestamp + window duration) - now
-                    _, oldest_score = oldest_request[0]
-                    retry_after = int(oldest_score) + self.window - now
-                else:
-                    retry_after = (
-                        self.window
-                    )  # Should not happen if current_count > 0, but fallback
+            if oldest_request:
+                # Oldest request is at the window_start. The next request can be served
+                # when the window moves past this oldest request.
+                # Reset time = (oldest_request timestamp + window duration) - now
+                _, oldest_score = oldest_request[0]
+                retry_after = int(oldest_score) + self.window - now
+            else:
+                retry_after = self.window  # Fallback
 
-                return JSONResponse(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    content={
-                        "error": "Rate Limit Exceeded",
-                        "detail": f"Maximum {self.rate_limit} requests per {self.window}s",
-                        "retry_after": max(1, retry_after),
-                    },
-                    headers={"Retry-After": str(max(1, retry_after))},
-                )
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={
+                    "error": "Rate Limit Exceeded",
+                    "detail": f"Maximum {self.rate_limit} requests per {self.window}s",
+                    "retry_after": max(1, retry_after),
+                },
+                headers={"Retry-After": str(max(1, retry_after))},
+            )
 
         # Step 3: Record the new request (timestamp = score and member)
         # Using ZADD with NX (Not Exist) is often preferred, but here we just add the timestamp
@@ -190,6 +189,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             int(datetime.utcnow().timestamp()) + self.window
         )
 
+        return response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach standard security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        try:
+            for k, v in SECURITY_HEADERS.items():
+                if k not in response.headers:
+                    response.headers[k] = v
+        except Exception:
+            pass
         return response
 
 
@@ -249,11 +262,12 @@ else:
     logger.info("Static directory not found - skipping static file mounting (UI is embedded)")
 
 
-# Web interface route
-@app.get("/", response_class=HTMLResponse)
-async def web_interface():
-    """Serve the comprehensive web interface with Old Money aesthetic."""
-    return """
+# Web interface route (only in non-production environments)
+if not settings.is_production:
+    @app.get("/", response_class=HTMLResponse)
+    async def web_interface():
+        """Serve the comprehensive web interface with Old Money aesthetic."""
+        return """
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -1727,6 +1741,7 @@ async def web_interface():
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(RateLimitMiddleware, rate_limit=100, window=60)
 app.add_middleware(RequestTracingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
