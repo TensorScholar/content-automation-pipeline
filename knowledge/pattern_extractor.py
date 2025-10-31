@@ -115,19 +115,18 @@ class PatternExtractor:
 
     def _extract_clean_text(self, soup: BeautifulSoup) -> str:
         """
-        Extract clean text content from HTML.
+        Extract clean text content from HTML, prioritizing content tags
+        and removing boilerplate.
 
-        Args:
-            soup: BeautifulSoup parsed HTML
-
-        Returns:
-            Clean text content
         """
-        # Remove script and style elements
-        for script in soup(["script", "style"]):
-            script.decompose()
+        # 1. Remove script, style, nav, footer, header, aside
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", ".sidebar", ".menu"]):
+            try:
+                tag.decompose()
+            except Exception:
+                pass  # Ignore if tag not found
 
-        # Extract text from main content areas
+        # 2. Try main content selectors
         selectors = [
             "article",
             "main",
@@ -137,7 +136,6 @@ class PatternExtractor:
             ".article-content",
             "#content",
         ]
-
         for selector in selectors:
             element = soup.select_one(selector)
             if element:
@@ -145,7 +143,7 @@ class PatternExtractor:
                 if len(text) > 100:  # Has substantial content
                     return self._clean_text(text)
 
-        # Fallback: use body text
+        # 3. Fallback: use body text (but clean it first)
         body = soup.find("body")
         if body:
             return self._clean_text(body.get_text())
@@ -163,14 +161,31 @@ class PatternExtractor:
         Returns:
             Cleaned text
         """
-        # Remove multiple spaces/newlines
-        text = re.sub(r"\s+", " ", text)
+        # 1. Normalize whitespace
+        text = re.sub(r"\s+", " ", text).strip()
 
-        # Remove common boilerplate patterns
-        text = re.sub(r"(Cookie Policy|Privacy Policy|Terms of Service).*$", "", text, flags=re.I)
-        text = re.sub(r"^.*?(Share on|Follow us|Subscribe)", "", text, flags=re.I)
+        # 2. Remove common boilerplate patterns (case-insensitive, multiline)
+        boilerplate_patterns = [
+            r"cookie policy",
+            r"privacy policy",
+            r"terms of service",
+            r"all rights reserved",
+            r"copyright ©",
+            r"share on",
+            r"follow us",
+            r"subscribe to our newsletter",
+            r"related posts",
+            r"leave a comment",
+            r"posted on",
+            r"by author",
+        ]
+        pattern = r"(?i)(" + "|".join(boilerplate_patterns) + r").*?($|\n)"
+        text = re.sub(pattern, "", text, flags=re.MULTILINE)
 
-        return text.strip()
+        # 3. Remove excess newlines (which became spaces) again
+        text = re.sub(r"\s+", " ", text).strip()
+
+        return text
 
     # =========================================================================
     # QUANTITATIVE METRICS

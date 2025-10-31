@@ -375,6 +375,15 @@ class WebsiteAnalyzer:
         Returns:
             Extracted text content
         """
+        # Remove common boilerplate sections before extraction
+        for tag in soup(
+            ["nav", "footer", "header", "aside", "script", "style", ".sidebar", ".menu", ".related-posts", ".comments"]
+        ):
+            try:
+                tag.decompose()
+            except Exception:
+                pass  # Ignore if tag not found
+
         # Strategy 1: Semantic HTML5
         selectors = [
             "article",
@@ -417,12 +426,6 @@ class WebsiteAnalyzer:
                         if len(text) > 300:
                             return self._clean_text(text)
 
-        # Last resort: body text
-        body = soup.find("body")
-        if body:
-            text = body.get_text()
-            return self._clean_text(text)
-
         return ""
 
     @staticmethod
@@ -436,14 +439,33 @@ class WebsiteAnalyzer:
         Returns:
             Cleaned text
         """
-        # Remove multiple spaces/newlines
-        text = re.sub(r"\s+", " ", text)
+        # 1. Normalize whitespace
+        text = re.sub(r"\s+", " ", text).strip()
 
-        # Remove common boilerplate patterns
-        text = re.sub(r"(Cookie Policy|Privacy Policy|Terms of Service).*$", "", text, flags=re.I)
-        text = re.sub(r"^.*?(Share on|Follow us|Subscribe)", "", text, flags=re.I)
+        # 2. Remove common boilerplate patterns (case-insensitive, multiline)
+        # This removes "Cookie Policy..." and "Copyright..." etc.
+        boilerplate_patterns = [
+            r"cookie policy",
+            r"privacy policy",
+            r"terms of service",
+            r"all rights reserved",
+            r"copyright ©",
+            r"share on",
+            r"follow us",
+            r"subscribe to our newsletter",
+            r"related posts",
+            r"leave a comment",
+            r"posted on",
+            r"by author",
+        ]
+        # Build a single regex to find and remove these phrases and nearby text
+        pattern = r"(?i)(" + "|".join(boilerplate_patterns) + r").*?($|\n)"
+        text = re.sub(pattern, "", text, flags=re.MULTILINE)
 
-        return text.strip()
+        # 3. Remove excess newlines (which became spaces) again
+        text = re.sub(r"\s+", " ", text).strip()
+
+        return text
 
     # =========================================================================
     # PATTERN EXTRACTION & AGGREGATION
