@@ -581,6 +581,24 @@ class LLMClient(AbstractLLMClient):
             **kwargs,
         )
 
+        # Enforce daily token budget (fail-fast before external calls)
+        try:
+            if self.settings and hasattr(self.settings, "llm") and self.redis_client:
+                from datetime import datetime as _dt
+
+                day_key = _dt.utcnow().strftime("%Y%m%d")
+                usage_key = f"llm_usage:{day_key}"
+                usage = await self.redis_client.get(usage_key) or {}
+                tokens_used = int(usage.get("tokens", 0))
+                daily_budget = int(getattr(self.settings.llm, "daily_token_budget", 0))
+                if daily_budget and tokens_used >= daily_budget:
+                    raise LLMRateLimitError(
+                        f"Daily token budget exceeded ({tokens_used}/{daily_budget})"
+                    )
+        except Exception:
+            # Fail-open on accounting errors
+            pass
+
         # Check cache first if cache manager is available
         if self.cache_manager:
             cached_response = await self._get_cached_response(request)
@@ -649,6 +667,32 @@ class LLMClient(AbstractLLMClient):
                 )
 
             raise
+
+        finally:
+            # Update daily usage accounting on success
+            try:
+                if self.settings and hasattr(self.settings, "llm") and self.redis_client:
+                    from datetime import datetime as _dt
+
+                    day_key = _dt.utcnow().strftime("%Y%m%d")
+                    usage_key = f"llm_usage:{day_key}"
+                    # Read existing
+                    usage = await self.redis_client.get(usage_key) or {"tokens": 0, "cost": 0.0}
+                    # response may not be defined on exception
+                    if 'response' in locals() and response:
+                        usage["tokens"] = int(usage.get("tokens", 0)) + int(response.usage.total_tokens)
+                        usage["cost"] = float(usage.get("cost", 0.0)) + float(response.cost)
+                        # Persist with 2-day TTL
+                        await self.redis_client.set(usage_key, usage, ttl=172800)
+                        # Alert threshold
+                        threshold = float(getattr(self.settings.llm, "cost_alert_threshold", 0.0) or 0.0)
+                        if threshold and usage["cost"] >= threshold:
+                            logger.warning(
+                                f"LLM daily cost crossed alert threshold: ${usage['cost']:.2f} >= ${threshold:.2f}"
+                            )
+            except Exception:
+                # Never fail due to accounting
+                pass
 
     async def _execute_with_retry(
         self,
