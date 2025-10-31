@@ -432,16 +432,15 @@ class AbstractLLMClient(ABC):
 
 class LLMClient(AbstractLLMClient):
     """
-    Production-grade LLM client with fault tolerance and observability.
+    LLM client with retries, fault tolerance, metrics, and cost tracking.
 
-    Design Principles:
-    1. Provider abstraction through functorial composition
-    2. Fail-safe with circuit breaker and retry strategies
-    3. Observable with distributed tracing and metrics
-    4. Economical with precise cost tracking
-    5. Type-safe with Pydantic validation
+    Design principles:
+    - Provider abstraction
+    - Retry and circuit breaker strategies
+    - Basic observability and cost accounting
+    - Pydantic-based request validation
 
-    Usage:
+    Usage (example):
         client = LLMClient()
         response = await client.complete(
             prompt="Explain quantum computing",

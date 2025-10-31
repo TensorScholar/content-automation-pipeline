@@ -1,8 +1,7 @@
 """
-Monitoring Infrastructure: Prometheus Metrics Collection
+Monitoring Infrastructure: Prometheus Metrics
 
-Provides comprehensive observability for the content automation pipeline
-using Prometheus metrics for monitoring and alerting.
+Provides metrics for the content automation service in Prometheus format.
 """
 
 from typing import Any, Dict, Optional
