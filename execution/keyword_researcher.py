@@ -1,22 +1,10 @@
 """
-Keyword Research Engine - Computational Linguistic Intelligence
-================================================================
+Keyword Research Engine
+=======================
 
-Theoretical Foundation:
-- Graph Theory: Spectral clustering on semantic adjacency graphs
-- Information Theory: Mutual information & entropy-based ranking
-- Semantic Field Theory: Distributional semantics in vector spaces
-- PageRank Algorithm: Authority propagation through keyword networks
-- Community Detection: Louvain method for semantic clustering
-
-Mathematical Framework:
-- Adjacency Matrix A: A_ij = cos_sim(emb_i, emb_j) if sim > threshold
-- Laplacian Matrix L: L = D - A (D = degree matrix)
-- Spectral Embedding: eigenvectors of L for cluster identification
-- Mutual Information: I(K;Q) = H(K) - H(K|Q) for relevance scoring
-
-Architecture: Functional reactive pipeline with immutable transformations,
-monadic error handling, and algebraic effect composition.
+Performs keyword discovery, grouping and simple ranking using semantic
+similarity and lightweight clustering utilities. Designed for clarity and
+maintainability rather than algorithmic novelty.
 """
 
 from __future__ import annotations

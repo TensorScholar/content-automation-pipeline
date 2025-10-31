@@ -194,7 +194,8 @@ async def refresh_access_token(current_user: User = Depends(get_current_active_u
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={
-            "sub": current_user.username,
+            # Use email as canonical subject to match login and lookup semantics
+            "sub": current_user.email,
             "user_id": current_user.id,
             "scopes": ["read", "write"] if current_user.is_superuser else ["read"],
         },
@@ -238,40 +239,23 @@ async def admin_endpoint(current_user: User = Depends(get_current_superuser)) ->
 # Mock user endpoints for testing (remove in production)
 @router.get(
     "/users",
-    summary="List users (mock)",
-    description="List all users - mock implementation for testing",
+    summary="List users",
+    description="List all users (admin only)",
 )
-async def list_users(current_user: User = Depends(get_current_superuser)) -> list[dict]:
-    """
-    List all users - mock implementation.
-
-    This is a mock endpoint for testing purposes. In a real implementation,
-    this would query the user database and return actual user data.
-
-    Args:
-        current_user: Current superuser
-
-    Returns:
-        list[dict]: List of users
-    """
-    # Mock user data
-    mock_users = [
+async def list_users(
+    current_user: User = Depends(get_current_superuser),
+    user_service: UserService = Depends(get_user_service_dependency),
+) -> list[dict]:
+    users = await user_service.list_users()
+    return [
         {
-            "id": "1",
-            "username": "admin",
-            "email": "admin@example.com",
-            "full_name": "Administrator",
-            "is_active": True,
-            "is_superuser": True,
-        },
-        {
-            "id": "2",
-            "username": "user",
-            "email": "user@example.com",
-            "full_name": "Regular User",
-            "is_active": True,
-            "is_superuser": False,
-        },
+            "id": u.id,
+            "username": (u.username if hasattr(u, "username") and u.username else (u.email.split("@")[0] if u.email else None)),
+            "email": u.email,
+            "full_name": u.full_name,
+            "is_active": u.is_active,
+            "is_superuser": u.is_superuser,
+            "created_at": u.created_at,
+        }
+        for u in users
     ]
-
-    return mock_users

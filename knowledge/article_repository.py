@@ -15,11 +15,15 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, insert, or_, select, text, update
 
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
-from infrastructure.schema import article_revisions_table, generated_articles_table
+from infrastructure.schema import (
+    article_revisions_table,
+    content_plans_table,
+    generated_articles_table,
+)
 
 
 class ArticleRepository:
@@ -444,78 +448,94 @@ class ArticleRepository:
 
     async def save_content_plan(self, plan: ContentPlan) -> None:
         """
-        Saves a new content plan to the database.
+        Saves a new content plan to the database using SQLAlchemy Core.
 
         Args:
             plan: The ContentPlan object to save.
         """
-        # Note: 'outline' is a JSONB field.
-        # 'keywords' needs to be serialized (e.g., list of strings).
-        query = """
-            INSERT INTO content_plans (
-                id, project_id, topic, outline, 
-                target_word_count, readability_target, 
-                estimated_cost_usd, created_at
-            ) VALUES (
-                :id, :project_id, :topic, :outline,
-                :target_word_count, :readability_target,
-                :estimated_cost_usd, :created_at
-            )
-        """
+        try:
+            # Serialize complex types for database
+            plan_dict = plan.model_dump()
+            plan_dict["outline_json"] = plan.outline.model_dump_json()
 
-        # Serialize complex types for database
-        plan_dict = plan.model_dump()
-        plan_dict["outline"] = plan.outline.model_dump_json()
-
-        await self.db.execute(query=query, values=plan_dict)
+            async with self.db.session() as session:
+                query = (
+                    insert(content_plans_table)
+                    .values(
+                        id=plan.id,
+                        project_id=plan.project_id,
+                        topic=plan.topic,
+                        outline_json=plan_dict["outline_json"],
+                        target_word_count=plan.target_word_count,
+                        readability_target=plan.readability_target,
+                        estimated_cost=plan.estimated_cost_usd,
+                        created_at=plan.created_at,
+                    )
+                )
+                await session.execute(query)
+                await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to save content plan: {e}")
+            raise
 
     async def save_generated_article(self, article: GeneratedArticle) -> None:
         """
-        Saves a fully generated article to the database.
+        Saves a fully generated article to the database using SQLAlchemy Core.
 
         Args:
             article: The GeneratedArticle object to save.
         """
-        # Note: 'quality_metrics' is a JSONB field.
-        query = """
-            INSERT INTO generated_articles (
-                id, project_id, content_plan_id, title, content, 
-                meta_description, total_tokens_used, total_cost_usd,
-                generation_time_seconds, quality_metrics, model_used,
-                status, created_at, updated_at
-            ) VALUES (
-                :id, :project_id, :content_plan_id, :title, :content, 
-                :meta_description, :total_tokens_used, :total_cost_usd,
-                :generation_time_seconds, :quality_metrics, :model_used,
-                :status, :created_at, :updated_at
-            )
-        """
+        try:
+            # Serialize complex types for database
+            article_dict = article.model_dump()
+            quality_metrics_json = article.quality_metrics.model_dump_json()
 
-        # Serialize complex types for database
-        article_dict = article.model_dump()
-        article_dict["quality_metrics"] = article.quality_metrics.model_dump_json()
-
-        await self.db.execute(query=query, values=article_dict)
+            async with self.db.session() as session:
+                query = (
+                    insert(generated_articles_table)
+                    .values(
+                        id=article.id,
+                        project_id=article.project_id,
+                        content_plan_id=article.content_plan_id,
+                        title=article.title,
+                        content=article.content,
+                        meta_description=article.meta_description,
+                        word_count=article.quality_metrics.word_count,
+                        readability_score=article.quality_metrics.readability_score,
+                        keyword_density=article.quality_metrics.keyword_density,
+                        total_tokens_used=article.total_tokens_used,
+                        total_cost=article.total_cost_usd,
+                        generation_time=article.generation_time_seconds,
+                        created_at=article.created_at,
+                        updated_at=article.updated_at,
+                    )
+                )
+                await session.execute(query)
+                await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to save generated article: {e}")
+            raise
 
     async def update_article_distribution(
         self, article_id: UUID, distributed_at: datetime, channels: list[str]
     ) -> None:
-        query = """
-            UPDATE generated_articles
-            SET distributed_at = :distributed_at, 
-                distribution_channels = :channels,
-                updated_at = :updated_at
-            WHERE id = :article_id
-        """
-        await self.db.execute(
-            query=query,
-            values={
-                "article_id": article_id,
-                "distributed_at": distributed_at,
-                "channels": channels,
-                "updated_at": datetime.utcnow(timezone.utc),
-            },
-        )
+        """Update article distribution status using SQLAlchemy Core."""
+        try:
+            async with self.db.session() as session:
+                query = (
+                    update(generated_articles_table)
+                    .where(generated_articles_table.c.id == article_id)
+                    .values(
+                        distributed_at=distributed_at,
+                        distribution_channels=channels,
+                        updated_at=datetime.utcnow(timezone.utc),
+                    )
+                )
+                await session.execute(query)
+                await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to update article distribution: {e}")
+            raise
 
     # =========================================================================
     # CONTENT PLAN OPERATIONS

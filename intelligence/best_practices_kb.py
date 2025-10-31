@@ -30,8 +30,8 @@ from loguru import logger
 
 from core.exceptions import ValidationError
 from core.models import RuleType
-from infrastructure.redis_client import redis_client
-from intelligence.semantic_analyzer import semantic_analyzer
+from infrastructure.redis_client import RedisClient
+from intelligence.semantic_analyzer import SemanticAnalyzer
 
 
 class PracticeCategory(str, Enum):
@@ -74,8 +74,16 @@ class BestPracticesKB:
     inferred patterns are unavailable or insufficient.
     """
 
-    def __init__(self):
-        """Initialize knowledge base."""
+    def __init__(self, redis_client: RedisClient, semantic_analyzer: SemanticAnalyzer):
+        """
+        Initialize knowledge base.
+
+        Args:
+            redis_client: Redis client instance for caching embeddings
+            semantic_analyzer: Semantic analyzer instance for embeddings
+        """
+        self.redis_client = redis_client
+        self.semantic_analyzer = semantic_analyzer
         self.practices: Dict[str, BestPractice] = {}
         self.practices_by_category: Dict[PracticeCategory, List[str]] = {}
         self._initialized = False
@@ -133,7 +141,7 @@ class BestPracticesKB:
 
         # Generate query embedding if not provided
         if query_embedding is None:
-            query_embedding = await semantic_analyzer.embed(query, normalize=True)
+            query_embedding = await self.semantic_analyzer.embed(query, normalize=True)
 
         # Filter by rule type if specified
         if rule_type:
@@ -150,7 +158,7 @@ class BestPracticesKB:
             if practice.confidence < min_confidence:
                 continue
 
-            similarity = semantic_analyzer.compute_similarity(
+            similarity = self.semantic_analyzer.compute_similarity(
                 query_embedding, practice.embedding, metric="cosine"
             )
 
@@ -463,7 +471,7 @@ class BestPracticesKB:
         practice_id = f"bp_{uuid4().hex[:12]}"
 
         # Generate embedding
-        embedding = await semantic_analyzer.embed(content, normalize=True)
+        embedding = await self.semantic_analyzer.embed(content, normalize=True)
 
         # Create practice object
         practice = BestPractice(
@@ -504,7 +512,7 @@ class BestPracticesKB:
             cache_batch[cache_key] = practice.embedding
 
         if cache_batch:
-            await redis_client.store_embeddings_batch(
+            await self.redis_client.store_embeddings_batch(
                 embeddings=cache_batch, ttl=86400 * 90
             )  # 90 days
 
@@ -583,9 +591,3 @@ async def add_custom_practice(
     logger.info(f"Added custom practice: {practice_id}")
 
     return practice_id
-
-
-# =========================================================================
-# GLOBAL INSTANCE
-# =========================================================================
-best_practices_kb = BestPracticesKB()

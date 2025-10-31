@@ -19,7 +19,7 @@ from uuid import UUID
 from celery import Task
 from loguru import logger
 
-from container import container, container_manager
+from container import container
 from core.exceptions import WorkflowError
 from orchestration.celery_app import app
 
@@ -62,23 +62,17 @@ class ContentGenerationBaseTask(Task):
             logger.warning(f"Failed to load metrics_collector for failure logging: {e}")
             metrics_collector = None
 
-        # Record failure metrics if available
+        # Record failure metrics if available (synchronous call)
         if metrics_collector:
             try:
-                # Run async metrics recording in sync context
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(
-                    metrics_collector.record_workflow_completion(
-                        project_id=kwargs.get("project_id", "unknown"),
-                        workflow_type="content_generation",
-                        duration_seconds=0,
-                        cost=0.0,
-                        success=False,
-                        error_type=type(exc).__name__,
-                    )
+                metrics_collector.record_workflow_completion(
+                    project_id=kwargs.get("project_id", "unknown"),
+                    workflow_type="content_generation",
+                    duration_seconds=0,
+                    cost=0.0,
+                    success=False,
+                    error_type=type(exc).__name__,
                 )
-                loop.close()
             except Exception as e:
                 logger.warning(f"Failed to record failure metrics: {e}")
 
@@ -153,37 +147,26 @@ def generate_content_task(
         # Convert string UUID to UUID object
         project_uuid = UUID(project_id)
 
-        # --- START NEW INITIALIZATION LOGIC ---
-        # Create a new event loop for this task execution to ensure
-        # a clean state for async initialization.
+        # --- START MODIFIED LOGIC ---
+        # Get the agent from the already-initialized container.
+        # This is now safe because the worker process initialized it.
+        content_agent = container.content_agent()
+
+        # Create a new event loop for this specific task execution
+        # to run the async content_agent.create_content method.
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        content_agent = None
-        try:
-            # Initialize the DI container and its async resources
-            # This must be run within the new event loop.
-            loop.run_until_complete(container_manager.initialize())
-
-            # Get the fully-wired ContentAgent
-            content_agent = container.content_agent()
-            logger.info(f"ContentAgent and DI container initialized for task {self.request.id}")
-
-            # Execute the main async content creation workflow
-            article = loop.run_until_complete(
-                content_agent.create_content(
-                    project_id=project_uuid,
-                    topic=topic,
-                    priority=priority,
-                    custom_instructions=custom_instructions,
-                )
+        article = loop.run_until_complete(
+            content_agent.create_content(
+                project_id=project_uuid,
+                topic=topic,
+                priority=priority,
+                custom_instructions=custom_instructions,
             )
-        finally:
-            # Ensure container resources (like DB pools) are cleaned up
-            loop.run_until_complete(container_manager.cleanup())
-            loop.close()
-            logger.info(f"Container resources cleaned up for task {self.request.id}")
-        # --- END NEW INITIALIZATION LOGIC ---
+        )
+        loop.close()
+        # --- END MODIFIED LOGIC ---
 
         # Calculate execution time
         execution_time = (datetime.utcnow() - start_time).total_seconds()
@@ -293,3 +276,45 @@ def batch_generate_task(self, project_id: str, topics: list, priority: str = "hi
         "status": "processing",
         "created_at": datetime.utcnow().isoformat(),
     }
+
+
+@app.task(
+    name="content_automation.analyze_website",
+    bind=True,
+    acks_late=True,
+)
+def analyze_website_task(self, project_id: str, domain: str) -> Dict:
+    """
+    Asynchronous website analysis task to infer content patterns.
+    """
+    logger.info(
+        f"Website analysis task started | task_id={self.request.id} | project_id={project_id} | domain={domain}"
+    )
+    try:
+        from uuid import UUID
+        from container import container
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        analyzer = container.website_analyzer()
+        inferred = loop.run_until_complete(analyzer.analyze_website(UUID(project_id), domain))
+        loop.close()
+
+        return {
+            "task_id": self.request.id,
+            "status": "completed",
+            "id": str(inferred.id) if inferred else None,
+            "project_id": project_id,
+            "avg_sentence_length": getattr(inferred, "avg_sentence_length", None),
+            "lexical_diversity": getattr(inferred, "lexical_diversity", None),
+            "readability_score": getattr(inferred, "readability_score", None),
+            "confidence": getattr(inferred, "confidence", None),
+            "sample_size": getattr(inferred, "sample_size", None),
+            "analyzed_at": getattr(inferred, "analyzed_at", None).isoformat() if inferred and getattr(inferred, "analyzed_at", None) else None,
+        }
+    except Exception as e:
+        logger.error(
+            f"Website analysis task failed | task_id={self.request.id} | error={str(e)}"
+        )
+        raise

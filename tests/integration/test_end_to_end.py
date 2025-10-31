@@ -27,7 +27,6 @@ from core.exceptions import TokenBudgetExceededError, WorkflowError
 from core.models import Project
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
-from execution.distributer import Distributor
 from execution.keyword_researcher import KeywordResearcher
 from infrastructure.llm_client import LLMClient
 from infrastructure.monitoring import MetricsCollector
@@ -44,7 +43,6 @@ from optimization.prompt_compressor import PromptCompressor
 from optimization.token_budget_manager import TokenBudgetManager
 from orchestration.content_agent import ContentAgent, ContentAgentConfig, WorkflowState
 
-# from orchestration.task_queue import TaskManager  # File was deleted
 
 # ============================================================================
 # INTEGRATION TEST FIXTURES
@@ -184,14 +182,6 @@ async def integrated_system(clean_db, redis):
         metrics_collector=metrics,
     )
 
-    # Mock distributor to avoid external API calls
-    distributor = AsyncMock(spec=Distributor)
-    distributor.distribute_to_telegram.return_value = {
-        "channel": "telegram",
-        "message_id": 12345,
-        "timestamp": datetime.utcnow(),
-    }
-
     # Orchestration
     agent = ContentAgent(
         database_manager=db,
@@ -215,7 +205,6 @@ async def integrated_system(clean_db, redis):
         "redis": redis,
         "metrics": metrics,
         "llm": llm,
-        "distributor": distributor,
     }
 
 
@@ -719,64 +708,6 @@ async def test_token_budget_enforcement(integrated_system, sample_project_with_r
 # ============================================================================
 # DISTRIBUTION INTEGRATION TESTS
 # ============================================================================
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_successful_distribution(integrated_system, sample_project_with_rulebook):
-    """
-    Test article distribution after generation.
-
-    Validates distribution workflow integration.
-    """
-    agent = integrated_system["agent"]
-    distributor = integrated_system["distributor"]
-    project = sample_project_with_rulebook
-
-    # Enable auto-distribution
-    agent.config.enable_auto_distribution = True
-
-    article = await agent.create_content(
-        project_id=project.id, topic="Distribution Test Article", priority="high"
-    )
-
-    # Should have distributed
-    assert article.distributed_at is not None
-    assert len(article.distribution_channels) > 0
-
-    # Distributor should have been called
-    distributor.distribute_to_telegram.assert_called_once()
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_distribution_failure_doesnt_fail_workflow(
-    integrated_system, sample_project_with_rulebook
-):
-    """
-    Test that distribution failures don't cause workflow failure.
-
-    Generation should succeed even if distribution fails.
-    """
-    agent = integrated_system["agent"]
-    distributor = integrated_system["distributor"]
-    project = sample_project_with_rulebook
-
-    # Mock distribution failure
-    from core.exceptions import DistributionError
-
-    distributor.distribute_to_telegram.side_effect = DistributionError("Network error")
-
-    agent.config.enable_auto_distribution = True
-
-    # Should still succeed
-    article = await agent.create_content(
-        project_id=project.id, topic="Resilient Distribution Test", priority="high"
-    )
-
-    # Article generated despite distribution failure
-    assert article is not None
-    assert article.distributed_at is None  # Distribution failed
 
 
 # ============================================================================

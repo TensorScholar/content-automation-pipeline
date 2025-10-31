@@ -110,3 +110,35 @@ async def test_caching_without_cache_manager(redis):
 
     assert mock_llm_api.chat.completions.create.call_count == 2
     print("✓ No caching test passed. Both requests triggered API calls.")
+
+
+@pytest.mark.asyncio
+async def test_cache_manager_cleanup_and_optimize():
+    """Validate CacheManager maintenance paths (cleanup_expired, optimize)."""
+    from datetime import timedelta as td
+    from optimization.cache_manager import CacheManager, CacheLevel
+
+    # Use a small memory limit to trigger eviction code paths
+    cm = CacheManager(redis_client=MagicMock(), max_memory_entries=2)
+
+    # Insert entries with short TTL to simulate expiry
+    await cm.set("k1", {"v": 1}, ttl=1, levels=[CacheLevel.MEMORY])
+    await cm.set("k2", {"v": 2}, ttl=1, levels=[CacheLevel.MEMORY])
+
+    # Force an expired state
+    import asyncio as aio
+    await aio.sleep(1.1)
+
+    removed = await cm.cleanup_expired()
+    assert removed >= 1
+
+    # Add 3 items to trigger LRU eviction on set
+    await cm.set("a", 1, levels=[CacheLevel.MEMORY])
+    await cm.set("b", 2, levels=[CacheLevel.MEMORY])
+    await cm.set("c", 3, levels=[CacheLevel.MEMORY])
+
+    stats_before = cm.get_statistics()
+    assert stats_before["memory_cache"]["size"] <= 2
+
+    result = await cm.optimize()
+    assert "final_size" in result

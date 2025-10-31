@@ -1,12 +1,9 @@
 """
-Dependency Injection Container: Centralized Object Lifecycle Management
+Dependency Injection Container
 
-Implements a comprehensive dependency injection system using dependency-injector
-to manage the entire application's object graph with proper lifecycle management,
-type safety, and acyclic dependency resolution.
-
-Architecture: Container Pattern + Dependency Injection + Singleton Registry
-Mathematical Foundation: Directed Acyclic Graph (DAG) for dependency resolution
+Provides application-wide object construction and wiring using dependency-injector.
+Encapsulates lifecycle management for infrastructure and service components with
+clear dependency boundaries.
 """
 
 import asyncio
@@ -25,7 +22,6 @@ T = TypeVar("T")
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
 
-# from execution.distributer import Distributor  # File was deleted
 from execution.keyword_researcher import KeywordResearcher
 
 # Infrastructure layer imports
@@ -74,7 +70,6 @@ from services.content_service import ContentService
 from services.project_service import ProjectService
 from services.user_service import UserService
 
-# from orchestration.task_queue import TaskManager  # File was deleted, using tasks.py instead
 
 
 class Container(containers.DeclarativeContainer):
@@ -103,6 +98,7 @@ class Container(containers.DeclarativeContainer):
 
     cache: providers.Singleton[CacheManager] = providers.Singleton(
         CacheManager,
+        redis_client=redis,  # <--- ADD THIS
         max_memory_entries=1000,
         metrics_collector=metrics,
     )
@@ -136,7 +132,10 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Intelligence layer providers (factories) - moved before rulebook_manager
-    semantic_analyzer: providers.Factory[SemanticAnalyzer] = providers.Factory(SemanticAnalyzer)
+    semantic_analyzer: providers.Factory[SemanticAnalyzer] = providers.Factory(
+        SemanticAnalyzer,
+        redis_client=redis,  # <--- ADD THIS
+    )
 
     rulebook_manager: providers.Factory[RulebookManager] = providers.Factory(
         RulebookManager,
@@ -148,8 +147,9 @@ class Container(containers.DeclarativeContainer):
 
     website_analyzer: providers.Factory[WebsiteAnalyzer] = providers.Factory(
         WebsiteAnalyzer,
-        session=database,
-        pattern_extractor=pattern_extractor,
+        pattern_extractor=pattern_extractor,  # <--- Re-order for clarity
+        project_repository=project_repository,  # <--- ADD THIS
+        scraping_settings=config.provided.scraping,  # <--- ADD THIS
     )
 
     user_repository: providers.Factory[UserRepository] = providers.Factory(
@@ -158,7 +158,11 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Intelligence layer providers (factories)
-    best_practices_kb: providers.Factory[BestPracticesKB] = providers.Factory(BestPracticesKB)
+    best_practices_kb: providers.Factory[BestPracticesKB] = providers.Factory(
+        BestPracticesKB,
+        redis_client=redis,  # <--- ADD THIS
+        semantic_analyzer=semantic_analyzer,  # <--- ADD THIS
+    )
 
     decision_engine: providers.Factory[DecisionEngine] = providers.Factory(
         DecisionEngine,
@@ -193,29 +197,26 @@ class Container(containers.DeclarativeContainer):
 
     content_planner: providers.Factory[ContentPlanner] = providers.Factory(
         ContentPlanner,
+        decision_engine=decision_engine,
+        context_synthesizer=context_synthesizer,
+        model_router=model_router,
+        llm_client=llm,
+        article_repository=article_repository,
+        metrics_collector=metrics,
     )
 
     content_generator: providers.Factory[ContentGenerator] = providers.Factory(
         ContentGenerator,
+        model_router=model_router,
         llm_client=llm,
         context_synthesizer=context_synthesizer,
         semantic_analyzer=semantic_analyzer,
-        model_router=model_router,
         token_budget_manager=token_budget_manager,
-        prompt_compressor=prompt_compressor,
+        article_repository=article_repository,
         metrics_collector=metrics,
     )
 
-    # distributor: providers.Factory[Distributor] = providers.Factory(
-    #     Distributor,  # File was deleted
-    #     telegram_bot_token=config.provided.telegram.bot_token.provided.get_secret_value(),
-    #     metrics_collector=metrics,
-    # )
-
     # Orchestration layer providers (factories)
-    # task_manager: providers.Factory[TaskManager] = providers.Factory(
-    #     TaskManager  # File was deleted
-    # )
 
     content_agent: providers.Factory[ContentAgent] = providers.Factory(
         ContentAgent,
@@ -227,7 +228,6 @@ class Container(containers.DeclarativeContainer):
         keyword_researcher=keyword_researcher,
         content_planner=content_planner,
         content_generator=content_generator,
-        # distributor=distributor,  # File was deleted
         budget_manager=token_budget_manager,
         metrics_collector=metrics,
         config=providers.Factory(ContentAgentConfig),
@@ -242,7 +242,6 @@ class Container(containers.DeclarativeContainer):
     content_service: providers.Factory[ContentService] = providers.Factory(
         ContentService,
         article_repository=article_repository,
-        # task_manager=task_manager,  # File was deleted
         project_service=project_service,
     )
 
@@ -562,21 +561,6 @@ def get_content_generator(
     return generator
 
 
-# @inject
-# def get_distributor(
-#     # distributor: Distributor = Provide[Container.distributor]  # File was deleted
-# ) -> Distributor:
-#     """Get distributor instance."""
-#     return distributor
-
-
-# @inject
-# def get_task_manager(
-#     manager: TaskManager = Provide[Container.task_manager]  # File was deleted
-# ) -> TaskManager:
-#     """Get task manager instance."""
-#     return manager
-
 
 @inject
 def get_content_agent(agent: ContentAgent = Provide[Container.content_agent]) -> ContentAgent:
@@ -724,8 +708,6 @@ __all__ = [
     "get_keyword_researcher",
     "get_content_planner",
     "get_content_generator",
-    # "get_distributor",  # Removed - distributor was deleted
-    # "get_task_manager",  # Removed - task_manager was deleted
     "get_content_agent",
     "get_project_service",
     "get_content_service",

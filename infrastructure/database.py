@@ -16,6 +16,8 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Optional
 
+import asyncpg
+from pgvector.asyncpg import register_vector
 from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import (
@@ -36,6 +38,11 @@ logger = logging.getLogger(__name__)
 
 # SQLAlchemy declarative base
 Base = declarative_base()
+
+
+async def setup_connection(conn: asyncpg.Connection):
+    """Register the pgvector type handler for asyncpg."""
+    await register_vector(conn)
 
 
 class DatabaseManager:
@@ -74,6 +81,7 @@ class DatabaseManager:
                 pool_recycle=self._settings.database.pool_recycle,
                 pool_pre_ping=True,  # Verify connections before use
                 poolclass=AsyncAdaptedQueuePool,
+                connect_args={"setup": setup_connection},
             )
 
             # Register connection event listeners
@@ -152,9 +160,9 @@ class DatabaseManager:
 
                 # Verify pgvector extension
                 result = await conn.execute(
-                    text("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')")
+                    text("SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1")
                 )
-                has_pgvector = result.scalar()
+                has_pgvector = result.scalar() == 1
 
                 if not has_pgvector:
                     logger.warning("pgvector extension not installed")
@@ -227,6 +235,53 @@ class DatabaseManager:
                 logger.error(f"Raw query execution failed: {e}")
                 raise DatabaseQueryTimeoutError(
                     "Query execution failed", query_preview=query[:200], cause=e
+                ) from e
+
+    # -------------------------------------------------------------------------
+    # Convenience helpers expected by repositories
+    # -------------------------------------------------------------------------
+    async def execute(self, query, params: Optional[dict] = None):
+        """
+        Execute a SQLAlchemy Core query and return the execution result.
+
+        Note: For INSERT/UPDATE without RETURNING, the result will not contain
+        row data. Callers that need created IDs should set them explicitly or
+        use RETURNING.
+        """
+        async with self.session() as session:
+            try:
+                result = await session.execute(query, params or {})
+                return result
+            except Exception as e:
+                logger.error(f"Query execution failed: {e}")
+                raise DatabaseQueryTimeoutError(
+                    "Query execution failed", query_preview=str(query)[:200], cause=e
+                ) from e
+
+    async def fetch_one(self, query):
+        """Execute a SELECT and return a single row mapping or None."""
+        async with self.session() as session:
+            try:
+                result = await session.execute(query)
+                row = result.fetchone()
+                return row._mapping if row else None
+            except Exception as e:
+                logger.error(f"fetch_one failed: {e}")
+                raise DatabaseQueryTimeoutError(
+                    "Query execution failed", query_preview=str(query)[:200], cause=e
+                ) from e
+
+    async def fetch_all(self, query):
+        """Execute a SELECT and return a list of row mappings."""
+        async with self.session() as session:
+            try:
+                result = await session.execute(query)
+                rows = result.fetchall()
+                return [row._mapping for row in rows]
+            except Exception as e:
+                logger.error(f"fetch_all failed: {e}")
+                raise DatabaseQueryTimeoutError(
+                    "Query execution failed", query_preview=str(query)[:200], cause=e
                 ) from e
 
     @property

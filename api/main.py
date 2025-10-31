@@ -100,7 +100,7 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={
                     "error": "Internal Server Error",
-                    "detail": str(e),
+                    # Do not leak internal details in responses
                     "timestamp": datetime.utcnow().isoformat(),
                     "request_id": request_id,
                 },
@@ -140,19 +140,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         now = int(time.time())  # Current Unix timestamp (seconds)
         window_start = now - self.window
 
-        # Use Redis connection pool for sorted set operations
-        async with redis._pool.get_connection() as conn:  # type: ignore
-            # Step 1: Remove old requests (outside the sliding window)
-            await conn.zremrangebyscore(key, 0, window_start)
+        # Step 1: Remove old requests (outside the sliding window)
+        await redis.zremrangebyscore(key, 0, window_start)
 
-            # Step 2: Get current request count within the window
-            current_count = await conn.zcard(key)
+        # Step 2: Get current request count within the window
+        current_count = await redis.zcard(key)
 
             if current_count >= self.rate_limit:
                 logger.warning(f"Rate limit exceeded | client={client_id}")
 
                 # Calculate Retry-After header: Find the score of the oldest request in the set
-                oldest_request = await conn.zrange(key, 0, 0, withscores=True)
+                oldest_request = await redis.zrange_withscores(key, 0, 0)
 
                 if oldest_request:
                     # Oldest request is at the window_start. The next request can be served
@@ -175,10 +173,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     headers={"Retry-After": str(max(1, retry_after))},
                 )
 
-            # Step 3: Record the new request (timestamp = score and member)
-            # Using ZADD with NX (Not Exist) is often preferred, but here we just add the timestamp
-            # to represent the log of requests. We use the current timestamp for both score and member.
-            await conn.zadd(key, {str(now) + "_" + str(uuid.uuid4()): now})
+        # Step 3: Record the new request (timestamp = score and member)
+        # Using ZADD with NX (Not Exist) is often preferred, but here we just add the timestamp
+        # to represent the log of requests. We use the current timestamp for both score and member.
+        await redis.zadd(key, {str(now) + "_" + str(uuid.uuid4()): now})
 
         response = await call_next(request)
 
@@ -213,7 +211,13 @@ add_exception_handlers(app)
 
 # Wire container to enable dependency injection BEFORE including routes
 container.wire(
-    modules=["api.routes.content", "api.routes.projects", "api.routes.system", "api.routes.auth"]
+    modules=[
+        "api.routes.content",
+        "api.routes.projects",
+        "api.routes.system",
+        "api.routes.auth",
+        "security",  # ensure security dependencies are wired
+    ]
 )
 
 
@@ -1160,15 +1164,16 @@ async def web_interface():
                 const statusDiv = document.getElementById('auth-status');
                 
                 try {
+                    const formData = new URLSearchParams();
+                    formData.append('username', email);
+                    formData.append('password', password);
+
                     const response = await fetch('/auth/token', {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json',
+                            'Content-Type': 'application/x-www-form-urlencoded',
                         },
-                        body: JSON.stringify({
-                            username: email,
-                            password: password
-                        })
+                        body: formData
                     });
                     
                     if (response.ok) {
@@ -1734,261 +1739,8 @@ app.add_middleware(
 # ============================================================================
 # API ENDPOINTS (Command/Query Handlers)
 # ============================================================================
-
-
-@app.post(
-    "/projects",
-    response_model=ProjectResponse,
-    status_code=status.HTTP_201_CREATED,
-    tags=["Projects"],
-    summary="Create new project",
-)
-async def create_project(
-    request: CreateProjectRequest,
-    project_service: ProjectService = Depends(get_project_service_dependency),
-):
-    """
-    Create new content project with optional initial configuration.
-
-    Projects serve as multi-tenant isolation boundaries. Each project
-    maintains its own rulebook, inferred patterns, and content history.
-    """
-    logger.info(f"Creating project | name={request.name}")
-
-    # Use service layer method for atomic transaction
-    result = await project_service.create_project_with_rulebook(
-        name=request.name,
-        domain=request.domain,
-        telegram_channel=request.telegram_channel,
-        rulebook_content=request.rulebook_content,
-    )
-
-    return ProjectResponse(**result)
-
-
-@app.get(
-    "/projects/{project_id}",
-    response_model=ProjectResponse,
-    tags=["Projects"],
-    summary="Get project details",
-)
-async def get_project(
-    project_id: UUID, project_service: ProjectService = Depends(get_project_service_dependency)
-):
-    """Retrieve project details by ID."""
-    # Use service layer method for comprehensive project details
-    result = await project_service.get_project_with_details(project_id)
-    return ProjectResponse(**result)
-
-
-@app.get(
-    "/projects",
-    response_model=list[ProjectResponse],
-    tags=["Projects"],
-    summary="List all projects",
-)
-async def list_projects(
-    skip: int = 0,
-    limit: int = 100,
-    project_service: ProjectService = Depends(get_project_service_dependency),
-):
-    """List all projects with pagination."""
-    async with project_service.database_manager.session() as session:
-        from knowledge.project_repository import ProjectRepository
-
-        project_repo = ProjectRepository(project_service.database_manager)
-        project_list = await project_repo.list_all(offset=skip, limit=limit)
-
-    # TODO: Batch load rulebook/pattern status for efficiency
-    return [
-        ProjectResponse(
-            id=str(p.id),
-            name=p.name,
-            domain=p.domain,
-            telegram_channel=p.telegram_channel,
-            wordpress_url=p.wordpress_url,
-            wordpress_username=p.wordpress_username,
-            created_at=p.created_at,
-            total_articles_generated=p.total_articles_generated,
-            has_rulebook=False,  # TODO: batch load
-            has_inferred_patterns=False,  # TODO: batch load
-        )
-        for p in project_list
-    ]
-
-
-@app.post(
-    "/projects/{project_id}/generate",
-    response_model=ArticleResponse,
-    tags=["Content Generation"],
-    summary="Generate content (sync)",
-)
-async def generate_content_sync(
-    project_id: UUID,
-    request: GenerateContentRequest,
-    agent: ContentAgent = Depends(get_content_agent_dependency),
-):
-    """
-    Generate content synchronously.
-
-    Executes complete workflow and returns generated article.
-    Use for interactive requests. For batch processing, use async endpoint.
-    """
-    if request.async_execution:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Use /projects/{project_id}/generate/async for async execution",
-        )
-
-    logger.info(f"Sync content generation | project_id={project_id} | topic={request.topic}")
-
-    article = await agent.create_content(
-        project_id=project_id,
-        topic=request.topic,
-        priority=request.priority,
-        custom_instructions=request.custom_instructions,
-    )
-
-    return ArticleResponse(
-        article_id=str(article.id),
-        project_id=str(article.project_id),
-        title=article.title,
-        word_count=article.quality_metrics.word_count,
-        cost=article.total_cost_usd,
-        generation_time=article.generation_time_seconds,
-        readability_score=article.quality_metrics.readability_score,
-        distributed=article.distributed_at is not None,
-        created_at=article.created_at,
-    )
-
-
-@app.post(
-    "/projects/{project_id}/generate/async",
-    response_model=TaskStatusResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    tags=["Content Generation"],
-    summary="Generate content (async)",
-)
-async def generate_content_async(
-    project_id: UUID,
-    request: GenerateContentRequest,
-    # task_manager: TaskManager = Depends(get_task_manager),  # Function was deleted
-):
-    """
-    Generate content asynchronously via task queue.
-
-    Returns immediately with task ID. Poll /tasks/{task_id} for status.
-    Recommended for batch processing or long-running operations.
-    """
-    logger.info(f"Async content generation | project_id={project_id} | topic={request.topic}")
-
-    # Submit task to Celery
-    from orchestration.tasks import generate_content_task
-
-    task = generate_content_task.delay(
-        project_id=str(project_id),
-        topic=request.topic,
-        priority=getattr(request, "priority", "medium"),
-        custom_instructions=getattr(request, "custom_instructions", None),
-    )
-
-    return TaskStatusResponse(
-        task_id=task.id,
-        state="PENDING",
-        ready=False,
-        successful=None,
-        failed=None,
-        result=None,
-        error=None,
-        progress=None,
-    )
-
-
-# Task management endpoints removed (TaskManager was deleted)
-
-
-@app.get(
-    "/projects/{project_id}/workflow/status",
-    response_model=WorkflowStatusResponse,
-    tags=["Workflow"],
-    summary="Get current workflow status",
-)
-async def get_workflow_status(
-    project_id: UUID, agent: ContentAgent = Depends(get_content_agent_dependency)
-):
-    """
-    Get real-time status of active workflow.
-
-    Returns workflow state, events, and progress information.
-    """
-    status_info = await agent.get_workflow_status()
-
-    if not status_info or status_info.get("status") == "no_active_workflow":
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="No active workflow for this project"
-        )
-
-    return WorkflowStatusResponse(**status_info)
-
-
-@app.get(
-    "/projects/{project_id}/workflow/stream",
-    tags=["Workflow"],
-    summary="Stream workflow events (SSE)",
-)
-async def stream_workflow_events(
-    project_id: UUID, agent: ContentAgent = Depends(get_content_agent_dependency)
-):
-    """
-    Server-Sent Events stream of workflow execution.
-
-    Provides real-time updates during content generation.
-    Compatible with EventSource API in browsers.
-
-    Event Stream Format:
-        event: workflow_event
-        data: {"state": "...", "message": "...", "timestamp": "..."}
-    """
-
-    async def event_generator():
-        """
-        Async generator yielding SSE-formatted events.
-
-        Implements reactive streaming pattern for real-time observability.
-        """
-        # Subscribe to workflow events
-        while True:
-            status = await agent.get_workflow_status()
-
-            if not status or status.get("status") == "no_active_workflow":
-                yield f"event: complete\ndata: {json.dumps({'status': 'no_active_workflow'})}\n\n"
-                break
-
-            # Yield latest events
-            for event in status.get("events", []):
-                event_data = {
-                    "state": event.get("state"),
-                    "message": event.get("message"),
-                    "timestamp": event.get("timestamp"),
-                }
-                yield f"event: workflow_event\ndata: {json.dumps(event_data)}\n\n"
-
-            # Check if workflow complete
-            if status.get("state") in ["completed", "failed"]:
-                yield f"event: complete\ndata: {json.dumps({'state': status.get('state')})}\n\n"
-                break
-
-            await asyncio.sleep(1)  # Poll interval
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-        },
-    )
+# Note: Project and content routes are handled by routers in api/routes/
+# These routers are included via app.include_router() calls above.
 
 
 # Application startup and shutdown handlers

@@ -461,6 +461,46 @@ class RedisClient:
             raise CacheError(f"Increment failed: {e}")
 
     # =========================================================================
+    # SORTED SET OPERATIONS (for rate limiting)
+    # =========================================================================
+
+    async def zremrangebyscore(self, key: str, min_score: int, max_score: int) -> int:
+        """Remove all members in a sorted set within the given scores."""
+        try:
+            async with self._pool.get_connection() as conn:
+                return await conn.zremrangebyscore(key, min_score, max_score)
+        except Exception as e:
+            logger.error(f"Failed zremrangebyscore on {key}: {e}")
+            raise CacheError(f"zremrangebyscore failed: {e}")
+
+    async def zcard(self, key: str) -> int:
+        """Get the number of members in a sorted set."""
+        try:
+            async with self._pool.get_connection() as conn:
+                return await conn.zcard(key)
+        except Exception as e:
+            logger.error(f"Failed zcard on {key}: {e}")
+            raise CacheError(f"zcard failed: {e}")
+
+    async def zrange_withscores(self, key: str, start: int, stop: int) -> list:
+        """Return a range of members with their scores in a sorted set."""
+        try:
+            async with self._pool.get_connection() as conn:
+                return await conn.zrange(key, start, stop, withscores=True)
+        except Exception as e:
+            logger.error(f"Failed zrange on {key}: {e}")
+            raise CacheError(f"zrange failed: {e}")
+
+    async def zadd(self, key: str, mapping: Dict[str, int]) -> int:
+        """Add one or more members to a sorted set, or update score."""
+        try:
+            async with self._pool.get_connection() as conn:
+                return await conn.zadd(key, mapping)
+        except Exception as e:
+            logger.error(f"Failed zadd on {key}: {e}")
+            raise CacheError(f"zadd failed: {e}")
+
+    # =========================================================================
     # HASH OPERATIONS (for structured metadata)
     # =========================================================================
 
@@ -568,6 +608,16 @@ class RedisClient:
     async def close(self) -> None:
         """Close Redis connection pool."""
         await self._pool.close()
+
+    async def ping(self) -> bool:
+        """Ping Redis to verify connectivity."""
+        try:
+            async with self._pool.get_connection() as conn:
+                await conn.ping()
+            return True
+        except Exception as e:
+            logger.error(f"Redis ping failed: {e}")
+            return False
 
 
 # Singleton instance for application-wide use

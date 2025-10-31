@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from container import container, get_project_service
 from core.exceptions import ProjectNotFoundError
 from core.models import InferredPatterns, Project, Rulebook
+from api.schemas import CreateProjectRequest
 from infrastructure.database import DatabaseManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
@@ -119,6 +120,46 @@ class BulkProjectResponse(BaseModel):
 # ============================================================================
 # PROJECT CRUD OPERATIONS
 # ============================================================================
+
+
+@router.post("", response_model=dict, summary="Create project")
+async def create_project(
+    request: CreateProjectRequest,
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
+):
+    """Create a new project with optional initial rulebook."""
+    result = await project_service.create_project_with_rulebook(
+        name=request.name,
+        domain=request.domain,
+        telegram_channel=request.telegram_channel,
+        wordpress_url=request.wordpress_url,
+        wordpress_username=request.wordpress_username,
+        wordpress_app_password=request.wordpress_app_password,
+        rulebook_content=request.rulebook_content,
+    )
+    return result
+
+
+@router.get("", response_model=List[dict], summary="List projects")
+async def list_projects(
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_active_user),
+):
+    """List projects (basic metadata)."""
+    repo = container.project_repository()
+    projects = await repo.list_all(limit=limit, offset=offset)
+    return [
+        {
+            "id": str(p.id),
+            "name": p.name,
+            "domain": p.domain,
+            "created_at": p.created_at,
+            "last_active": p.last_active,
+        }
+        for p in projects
+    ]
 
 
 @router.put("/{project_id}", response_model=dict, summary="Update project")

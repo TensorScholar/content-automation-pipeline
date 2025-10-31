@@ -74,9 +74,8 @@ async def health_check(
 
     # Check Redis
     try:
-        async with redis._pool.get_connection() as conn:  # type: ignore
-            await conn.ping()
-        dependencies["redis"] = "healthy"
+        ok = await redis.ping()
+        dependencies["redis"] = "healthy" if ok else "unhealthy"
     except Exception as e:
         dependencies["redis"] = f"unhealthy: {str(e)}"
 
@@ -178,9 +177,11 @@ async def get_system_status(
 
     # Redis status
     try:
-        async with redis._pool.get_connection() as conn:  # type: ignore
-            await conn.ping()
-        status_info["components"]["redis"] = {"status": "healthy", "connection": "active"}
+        ok = await redis.ping()
+        if ok:
+            status_info["components"]["redis"] = {"status": "healthy", "connection": "active"}
+        else:
+            status_info["components"]["redis"] = {"status": "unhealthy", "error": "ping failed"}
     except Exception as e:
         status_info["components"]["redis"] = {"status": "unhealthy", "error": str(e)}
 

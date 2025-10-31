@@ -23,12 +23,12 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Set
 
 from loguru import logger
 
 from core.exceptions import CacheError
-from infrastructure.redis_client import redis_client
+from infrastructure.redis_client import RedisClient
 
 T = TypeVar("T")
 
@@ -139,16 +139,23 @@ class CacheManager:
     Provides single interface with automatic fallback and optimization.
     """
 
-    def __init__(self, max_memory_entries: int = 1000, metrics_collector: Optional[Any] = None):
+    def __init__(
+        self,
+        redis_client: RedisClient,
+        max_memory_entries: int = 1000,
+        metrics_collector: Optional[Any] = None,
+    ):
         """
         Initialize cache manager.
 
         Args:
+            redis_client: Redis client instance for L2 cache
             max_memory_entries: Maximum entries in L1 memory cache
             metrics_collector: Optional metrics collector for Prometheus metrics
         """
         # L1: In-memory cache
         self._memory_cache: Dict[str, CacheEntry] = {}
+        self.redis_client = redis_client
         self.max_memory_entries = max_memory_entries
 
         # Statistics tracking
@@ -328,7 +335,7 @@ class CacheManager:
                 success = True
 
         if CacheLevel.REDIS in levels:
-            if await redis_client.delete(key):
+            if await self.redis_client.delete(key):
                 self.stats_by_level[CacheLevel.REDIS].invalidations += 1
                 success = True
 
@@ -371,7 +378,7 @@ class CacheManager:
 
         # Redis cache
         if CacheLevel.REDIS in levels:
-            redis_count = await redis_client.flush_cache(pattern)
+            redis_count = await self.redis_client.flush_cache(pattern)
             if redis_count > 0:
                 count += redis_count
                 self.stats_by_level[CacheLevel.REDIS].invalidations += redis_count
@@ -453,7 +460,7 @@ class CacheManager:
     async def _get_from_redis(self, key: str) -> Optional[Any]:
         """Get value from L2 Redis cache."""
         try:
-            return await redis_client.get(key)
+            return await self.redis_client.get(key)
         except Exception as e:
             logger.warning(f"Redis get failed for key {key}: {e}")
             self.stats_by_level[CacheLevel.REDIS].errors += 1
@@ -471,7 +478,7 @@ class CacheManager:
             if ttl is None:
                 ttl = self.policy.get_ttl(key, CacheLevel.REDIS)
 
-            return await redis_client.set(key, value, ttl=ttl)
+            return await self.redis_client.set(key, value, ttl=ttl)
 
         except Exception as e:
             logger.warning(f"Redis set failed for key {key}: {e}")
@@ -571,7 +578,7 @@ class CacheManager:
 
     async def get_redis_stats(self) -> Dict[str, Any]:
         """Get Redis-specific statistics."""
-        return await redis_client.get_cache_stats()
+        return await self.redis_client.get_cache_stats()
 
     # =========================================================================
     # MAINTENANCE
@@ -584,7 +591,7 @@ class CacheManager:
         Returns:
             Number of entries removed
         """
-        expired_keys = [key for key, entry in self.__memory_cache.items() if entry.is_expired()]
+        expired_keys = [key for key, entry in self._memory_cache.items() if entry.is_expired()]
         for key in expired_keys:
             del self._memory_cache[key]
 
@@ -594,7 +601,7 @@ class CacheManager:
         return len(expired_keys)
 
 
-async def optimize(self) -> Dict[str, int]:
+    async def optimize(self) -> Dict[str, int]:
     """
     Optimize cache performance.
 
@@ -642,24 +649,18 @@ async def optimize(self) -> Dict[str, int]:
     }
 
 
-async def clear_all(self) -> None:
-    """Clear all caches (DANGEROUS - use with caution)."""
-    logger.warning("Clearing ALL caches...")
+    async def clear_all(self) -> None:
+        """Clear all caches (DANGEROUS - use with caution)."""
+        logger.warning("Clearing ALL caches...")
 
-    # Clear memory
-    self._memory_cache.clear()
-    self._warm_keys.clear()
+        # Clear memory
+        self._memory_cache.clear()
+        self._warm_keys.clear()
 
-    # Clear Redis
-    await redis_client.flush_cache()
+        # Clear Redis
+        await self.redis_client.flush_cache()
 
-    # Reset stats
-    self.reset_statistics()
+        # Reset stats
+        self.reset_statistics()
 
-    logger.warning("All caches cleared")
-
-
-# =========================================================================
-# GLOBAL INSTANCE
-# =========================================================================
-cache_manager = CacheManager(max_memory_entries=1000)
+        logger.warning("All caches cleared")

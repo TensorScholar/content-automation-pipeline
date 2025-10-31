@@ -20,8 +20,8 @@ class DatabaseSettings(BaseSettings):
 
     host: str = Field(default="localhost", description="Database host")
     port: int = Field(default=5432, ge=1024, le=65535)
-    user: str = Field(description="Database username")
-    password: SecretStr = Field(description="Database password")
+    user: str = Field(default="postgres", description="Database username")
+    password: SecretStr = Field(default=SecretStr("postgres"), description="Database password")
     database: str = Field(default="content_pipeline")
 
     # Connection pool optimization
@@ -91,7 +91,7 @@ class LLMSettings(BaseSettings):
     )
 
     # Anthropic (primary provider)
-    anthropic_api_key: SecretStr = Field(description="Anthropic API key")
+    anthropic_api_key: Optional[SecretStr] = Field(default=None, description="Anthropic API key")
     anthropic_model: str = Field(
         default="claude-haiku-4-5-20251001", description="Default Anthropic model to use"
     )
@@ -263,7 +263,7 @@ class Settings(BaseSettings):
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 
     # Security
-    secret_key: SecretStr = Field(description="Application secret key")
+    secret_key: SecretStr = Field(default=SecretStr("dev-insecure-secret"), description="Application secret key")
     allowed_hosts: list[str] = Field(default=["localhost", "127.0.0.1"])
     cors_origins: list[str] = Field(default=["http://localhost:3000"])
 

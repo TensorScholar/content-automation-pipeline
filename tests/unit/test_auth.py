@@ -210,3 +210,23 @@ class TestAuthRoutes:
         response = client.get("/auth/admin", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]
+
+    def test_refresh_token_uses_email_subject(self, client: TestClient, mock_user_service):
+        """Ensure refresh endpoint issues tokens with email as sub to match lookup."""
+        # Login to get a valid token first
+        response = client.post(
+            "/auth/token", data={"username": "admin@example.com", "password": "password"}
+        )
+        assert response.status_code == 200
+        token = response.json()["access_token"]
+
+        # Call refresh with the valid token
+        refresh_response = client.post(
+            "/auth/refresh", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert refresh_response.status_code == 200
+        new_token = refresh_response.json()["access_token"]
+
+        # Decode and verify that sub is email
+        decoded = decode_access_token(new_token)
+        assert decoded.username == "admin@example.com"

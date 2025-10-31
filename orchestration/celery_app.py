@@ -12,9 +12,14 @@ Design Pattern: Distributed Task Queue with Result Backend
 """
 
 import os
+import asyncio
 
 from celery import Celery
+from celery.signals import worker_process_init, worker_process_shutdown
 from kombu import Queue
+from loguru import logger
+
+from container import container_manager
 
 # Read Redis configuration from environment or use defaults
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -97,6 +102,41 @@ app.conf.beat_schedule = {
         "schedule": 86400.0,  # Every 24 hours
     },
 }
+
+
+@worker_process_init.connect
+def on_worker_init(**kwargs):
+    """Initialize DI container and resources when a Celery worker process starts."""
+    try:
+        logger.info(f"Celery worker process initializing... (PID: {os.getpid()})")
+        # Create a new event loop for initialization
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        # Run the async initialization
+        loop.run_until_complete(container_manager.initialize())
+        loop.close()
+        logger.success(f"Container initialized successfully for worker (PID: {os.getpid()}).")
+    except Exception as e:
+        logger.critical(f"Failed to initialize container for worker (PID: {os.getpid()}): {e}")
+        # Exit the worker process if initialization fails
+        os._exit(1)
+
+
+@worker_process_shutdown.connect
+def on_worker_shutdown(**kwargs):
+    """Cleanup DI container and resources when a Celery worker process shuts down."""
+    try:
+        logger.info(f"Celery worker process shutting down... (PID: {os.getpid()})")
+        # Create a new event loop for cleanup
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        # Run the async cleanup
+        loop.run_until_complete(container_manager.cleanup())
+        loop.close()
+        logger.success(f"Container resources cleaned up for worker (PID: {os.getpid()}).")
+    except Exception as e:
+        logger.error(f"Failed to cleanup container for worker (PID: {os.getpid()}): {e}")
+
 
 # Autodiscover tasks from Django apps (if using Django integration)
 # app.autodiscover_tasks()
