@@ -6,6 +6,7 @@ import asyncio
 import json
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 from uuid import UUID
@@ -214,6 +215,36 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 # FASTAPI APPLICATION INITIALIZATION
 # ============================================================================
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Modern FastAPI lifespan context manager for startup/shutdown.
+    
+    Replaces deprecated @app.on_event decorators with context manager pattern.
+    """
+    # Startup
+    try:
+        database_manager = container.database()
+        await database_manager.initialize()
+        logger.info("Database manager initialized")
+        logger.info("Application startup complete")
+    except Exception as e:
+        logger.warning(f"Container initialization failed: {e}")
+        logger.info("Application startup complete (without container initialization)")
+    
+    yield  # Application runs here
+    
+    # Shutdown
+    try:
+        database_manager = container.database()
+        await database_manager.close()
+        logger.info("Database manager closed")
+    except Exception as e:
+        logger.warning(f"Database cleanup failed: {e}")
+    
+    logger.info("Application shutdown complete")
+
+
 app = FastAPI(
     title="Content Automation Engine API",
     description="Advanced NLP-driven SEO content automation platform with adaptive intelligence",
@@ -221,6 +252,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # Add exception handlers
@@ -1809,38 +1841,6 @@ app.add_middleware(HostValidationMiddleware)
 # ============================================================================
 # Note: Project and content routes are handled by routers in api/routes/
 # These routers are included via app.include_router() calls above.
-
-
-# Application startup and shutdown handlers
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the dependency injection container on startup."""
-    try:
-        # Initialize database manager
-        database_manager = container.database()
-        await database_manager.initialize()
-        logger.info("Database manager initialized")
-
-        # Container is already initialized when imported
-        logger.info("Application startup complete")
-    except Exception as e:
-        logger.warning(f"Container initialization failed: {e}")
-        logger.info("Application startup complete (without container initialization)")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up container resources on shutdown."""
-    try:
-        # Cleanup database manager
-        database_manager = container.database()
-        await database_manager.close()
-        logger.info("Database manager closed")
-    except Exception as e:
-        logger.warning(f"Database cleanup failed: {e}")
-
-    # Container cleanup is handled automatically
-    logger.info("Application shutdown complete")
 
 
 if __name__ == "__main__":
