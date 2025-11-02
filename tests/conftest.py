@@ -95,18 +95,30 @@ def reset_metrics_collector():
 @pytest.fixture(autouse=True)
 async def clear_cache():
     """Clear cache before each test."""
-    from optimization.cache_manager import cache_manager
-
-    # Clear memory cache
-    cache_manager._memory_cache.clear()
-    cache_manager._warm_keys.clear()
-    # Reset stats
-    cache_manager.reset_statistics()
+    from container import container
+    
+    try:
+        # Get cache manager from container if available
+        cache_mgr = container.cache()
+        # Clear memory cache
+        cache_mgr._memory_cache.clear()
+        cache_mgr._warm_keys.clear()
+        # Reset stats
+        cache_mgr.reset_statistics()
+    except Exception:
+        # If container not initialized or cache not available, skip cleanup
+        pass
+    
     yield
-    # Clear again after test
-    cache_manager._memory_cache.clear()
-    cache_manager._warm_keys.clear()
-    cache_manager.reset_statistics()
+    
+    try:
+        # Clear again after test
+        cache_mgr = container.cache()
+        cache_mgr._memory_cache.clear()
+        cache_mgr._warm_keys.clear()
+        cache_mgr.reset_statistics()
+    except Exception:
+        pass
 
 
 # ============================================================================
