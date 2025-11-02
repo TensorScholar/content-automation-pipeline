@@ -39,7 +39,7 @@ from scipy.sparse.linalg import eigsh
 
 from core.exceptions import ProcessingError, ValidationError
 from core.models import KeywordIntent
-from intelligence.semantic_analyzer import SimilarityMetric, semantic_analyzer
+from intelligence.semantic_analyzer import SemanticAnalyzer, SimilarityMetric
 from optimization.cache_manager import cache_manager
 
 # =========================================================================
@@ -482,9 +482,14 @@ class KeywordResearcher:
     - Mutual information: O(n·m) for n keywords, m features
     """
 
-    def __init__(self):
-        """Initialize keyword researcher."""
+    def __init__(self, semantic_analyzer: Optional[SemanticAnalyzer] = None):
+        """Initialize keyword researcher with semantic analyzer.
+        
+        Args:
+            semantic_analyzer: SemanticAnalyzer instance for embeddings (optional)
+        """
         self._cache_ttl = 86400 * 7  # 7 days
+        self.semantic_analyzer = semantic_analyzer
 
         logger.info("Keyword researcher initialized")
 
@@ -707,7 +712,7 @@ class KeywordResearcher:
             Enriched Keyword objects
         """
         # Generate embeddings (batch)
-        embeddings = await semantic_analyzer.embed(candidates, normalize=True)
+        embeddings = await self.semantic_analyzer.embed(candidates, normalize=True)
 
         # Compute metrics for each
         enriched = []
@@ -866,7 +871,7 @@ class KeywordResearcher:
             Ranked keywords (descending score)
         """
         # Generate seed embedding
-        seed_embedding = asyncio.run(semantic_analyzer.embed(seed, normalize=True))
+        seed_embedding = asyncio.run(self.semantic_analyzer.embed(seed, normalize=True))
 
         # Compute composite scores
         scored = []

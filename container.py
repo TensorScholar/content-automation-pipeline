@@ -168,10 +168,12 @@ class Container(containers.DeclarativeContainer):
         session=database,
         rulebook_manager=rulebook_manager,
         best_practices=best_practices_kb,
+        semantic_analyzer=semantic_analyzer,
     )
 
     context_synthesizer: providers.Factory[ContextSynthesizer] = providers.Factory(
-        ContextSynthesizer
+        ContextSynthesizer,
+        semantic_analyzer=semantic_analyzer,
     )
 
     # Optimization layer providers (factories)
@@ -192,6 +194,7 @@ class Container(containers.DeclarativeContainer):
     # Execution layer providers (factories)
     keyword_researcher: providers.Factory[KeywordResearcher] = providers.Factory(
         KeywordResearcher,
+        semantic_analyzer=semantic_analyzer,
     )
 
     content_planner: providers.Factory[ContentPlanner] = providers.Factory(

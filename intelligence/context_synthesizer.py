@@ -27,7 +27,7 @@ from loguru import logger
 from sentence_transformers import SentenceTransformer
 
 from core.exceptions import ValidationError
-from intelligence.semantic_analyzer import SimilarityMetric, semantic_analyzer
+from intelligence.semantic_analyzer import SemanticAnalyzer, SimilarityMetric
 
 
 class CompressionLevel(str, Enum):
@@ -94,7 +94,7 @@ class ContextPlan:
 
 class ContextSynthesizer:
     """
-        Intelligent context compression and synthesis engine.
+    Intelligent context compression and synthesis engine.
     Implements multiple compression strategies that can be composed:
     - Extractive summarization (sentence ranking)
     - Semantic deduplication (merge similar content)
@@ -102,19 +102,25 @@ class ContextSynthesizer:
     - Hierarchical abstraction (adaptive detail levels)
     """
 
+    def __init__(self, semantic_analyzer: Optional[SemanticAnalyzer] = None):
+        """Initialize synthesizer with NLP models and semantic analyzer.
+        
+        Args:
+            semantic_analyzer: SemanticAnalyzer instance for embeddings (optional, created if not provided)
+        """
+        try:
+            # Lightweight spaCy for sentence tokenization
+            self.nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
+            self.nlp.add_pipe("sentencizer")
+            
+            # Store semantic analyzer instance
+            self.semantic_analyzer = semantic_analyzer
 
-def __init__(self):
-    """Initialize synthesizer with NLP models."""
-    try:
-        # Lightweight spaCy for sentence tokenization
-        self.nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
-        self.nlp.add_pipe("sentencizer")
+            logger.info("Context synthesizer initialized")
 
-        logger.info("Context synthesizer initialized")
-
-    except Exception as e:
-        logger.error(f"Failed to initialize context synthesizer: {e}")
-        raise ValidationError(f"Initialization failed: {e}")
+        except Exception as e:
+            logger.error(f"Failed to initialize context synthesizer: {e}")
+            raise ValidationError(f"Initialization failed: {e}")
 
 
 # =========================================================================

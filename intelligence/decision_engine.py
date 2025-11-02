@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import DecisionError, ValidationError
 from core.models import InferredPatterns, RuleType
 from intelligence.best_practices_kb import BestPracticesKB
-from intelligence.semantic_analyzer import SimilarityMetric, semantic_analyzer
+from intelligence.semantic_analyzer import SemanticAnalyzer, SimilarityMetric
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
 
@@ -234,10 +234,12 @@ class DecisionEngine:
         session: AsyncSession,
         rulebook_manager: RulebookManager,
         best_practices: BestPracticesKB,
+        semantic_analyzer: Optional[SemanticAnalyzer] = None,
     ):
         self.session = session
         self.rulebook_manager = rulebook_manager
         self.best_practices = best_practices
+        self.semantic_analyzer = semantic_analyzer
         self.manifold = DecisionManifold()
 
         # Authority weights for each layer
@@ -285,7 +287,7 @@ class DecisionEngine:
                 logger.warning(f"Empty query detected, defaulting to: '{query}'")
 
             # Generate query embedding
-            query_embedding = await semantic_analyzer.embed(query, normalize=True)
+            query_embedding = await self.semantic_analyzer.embed(query, normalize=True)
 
             # Gather evidence from all layers
             evidence = await self._gather_evidence(
@@ -424,7 +426,7 @@ class DecisionEngine:
             evidence = []
             for rule, similarity in rules:
                 # Generate embedding for rule content if not cached
-                rule_embedding = await semantic_analyzer.embed(rule.content, normalize=True)
+                rule_embedding = await self.semantic_analyzer.embed(rule.content, normalize=True)
 
                 evidence.append(
                     Evidence(
@@ -501,7 +503,7 @@ class DecisionEngine:
             if "structure" in query.lower() or "format" in query.lower():
                 for structure in patterns.structure_patterns[:2]:  # Top 2
                     recommendation = self._pattern_to_structure_recommendation(structure)
-                    rec_embedding = await semantic_analyzer.embed(recommendation, normalize=True)
+                    rec_embedding = await self.semantic_analyzer.embed(recommendation, normalize=True)
 
                     evidence.append(
                         Evidence(
@@ -520,7 +522,7 @@ class DecisionEngine:
             # Readability recommendations
             if "readability" in query.lower() or "complexity" in query.lower():
                 recommendation = self._pattern_to_readability_recommendation(patterns)
-                rec_embedding = await semantic_analyzer.embed(recommendation, normalize=True)
+                rec_embedding = await self.semantic_analyzer.embed(recommendation, normalize=True)
 
                 evidence.append(
                     Evidence(
