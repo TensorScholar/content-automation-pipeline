@@ -8,7 +8,7 @@ Implements Domain Transfer Objects (DTOs) pattern for clean API contracts.
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CreateProjectRequest(BaseModel):
@@ -26,15 +26,16 @@ class CreateProjectRequest(BaseModel):
     )
     rulebook_content: Optional[str] = Field(None, description="Initial rulebook content")
 
-    @validator("domain")
+    @field_validator("domain")
+    @classmethod
     def validate_domain(cls, v):
         """Strip protocol and trailing slash from domain."""
         if v:
             v = v.replace("https://", "").replace("http://", "").rstrip("/")
         return v
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "TechBlog AI",
                 "domain": "https://techblog.ai",
@@ -42,6 +43,7 @@ class CreateProjectRequest(BaseModel):
                 "rulebook_content": "Write in conversational tone...",
             }
         }
+    )
 
 
 class ProjectResponse(BaseModel):
@@ -59,8 +61,7 @@ class ProjectResponse(BaseModel):
     has_rulebook: bool
     has_inferred_patterns: bool
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GenerateContentRequest(BaseModel):
@@ -71,8 +72,8 @@ class GenerateContentRequest(BaseModel):
     custom_instructions: Optional[str] = Field(None, max_length=2000)
     async_execution: bool = Field(False, description="Execute as background task")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "topic": "Advanced NLP Techniques for Content Generation",
                 "priority": "high",
@@ -80,6 +81,7 @@ class GenerateContentRequest(BaseModel):
                 "async_execution": False,
             }
         }
+    )
 
 
 class ArticleResponse(BaseModel):
@@ -95,8 +97,7 @@ class ArticleResponse(BaseModel):
     distributed: bool
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskStatusResponse(BaseModel):
