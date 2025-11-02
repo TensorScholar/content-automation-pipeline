@@ -233,10 +233,14 @@ def decode_access_token(token: str) -> TokenData:
         user_agent: str = payload.get("user_agent")
         iss: str = payload.get("iss")
 
-        if username is None:
+        # Validate required fields
+        if username is None or user_id is None:
+            logger.error("JWT token missing required fields (sub or user_id)")
             raise credentials_exception
+        
         # Issuer check
         if iss != settings.jwt_issuer:
+            logger.warning(f"JWT issuer mismatch: expected {settings.jwt_issuer}, got {iss}")
             raise credentials_exception
 
         # Convert timestamps to datetime
