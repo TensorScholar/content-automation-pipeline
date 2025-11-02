@@ -17,6 +17,7 @@ from enum import Enum
 from functools import reduce
 from itertools import combinations
 from typing import (
+    Any,
     Awaitable,
     Callable,
     Dict,
@@ -33,7 +34,7 @@ from typing import (
 import numpy as np
 import scipy.sparse as sp
 from loguru import logger
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.sparse.linalg import eigsh
 
@@ -104,15 +105,15 @@ class KeywordMetrics(BaseModel):
     # Authority metrics
     pagerank_score: float = Field(default=0.0, ge=0, le=1, description="PageRank in keyword graph")
 
-    @validator("intent_distribution")
+    @field_validator("intent_distribution")
+    @classmethod
     def validate_probability_distribution(cls, v):
         """Ensure intent distribution sums to ~1.0."""
         if v and not math.isclose(sum(v.values()), 1.0, abs_tol=0.01):
             raise ValueError(f"Intent distribution must sum to 1.0, got {sum(v.values())}")
         return v
 
-    class Config:
-        frozen = True  # Immutability
+    model_config = ConfigDict(frozen=True)  # Immutability
 
 
 @dataclass(frozen=True)
