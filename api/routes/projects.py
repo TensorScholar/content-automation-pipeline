@@ -15,8 +15,8 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field
 
 # Import dependency functions from container
 from container import container, get_project_service
@@ -68,8 +68,7 @@ class RulebookResponse(BaseModel):
     rule_count: int
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InferredPatternsResponse(BaseModel):
@@ -84,8 +83,7 @@ class InferredPatternsResponse(BaseModel):
     sample_size: int
     analyzed_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProjectAnalyticsResponse(BaseModel):
