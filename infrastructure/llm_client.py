@@ -17,7 +17,7 @@ import httpx
 from anthropic import AnthropicError, AsyncAnthropic
 from loguru import logger
 from openai import APITimeoutError, AsyncOpenAI, OpenAIError, RateLimitError
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, field_validator
 from tenacity import (
     before_sleep_log,
     retry,
@@ -130,6 +130,8 @@ class LLMResponse:
 
 class LLMRequest(BaseModel):
     """Validated LLM request with constraint enforcement."""
+    
+    model_config = {"frozen": True}  # Pydantic V2: Immutable after creation
 
     prompt: str = Field(..., min_length=1, max_length=100000)
     model: str = Field(..., pattern=r"^(gpt-|claude-)")
@@ -138,20 +140,18 @@ class LLMRequest(BaseModel):
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
     frequency_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
     presence_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
-    stop_sequences: Optional[List[str]] = Field(default=None, max_items=4)
+    stop_sequences: Optional[List[str]] = Field(default=None, max_length=4)  # Pydantic V2: max_length
 
-    @validator("max_tokens")
-    def validate_max_tokens(cls, v, values):
+    @field_validator("max_tokens")  # Pydantic V2: field_validator
+    @classmethod
+    def validate_max_tokens(cls, v: int, info) -> int:
         """Ensure max_tokens doesn't exceed model context window."""
-        model = values.get("model", "")
+        model = info.data.get("model", "")
         if "gpt-4" in model and v > 8192:
             raise ValueError(f"GPT-4 max tokens cannot exceed 8192, got {v}")
         elif "gpt-3.5" in model and v > 4096:
             raise ValueError(f"GPT-3.5 max tokens cannot exceed 4096, got {v}")
         return v
-
-    class Config:
-        frozen = True  # Immutable after creation
 
 
 # ============================================================================
