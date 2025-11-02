@@ -600,53 +600,52 @@ class CacheManager:
 
         return len(expired_keys)
 
-
     async def optimize(self) -> Dict[str, int]:
-    """
-    Optimize cache performance.
+        """
+        Optimize cache performance.
 
-    Actions:
-    - Remove expired entries
-    - Evict cold data (low access count)
-    - Compact memory
+        Actions:
+        - Remove expired entries
+        - Evict cold data (low access count)
+        - Compact memory
 
-    Returns:
-        Dict with optimization metrics
-    """
-    logger.info("Starting cache optimization...")
+        Returns:
+            Dict with optimization metrics
+        """
+        logger.info("Starting cache optimization...")
 
-    # Remove expired
-    expired_removed = await self.cleanup_expired()
+        # Remove expired
+        expired_removed = await self.cleanup_expired()
 
-    # Identify cold data (not accessed in last hour)
-    cutoff_time = datetime.utcnow() - timedelta(hours=1)
-    cold_keys = [
-        key
-        for key, entry in self._memory_cache.items()
-        if entry.accessed_at < cutoff_time and entry.access_count < 5
-    ]
+        # Identify cold data (not accessed in last hour)
+        cutoff_time = datetime.utcnow() - timedelta(hours=1)
+        cold_keys = [
+            key
+            for key, entry in self._memory_cache.items()
+            if entry.accessed_at < cutoff_time and entry.access_count < 5
+        ]
 
-    # Remove bottom 20% of cold data if cache is >80% full
-    memory_utilization = len(self._memory_cache) / self.max_memory_entries
-    cold_removed = 0
+        # Remove bottom 20% of cold data if cache is >80% full
+        memory_utilization = len(self._memory_cache) / self.max_memory_entries
+        cold_removed = 0
 
-    if memory_utilization > 0.8 and cold_keys:
-        # Sort by access count (ascending)
-        cold_keys.sort(key=lambda k: self._memory_cache[k].access_count)
+        if memory_utilization > 0.8 and cold_keys:
+            # Sort by access count (ascending)
+            cold_keys.sort(key=lambda k: self._memory_cache[k].access_count)
 
-        # Remove bottom 20%
-        remove_count = max(1, len(cold_keys) // 5)
-        for key in cold_keys[:remove_count]:
-            del self._memory_cache[key]
-            cold_removed += 1
+            # Remove bottom 20%
+            remove_count = max(1, len(cold_keys) // 5)
+            for key in cold_keys[:remove_count]:
+                del self._memory_cache[key]
+                cold_removed += 1
 
-    logger.info(f"Optimization complete: expired={expired_removed}, cold={cold_removed}")
+        logger.info(f"Optimization complete: expired={expired_removed}, cold={cold_removed}")
 
-    return {
-        "expired_removed": expired_removed,
-        "cold_removed": cold_removed,
-        "final_size": len(self._memory_cache),
-    }
+        return {
+            "expired_removed": expired_removed,
+            "cold_removed": cold_removed,
+            "final_size": len(self._memory_cache),
+        }
 
 
     async def clear_all(self) -> None:
