@@ -195,6 +195,7 @@ class Container(containers.DeclarativeContainer):
     keyword_researcher: providers.Factory[KeywordResearcher] = providers.Factory(
         KeywordResearcher,
         semantic_analyzer=semantic_analyzer,
+        cache_manager=cache,
     )
 
     content_planner: providers.Factory[ContentPlanner] = providers.Factory(

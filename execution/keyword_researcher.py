@@ -40,7 +40,7 @@ from scipy.sparse.linalg import eigsh
 from core.exceptions import ProcessingError, ValidationError
 from core.models import KeywordIntent
 from intelligence.semantic_analyzer import SemanticAnalyzer, SimilarityMetric
-from optimization.cache_manager import cache_manager
+from optimization.cache_manager import CacheManager
 
 # =========================================================================
 # TYPE-LEVEL PROGRAMMING & ALGEBRAIC DATA TYPES
@@ -482,14 +482,20 @@ class KeywordResearcher:
     - Mutual information: O(n·m) for n keywords, m features
     """
 
-    def __init__(self, semantic_analyzer: Optional[SemanticAnalyzer] = None):
-        """Initialize keyword researcher with semantic analyzer.
+    def __init__(
+        self,
+        semantic_analyzer: Optional[SemanticAnalyzer] = None,
+        cache_manager: Optional[CacheManager] = None,
+    ):
+        """Initialize keyword researcher with semantic analyzer and cache manager.
         
         Args:
             semantic_analyzer: SemanticAnalyzer instance for embeddings (optional)
+            cache_manager: CacheManager instance for caching (optional)
         """
         self._cache_ttl = 86400 * 7  # 7 days
         self.semantic_analyzer = semantic_analyzer
+        self.cache_manager = cache_manager
 
         logger.info("Keyword researcher initialized")
 
@@ -621,7 +627,7 @@ class KeywordResearcher:
         try:
             # Check cache
             cache_key = f"kw_candidates:{seed}:{count}"
-            cached = await cache_manager.get(cache_key)
+            cached = await self.cache_manager.get(cache_key)
 
             if cached:
                 logger.debug(f"Cache hit for candidates: {seed}")
@@ -641,7 +647,7 @@ class KeywordResearcher:
             candidates_list = list(candidates)[: count * 2]  # Over-generate
 
             # Cache result
-            await cache_manager.set(cache_key, candidates_list, ttl=self._cache_ttl)
+            await self.cache_manager.set(cache_key, candidates_list, ttl=self._cache_ttl)
 
             return Result.ok(candidates_list)
 
@@ -877,7 +883,7 @@ class KeywordResearcher:
         scored = []
         for kw in keywords:
             # Relevance: cosine similarity to seed
-            relevance = semantic_analyzer.compute_similarity(
+            relevance = self.semantic_analyzer.compute_similarity(
                 kw.embedding, seed_embedding, SimilarityMetric.COSINE
             )
 
