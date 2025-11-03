@@ -22,13 +22,6 @@ from pydantic import BaseModel, Field, validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-# Import structured logging
-from infrastructure.monitoring import configure_structlog, get_logger
-
-# Configure structlog for the application
-configure_structlog()
-logger = get_logger(__name__)
-
 # Import exception handlers from separate module
 from api.exceptions import add_exception_handlers
 
@@ -65,10 +58,17 @@ from container import (
     get_user_service,
 )
 from core.models import ContentPlan, GeneratedArticle, Project
+
+# Import structured logging and configure
+from infrastructure.monitoring import configure_structlog, get_logger
 from orchestration.content_agent import ContentAgent
 from security import SECURITY_HEADERS
 from services.content_service import ContentService
 from services.project_service import ProjectService
+
+# Configure structlog for the application
+configure_structlog()
+logger = get_logger(__name__)
 
 # ============================================================================
 # MIDDLEWARE STACK (Cross-Cutting Concerns)

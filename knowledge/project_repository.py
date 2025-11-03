@@ -7,6 +7,7 @@ Implements repository pattern for Project entities with:
 - Statistics aggregation and reporting
 - Transaction-safe batch operations
 - Type-safe query builders
+- Redis-based query result caching
 
 Design: Single Responsibility - all project data access goes through this layer.
 """
@@ -22,7 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import DatabaseError, NotFoundError
 from core.models import InferredPatterns, Project
 from infrastructure.database import DatabaseManager
+from infrastructure.redis_client import RedisClient
 from infrastructure.schema import generated_articles_table, inferred_patterns_table, projects_table
+from optimization.query_cache import cached_query
 
 
 class ProjectRepository:
@@ -34,16 +37,19 @@ class ProjectRepository:
     - Transaction management
     - Soft delete support
     - Query optimization
+    - Redis caching for read-heavy operations
     """
 
-    def __init__(self, database_manager: DatabaseManager):
+    def __init__(self, database_manager: DatabaseManager, redis_client: Optional[RedisClient] = None):
         """
-        Initialize repository with database manager.
+        Initialize repository with database manager and optional Redis client.
 
         Args:
             database_manager: Database manager for session management
+            redis_client: Optional Redis client for query caching
         """
         self.database_manager = database_manager
+        self.redis_client = redis_client
 
     # =========================================================================
     # CREATE OPERATIONS
@@ -97,9 +103,12 @@ class ProjectRepository:
     # READ OPERATIONS
     # =========================================================================
 
+    @cached_query(ttl=600, key_prefix="project")
     async def get_by_id(self, project_id: UUID) -> Optional[Project]:
         """
-        Retrieve project by ID using SQLAlchemy Core.
+        Retrieve project by ID using SQLAlchemy Core with Redis caching.
+
+        Cached for 10 minutes to optimize frequent project lookups.
 
         Args:
             project_id: UUID of project

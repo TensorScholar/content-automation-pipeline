@@ -6,6 +6,7 @@ Encapsulates all database operations for article management including:
 - Search and filtering capabilities
 - Analytics and reporting queries
 - Export functionality
+- Redis-based query result caching
 
 Design Pattern: Repository Pattern with SQLAlchemy Core
 """
@@ -19,11 +20,13 @@ from sqlalchemy import delete, func, insert, or_, select, text, update
 
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
+from infrastructure.redis_client import RedisClient
 from infrastructure.schema import (
     article_revisions_table,
     content_plans_table,
     generated_articles_table,
 )
+from optimization.query_cache import cached_query
 
 
 class ArticleRepository:
@@ -31,25 +34,30 @@ class ArticleRepository:
     Repository for article data access operations.
 
     Provides a clean interface for all database operations related to
-    generated articles and their revisions, abstracting away SQLAlchemy
-    implementation details from the service layer.
+    generated articles and their revisions, with Redis caching for
+    frequently accessed queries.
     """
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, redis_client: Optional[RedisClient] = None):
         """
-        Initialize repository with database manager.
+        Initialize repository with database manager and optional Redis client.
 
         Args:
             db_manager: DatabaseManager instance for database operations
+            redis_client: Optional Redis client for query caching
         """
         self.db = db_manager
+        self.redis_client = redis_client
         logger.debug("ArticleRepository initialized")
 
+    @cached_query(ttl=300, key_prefix="article")
     async def get_by_id(
         self, article_id: UUID, include_content: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
-        Retrieve article by ID.
+        Retrieve article by ID with Redis caching.
+
+        Cached for 5 minutes for faster repeated access.
 
         Args:
             article_id: Article identifier
