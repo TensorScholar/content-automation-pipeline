@@ -292,6 +292,7 @@ def analyze_website_task(self, project_id: str, domain: str) -> Dict:
     )
     try:
         from uuid import UUID
+
         from container import container
 
         loop = asyncio.new_event_loop()
@@ -311,10 +312,10 @@ def analyze_website_task(self, project_id: str, domain: str) -> Dict:
             "readability_score": getattr(inferred, "readability_score", None),
             "confidence": getattr(inferred, "confidence", None),
             "sample_size": getattr(inferred, "sample_size", None),
-            "analyzed_at": getattr(inferred, "analyzed_at", None).isoformat() if inferred and getattr(inferred, "analyzed_at", None) else None,
+            "analyzed_at": getattr(inferred, "analyzed_at", None).isoformat()
+            if inferred and getattr(inferred, "analyzed_at", None)
+            else None,
         }
     except Exception as e:
-        logger.error(
-            f"Website analysis task failed | task_id={self.request.id} | error={str(e)}"
-        )
+        logger.error(f"Website analysis task failed | task_id={self.request.id} | error={str(e)}")
         raise

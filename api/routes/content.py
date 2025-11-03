@@ -24,7 +24,6 @@ from container import container, get_content_service
 from core.exceptions import WorkflowError
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
-
 from knowledge.article_repository import ArticleRepository
 from orchestration.content_agent import ContentAgent
 from security import User, get_current_active_user
@@ -204,7 +203,10 @@ async def generate_content_async(
     response_model=dict,
     summary="Get task status",
 )
-async def get_task_status(task_id: str):
+async def get_task_status(
+    task_id: str,
+    user: User = Depends(get_current_active_user),
+):
     """
     Query the status of an asynchronous content generation task.
 
@@ -292,7 +294,9 @@ async def batch_generate_content(
 
 @router.get("/batch/{batch_id}/status", response_model=dict, summary="Get batch generation status")
 async def get_batch_status(
-    batch_id: str, content_service: ContentService = Depends(get_content_service_dependency)
+    batch_id: str,
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Query batch generation progress.
@@ -313,6 +317,7 @@ async def get_article(
     article_id: UUID,
     include_content: bool = Query(True, description="Include full content"),
     content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve article by ID.
@@ -369,7 +374,9 @@ async def delete_article(
     "/{article_id}/quality", response_model=ContentQualityMetrics, summary="Get quality metrics"
 )
 async def get_quality_metrics(
-    article_id: UUID, content_service: ContentService = Depends(get_content_service_dependency)
+    article_id: UUID,
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve detailed quality metrics for article.
@@ -436,7 +443,9 @@ async def distribute_article(
     summary="Get distribution status",
 )
 async def get_distribution_status(
-    article_id: UUID, content_service: ContentService = Depends(get_content_service_dependency)
+    article_id: UUID,
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Query article distribution status.
@@ -455,7 +464,9 @@ async def get_distribution_status(
     summary="Get article revision history",
 )
 async def get_article_history(
-    article_id: UUID, content_service: ContentService = Depends(get_content_service_dependency)
+    article_id: UUID,
+    content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve complete revision history for article.
@@ -474,6 +485,7 @@ async def get_content_analytics(
     start_date: datetime = Query(datetime.utcnow() - timedelta(days=30)),
     end_date: datetime = Query(datetime.utcnow()),
     content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve comprehensive content generation analytics.
@@ -543,6 +555,7 @@ async def search_articles(
     project_id: Optional[UUID] = Query(None, description="Filter by project"),
     limit: int = Query(20, ge=1, le=100),
     content_service: ContentService = Depends(get_content_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
         Full-text search across article titles and content.

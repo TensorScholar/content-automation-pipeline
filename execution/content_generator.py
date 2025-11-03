@@ -78,7 +78,8 @@ class ContentGenerator:
 
             # 2. Check budget BEFORE generation
             if not await self.budget_manager.can_afford(
-                project_id=project_id, estimated_cost=0.05  # Assume a small cost per section
+                project_id=project_id,
+                estimated_cost=0.05,  # Assume a small cost per section
             ):
                 logger.warning(
                     f"Token budget exceeded for project {project_id}. Stopping generation."

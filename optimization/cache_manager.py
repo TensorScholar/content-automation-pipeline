@@ -23,7 +23,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, TypeVar
 
 from loguru import logger
 
@@ -104,7 +104,7 @@ class CachePolicy:
 
             size_bytes = sys.getsizeof(value)
             return size_bytes < 1024 * 1024  # 1MB limit
-        except:
+        except Exception:
             return True
 
     @staticmethod
@@ -646,7 +646,6 @@ class CacheManager:
             "cold_removed": cold_removed,
             "final_size": len(self._memory_cache),
         }
-
 
     async def clear_all(self) -> None:
         """Clear all caches (DANGEROUS - use with caution)."""

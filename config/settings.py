@@ -10,119 +10,129 @@ Architecture: Strategy Pattern + Singleton + Functional Composition
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Literal, Optional
+from urllib.parse import urlparse, urlunparse
 
-from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, field_validator
+from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseSettings(BaseSettings):
-    """PostgreSQL configuration with connection pooling parameters."""
+    """PostgreSQL configuration loaded exclusively from environment."""
 
-    host: str = Field(default="localhost", description="Database host")
-    port: int = Field(default=5432, ge=1024, le=65535)
-    user: str = Field(default="postgres", description="Database username")
-    password: SecretStr = Field(default=SecretStr("postgres"), description="Database password")
-    database: str = Field(default="content_pipeline")
+    url: PostgresDsn = Field(..., alias="DATABASE_URL")
+    pool_size: int = Field(default=10, ge=5, le=50, alias="DB_POOL_SIZE")
+    max_overflow: int = Field(default=20, ge=5, le=100, alias="DB_MAX_OVERFLOW")
+    pool_timeout: int = Field(default=30, ge=10, le=120, alias="DB_POOL_TIMEOUT")
+    pool_recycle: int = Field(default=3600, ge=300, alias="DB_POOL_RECYCLE")
+    echo_sql: bool = Field(default=False, alias="DB_ECHO_SQL")
+    statement_timeout: int = Field(default=30000, alias="DB_STATEMENT_TIMEOUT")
 
-    # Connection pool optimization
-    pool_size: int = Field(default=10, ge=5, le=50)
-    max_overflow: int = Field(default=20, ge=5, le=100)
-    pool_timeout: int = Field(default=30, ge=10, le=120)
-    pool_recycle: int = Field(default=3600, ge=300)
-
-    # Performance tuning
-    echo_sql: bool = Field(default=False, description="Log all SQL queries")
-    statement_timeout: int = Field(default=30000, description="Statement timeout in milliseconds")
-
-    model_config = SettingsConfigDict(env_prefix="DB_", case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
 
     @property
-    def url(self) -> str:
-        """Construct PostgreSQL DSN with optimal parameters."""
-        return (
-            f"postgresql://{self.user}:{self.password.get_secret_value()}"
-            f"@{self.host}:{self.port}/{self.database}"
-            f"?connect_timeout=10"
-            f"&statement_timeout={self.statement_timeout}"
-        )
+    def _parsed(self):
+        return urlparse(str(self.url))
+
+    @property
+    def host(self) -> str:
+        return self._parsed.hostname or ""
+
+    @property
+    def port(self) -> int:
+        return self._parsed.port or 5432
+
+    @property
+    def user(self) -> str:
+        return self._parsed.username or ""
+
+    @property
+    def password(self) -> Optional[SecretStr]:
+        password = self._parsed.password
+        return SecretStr(password) if password else None
+
+    @property
+    def database(self) -> str:
+        return self._parsed.path.lstrip("/")
+
+    @property
+    def url_with_options(self) -> str:
+        base = str(self.url)
+        separator = "&" if "?" in base else "?"
+        return f"{base}{separator}connect_timeout=10&statement_timeout={self.statement_timeout}"
 
     @property
     def async_url(self) -> str:
-        """Async PostgreSQL DSN for asyncpg driver."""
-        return (
-            f"postgresql+asyncpg://{self.user}:{self.password.get_secret_value()}"
-            f"@{self.host}:{self.port}/{self.database}"
-        )
+        parsed = self._parsed
+        scheme = "postgresql+asyncpg"
+        return urlunparse(parsed._replace(scheme=scheme))
 
 
 class RedisSettings(BaseSettings):
-    """Redis configuration for multi-tier caching."""
+    """Redis configuration sourced from environment variables."""
 
-    host: str = Field(default="localhost")
-    port: int = Field(default=6379, ge=1024, le=65535)
-    password: Optional[SecretStr] = Field(default=None)
-    db: int = Field(default=0, ge=0, le=15)
+    url: RedisDsn = Field(..., alias="REDIS_URL")
+    max_connections: int = Field(default=50, ge=10, le=200, alias="REDIS_MAX_CONNECTIONS")
+    socket_timeout: int = Field(default=5, ge=1, le=30, alias="REDIS_SOCKET_TIMEOUT")
+    socket_connect_timeout: int = Field(
+        default=5, ge=1, le=30, alias="REDIS_SOCKET_CONNECT_TIMEOUT"
+    )
+    embedding_cache_ttl: int = Field(default=2592000, alias="REDIS_EMBEDDING_CACHE_TTL")
+    llm_response_cache_ttl: int = Field(default=2592000, alias="REDIS_LLM_CACHE_TTL")
+    pattern_cache_ttl: int = Field(default=604800, alias="REDIS_PATTERN_CACHE_TTL")
 
-    # Connection pool settings
-    max_connections: int = Field(default=50, ge=10, le=200)
-    socket_timeout: int = Field(default=5, ge=1, le=30)
-    socket_connect_timeout: int = Field(default=5, ge=1, le=30)
-
-    # Cache TTL defaults (seconds)
-    embedding_cache_ttl: int = Field(default=2592000, description="30 days")
-    llm_response_cache_ttl: int = Field(default=2592000, description="30 days")
-    pattern_cache_ttl: int = Field(default=604800, description="7 days")
-
-    model_config = SettingsConfigDict(env_prefix="REDIS_", case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
 
     @property
-    def url(self) -> str:
-        """Construct Redis DSN."""
-        auth = f":{self.password.get_secret_value()}@" if self.password else ""
-        return f"redis://{auth}{self.host}:{self.port}/{self.db}"
+    def _parsed(self):
+        return urlparse(str(self.url))
+
+    @property
+    def host(self) -> str:
+        return self._parsed.hostname or "localhost"
+
+    @property
+    def port(self) -> int:
+        return self._parsed.port or 6379
+
+    @property
+    def db(self) -> int:
+        path = self._parsed.path.lstrip("/")
+        return int(path) if path else 0
+
+    @property
+    def password(self) -> Optional[SecretStr]:
+        pwd = self._parsed.password
+        return SecretStr(pwd) if pwd else None
 
 
 class LLMSettings(BaseSettings):
     """LLM API configuration with provider fallbacks."""
 
-    # Provider selection (anthropic or openai)
-    provider: str = Field(
-        default="anthropic", description="LLM provider to use: 'anthropic' or 'openai'"
+    provider: str = Field(default="anthropic", alias="LLM_PROVIDER")
+    anthropic_api_key: Optional[SecretStr] = Field(default=None, alias="LLM_ANTHROPIC_API_KEY")
+    anthropic_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_ANTHROPIC_MODEL")
+    openai_api_key: Optional[SecretStr] = Field(default=None, alias="LLM_OPENAI_API_KEY")
+    openai_org_id: Optional[str] = Field(default=None, alias="LLM_OPENAI_ORG_ID")
+    primary_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_PRIMARY_MODEL")
+    secondary_model: str = Field(default="claude-3-sonnet-20240229", alias="LLM_SECONDARY_MODEL")
+    fallback_model: Optional[str] = Field(default="gpt-4-turbo-preview", alias="LLM_FALLBACK_MODEL")
+    max_requests_per_minute: int = Field(
+        default=50, ge=1, le=500, alias="LLM_MAX_REQUESTS_PER_MINUTE"
     )
-
-    # Anthropic (primary provider)
-    anthropic_api_key: Optional[SecretStr] = Field(default=None, description="Anthropic API key")
-    anthropic_model: str = Field(
-        default="claude-haiku-4-5-20251001", description="Default Anthropic model to use"
+    max_tokens_per_request: int = Field(
+        default=4096, ge=100, le=128000, alias="LLM_MAX_TOKENS_PER_REQUEST"
     )
-
-    # OpenAI (secondary/optional provider)
-    openai_api_key: Optional[SecretStr] = Field(default=None)
-    openai_org_id: Optional[str] = Field(default=None)
-
-    # Model selection
-    primary_model: str = Field(default="claude-haiku-4-5-20251001")
-    secondary_model: str = Field(default="claude-3-sonnet-20240229")
-    fallback_model: Optional[str] = Field(default="gpt-4-turbo-preview")
-
-    # Rate limiting
-    max_requests_per_minute: int = Field(default=50, ge=1, le=500)
-    max_tokens_per_request: int = Field(default=4096, ge=100, le=128000)
-
-    # Cost control
-    daily_token_budget: int = Field(default=1_000_000, ge=10_000)
-    cost_alert_threshold: float = Field(default=10.0, ge=0.0)
-
-    # Retry configuration
-    max_retries: int = Field(default=3, ge=1, le=10)
-    retry_delay: float = Field(default=1.0, ge=0.1, le=10.0)
-
-    # Temperature defaults
-    default_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    creative_temperature: float = Field(default=0.9, ge=0.0, le=2.0)
-    deterministic_temperature: float = Field(default=0.1, ge=0.0, le=0.5)
-
-    # Model pricing configuration (can be overridden via environment variables)
+    daily_token_budget: int = Field(default=1_000_000, ge=10_000, alias="LLM_DAILY_TOKEN_BUDGET")
+    cost_alert_threshold: float = Field(default=10.0, ge=0.0, alias="LLM_COST_ALERT_THRESHOLD")
+    max_retries: int = Field(default=3, ge=1, le=10, alias="LLM_MAX_RETRIES")
+    retry_delay: float = Field(default=1.0, ge=0.1, le=10.0, alias="LLM_RETRY_DELAY")
+    default_temperature: float = Field(default=0.7, ge=0.0, le=2.0, alias="LLM_DEFAULT_TEMPERATURE")
+    creative_temperature: float = Field(
+        default=0.9, ge=0.0, le=2.0, alias="LLM_CREATIVE_TEMPERATURE"
+    )
+    deterministic_temperature: float = Field(
+        default=0.1, ge=0.0, le=0.5, alias="LLM_DETERMINISTIC_TEMPERATURE"
+    )
     model_pricing: Dict[str, Dict[str, float]] = Field(
         default={
             "gpt-4": {"input": 0.03, "output": 0.06},
@@ -133,10 +143,16 @@ class LLMSettings(BaseSettings):
             "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
             "claude-haiku-4-5-20251001": {"input": 0.001, "output": 0.005},
         },
-        description="Model pricing per 1K tokens (input/output costs)",
+        alias="LLM_MODEL_PRICING",
     )
 
-    model_config = SettingsConfigDict(env_prefix="LLM_", case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
+
+    @model_validator(mode="after")
+    def validate_api_keys(self) -> "LLMSettings":
+        if not self.anthropic_api_key and not self.openai_api_key:
+            raise ValueError("Provide at least one LLM API key via environment variables.")
+        return self
 
 
 class NLPSettings(BaseSettings):
@@ -186,8 +202,8 @@ class ScrapingSettings(BaseSettings):
 class CelerySettings(BaseSettings):
     """Celery task queue configuration."""
 
-    broker_url: str = Field(default="redis://localhost:6379/1")
-    result_backend: str = Field(default="redis://localhost:6379/2")
+    broker_url: str = Field(..., alias="CELERY_BROKER_URL")
+    result_backend: str = Field(..., alias="CELERY_RESULT_BACKEND")
 
     # Worker configuration
     worker_concurrency: int = Field(default=4, ge=1, le=16)
@@ -201,7 +217,7 @@ class CelerySettings(BaseSettings):
     task_soft_time_limit: int = Field(default=300, description="5 minutes")
     task_time_limit: int = Field(default=600, description="10 minutes")
 
-    model_config = SettingsConfigDict(env_prefix="CELERY_", case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
 
 
 class TelegramSettings(BaseSettings):
@@ -245,8 +261,10 @@ class Settings(BaseSettings):
     """
 
     # Environment
-    environment: Literal["development", "staging", "production"] = Field(default="development")
-    debug: bool = Field(default=False)
+    environment: Literal["development", "staging", "production"] = Field(
+        default="development", alias="ENVIRONMENT"
+    )
+    debug: bool = Field(default=False, alias="DEBUG")
 
     # Application metadata
     app_name: str = Field(default="Content Automation Engine")
@@ -263,7 +281,7 @@ class Settings(BaseSettings):
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 
     # Security
-    secret_key: SecretStr = Field(default=SecretStr("dev-insecure-secret"), description="Application secret key")
+    secret_key: SecretStr = Field(..., alias="SECRET_KEY", description="Application secret key")
     allowed_hosts: list[str] = Field(default=["localhost", "127.0.0.1"])
     cors_origins: list[str] = Field(default=["http://localhost:3000"])
     jwt_issuer: str = Field(default="content-automation-engine")
@@ -295,11 +313,8 @@ class Settings(BaseSettings):
             env = None
 
         key = v.get_secret_value() if isinstance(v, SecretStr) else str(v)
-        if env == "production":
-            if key == "dev-insecure-secret" or len(key) < 32:
-                raise ValueError(
-                    "SECRET_KEY must be set to a strong value (>=32 chars) in production"
-                )
+        if env == "production" and len(key) < 32:
+            raise ValueError("SECRET_KEY must be set to a strong value (>=32 chars) in production")
         return v
 
     @property

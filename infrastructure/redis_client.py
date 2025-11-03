@@ -18,7 +18,7 @@ import hashlib
 import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
 import redis.asyncio as aioredis
@@ -61,13 +61,8 @@ class RedisConnectionPool:
     async def initialize(self) -> None:
         """Initialize Redis connection pool with optimized parameters."""
         try:
-            self._pool = ConnectionPool(
-                host=settings.redis.host,
-                port=settings.redis.port,
-                db=settings.redis.db,
-                password=(
-                    settings.redis.password.get_secret_value() if settings.redis.password else None
-                ),
+            self._pool = ConnectionPool.from_url(
+                str(settings.redis.url),
                 encoding="utf-8",
                 decode_responses=False,  # Handle binary data manually
                 max_connections=settings.redis.max_connections,
@@ -90,7 +85,7 @@ class RedisConnectionPool:
             raise InfrastructureError(f"Redis initialization failed: {e}")
 
     @asynccontextmanager
-    async def get_connection(self) -> Redis:
+    async def get_connection(self) -> AsyncGenerator[Redis, None]:
         """
         Context manager for acquiring Redis connections with circuit breaker.
 

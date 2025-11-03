@@ -31,17 +31,13 @@ from sqlalchemy.orm import Session, sessionmaker
 # Set test environment variables before importing any modules
 os.environ.update(
     {
-        "DB_USER": "test_user",
-        "DB_PASSWORD": "test_password",
-        "DB_HOST": "localhost",
-        "DB_PORT": "5432",
-        "DB_DATABASE": "test_db",
-        "REDIS_HOST": "localhost",
-        "REDIS_PORT": "6379",
-        "REDIS_DB": "15",
-        "SECRET_KEY": "test-secret-key",
-        "LLM_ANTHROPIC_API_KEY": "test-key",
-        "LLM_OPENAI_API_KEY": "test-key",
+        "DATABASE_URL": "postgresql://test_user:test_password@localhost:5432/test_db",
+        "REDIS_URL": "redis://localhost:6379/15",
+        "SECRET_KEY": "test-secret-key-should-be-long-enough-1234567890",
+        "LLM_ANTHROPIC_API_KEY": "test-anthropic-key",
+        "LLM_OPENAI_API_KEY": "test-openai-key",
+        "CELERY_BROKER_URL": "redis://localhost:6379/1",
+        "CELERY_RESULT_BACKEND": "redis://localhost:6379/2",
     }
 )
 
@@ -96,7 +92,7 @@ def reset_metrics_collector():
 async def clear_cache():
     """Clear cache before each test."""
     from container import container
-    
+
     try:
         # Get cache manager from container if available
         cache_mgr = container.cache()
@@ -108,9 +104,9 @@ async def clear_cache():
     except Exception:
         # If container not initialized or cache not available, skip cleanup
         pass
-    
+
     yield
-    
+
     try:
         # Clear again after test
         cache_mgr = container.cache()

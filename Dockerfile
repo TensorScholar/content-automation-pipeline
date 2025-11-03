@@ -1,101 +1,55 @@
-# ============================================================================
-# Multi-Stage Production Dockerfile
-# Optimized for: security, size, build speed, layer caching
-# ============================================================================
+# syntax=docker/dockerfile:1
 
-# ----------------------------------------------------------------------------
-# Stage 1: Builder - Compile dependencies and install packages
-# ----------------------------------------------------------------------------
 FROM python:3.11-slim AS builder
 
-# Set build arguments
-ARG DEBIAN_FRONTEND=noninteractive
-ARG PIP_NO_CACHE_DIR=1
-ARG PIP_DISABLE_PIP_VERSION_CHECK=1
+ARG POETRY_VERSION=1.8.3
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:$PATH" \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1
 
-# Install system dependencies for building Python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    gcc \
-    g++ \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+RUN python -m venv ${VIRTUAL_ENV}
 
-# Install Poetry
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install poetry==1.8.3
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install "poetry==${POETRY_VERSION}"
 
-# Copy poetry files
+WORKDIR /src
 COPY pyproject.toml poetry.lock* ./
 
-# Install project dependencies (excluding dev) using Poetry
-# This installs dependencies into the venv at /opt/venv
-RUN poetry install --no-dev --no-interaction --no-root
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes && \
+    pip install -r requirements.txt && \
+    rm requirements.txt
 
-# Download spaCy language model
-RUN poetry run python -m spacy download en_core_web_sm
+FROM python:3.11-slim AS final
 
-# Note: sentence-transformers model will be downloaded on first use
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH="${VIRTUAL_ENV}/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# ----------------------------------------------------------------------------
-# Stage 2: Runtime - Minimal production image
-# ----------------------------------------------------------------------------
-FROM python:3.11-slim
-
-# Metadata labels
-LABEL maintainer="content-automation-team@example.com"
-LABEL version="1.0.0"
-LABEL description="Advanced NLP-Driven SEO Content Automation Engine"
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PATH="/opt/venv/bin:$PATH" \
-    APP_HOME=/app \
-    # Application configuration
-    LOG_LEVEL=INFO \
-    WORKERS=4 \
-    PORT=8000
-
-# Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN groupadd -r appuser && \
-    useradd -r -g appuser -u 1000 -m -s /bin/bash appuser && \
-    mkdir -p ${APP_HOME} && \
-    chown -R appuser:appuser ${APP_HOME}
+RUN useradd --create-home --shell /bin/bash appuser
 
-# Copy virtual environment from builder
-COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
+WORKDIR /app
 
-# Copy application code
-WORKDIR ${APP_HOME}
-COPY --chown=appuser:appuser . .
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY . .
 
-# Create necessary directories
-RUN mkdir -p logs data cache && \
-    chown -R appuser:appuser logs data cache
+RUN chown -R appuser:appuser /app
 
-# Switch to non-root user
 USER appuser
 
-# Expose application port
-EXPOSE ${PORT}
+EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
-
-# Default command: Run API server via venv python
-CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

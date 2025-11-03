@@ -22,10 +22,15 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import declarative_base
 
 # Metadata instance for all tables
 metadata = MetaData()
+
+# Declarative base for Alembic autogenerate
+Base = declarative_base(metadata=metadata)
 
 # Generated Articles Table
 generated_articles_table = Table(

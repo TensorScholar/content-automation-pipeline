@@ -251,7 +251,8 @@ class TestWebsiteAnalyzer:
             # Mock the _discover_articles method to return many articles
             with patch.object(website_analyzer, "_discover_articles") as mock_discover:
                 mock_discover.return_value = [
-                    f"https://example.com/article{i}" for i in range(10)  # 10 articles
+                    f"https://example.com/article{i}"
+                    for i in range(10)  # 10 articles
                 ]
 
                 # Mock the _scrape_articles method

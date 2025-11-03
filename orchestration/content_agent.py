@@ -19,7 +19,6 @@ from core.exceptions import InsufficientContextError, ProjectNotFoundError, Work
 from core.models import ContentPlan, GeneratedArticle, InferredPatterns, Keyword, Project, Rulebook
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
-
 from execution.keyword_researcher import KeywordResearcher
 from infrastructure.database import DatabaseManager
 from infrastructure.monitoring import MetricsCollector
@@ -575,7 +574,9 @@ class ContentAgent:
         """
         Distributes the article to all configured channels for the project.
         """
-        logger.warning(f"Skipping distribution for article {article.id}: Distributor module is disabled.")
+        logger.warning(
+            f"Skipping distribution for article {article.id}: Distributor module is disabled."
+        )
         return [], []
 
     async def _transition_state(self, new_state: WorkflowState):

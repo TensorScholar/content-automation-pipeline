@@ -459,18 +459,15 @@ class ArticleRepository:
             plan_dict["outline_json"] = plan.outline.model_dump_json()
 
             async with self.db.session() as session:
-                query = (
-                    insert(content_plans_table)
-                    .values(
-                        id=plan.id,
-                        project_id=plan.project_id,
-                        topic=plan.topic,
-                        outline_json=plan_dict["outline_json"],
-                        target_word_count=plan.target_word_count,
-                        readability_target=plan.readability_target,
-                        estimated_cost=plan.estimated_cost_usd,
-                        created_at=plan.created_at,
-                    )
+                query = insert(content_plans_table).values(
+                    id=plan.id,
+                    project_id=plan.project_id,
+                    topic=plan.topic,
+                    outline_json=plan_dict["outline_json"],
+                    target_word_count=plan.target_word_count,
+                    readability_target=plan.readability_target,
+                    estimated_cost=plan.estimated_cost_usd,
+                    created_at=plan.created_at,
                 )
                 await session.execute(query)
                 await session.commit()
@@ -491,24 +488,21 @@ class ArticleRepository:
             quality_metrics_json = article.quality_metrics.model_dump_json()
 
             async with self.db.session() as session:
-                query = (
-                    insert(generated_articles_table)
-                    .values(
-                        id=article.id,
-                        project_id=article.project_id,
-                        content_plan_id=article.content_plan_id,
-                        title=article.title,
-                        content=article.content,
-                        meta_description=article.meta_description,
-                        word_count=article.quality_metrics.word_count,
-                        readability_score=article.quality_metrics.readability_score,
-                        keyword_density=article.quality_metrics.keyword_density,
-                        total_tokens_used=article.total_tokens_used,
-                        total_cost=article.total_cost_usd,
-                        generation_time=article.generation_time_seconds,
-                        created_at=article.created_at,
-                        updated_at=article.updated_at,
-                    )
+                query = insert(generated_articles_table).values(
+                    id=article.id,
+                    project_id=article.project_id,
+                    content_plan_id=article.content_plan_id,
+                    title=article.title,
+                    content=article.content,
+                    meta_description=article.meta_description,
+                    word_count=article.quality_metrics.word_count,
+                    readability_score=article.quality_metrics.readability_score,
+                    keyword_density=article.quality_metrics.keyword_density,
+                    total_tokens_used=article.total_tokens_used,
+                    total_cost=article.total_cost_usd,
+                    generation_time=article.generation_time_seconds,
+                    created_at=article.created_at,
+                    updated_at=article.updated_at,
                 )
                 await session.execute(query)
                 await session.commit()

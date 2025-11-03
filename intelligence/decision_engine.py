@@ -503,7 +503,9 @@ class DecisionEngine:
             if "structure" in query.lower() or "format" in query.lower():
                 for structure in patterns.structure_patterns[:2]:  # Top 2
                     recommendation = self._pattern_to_structure_recommendation(structure)
-                    rec_embedding = await self.semantic_analyzer.embed(recommendation, normalize=True)
+                    rec_embedding = await self.semantic_analyzer.embed(
+                        recommendation, normalize=True
+                    )
 
                     evidence.append(
                         Evidence(

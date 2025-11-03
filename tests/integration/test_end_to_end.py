@@ -43,7 +43,6 @@ from optimization.prompt_compressor import PromptCompressor
 from optimization.token_budget_manager import TokenBudgetManager
 from orchestration.content_agent import ContentAgent, ContentAgentConfig, WorkflowState
 
-
 # ============================================================================
 # INTEGRATION TEST FIXTURES
 # ============================================================================

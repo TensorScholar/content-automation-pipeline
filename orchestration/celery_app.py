@@ -11,36 +11,24 @@ Configures Celery distributed task queue for asynchronous operations with:
 Design Pattern: Distributed Task Queue with Result Backend
 """
 
-import os
 import asyncio
+import os
 
 from celery import Celery
 from celery.signals import worker_process_init, worker_process_shutdown
 from kombu import Queue
 from loguru import logger
 
+from config.settings import get_settings
 from container import container_manager
 
-# Read Redis configuration from environment or use defaults
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = os.getenv("REDIS_PORT", "6379")
-REDIS_DB = os.getenv("REDIS_DB", "0")
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
-
-# Construct Redis URL
-if REDIS_PASSWORD:
-    REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-else:
-    REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-
-# Alternative: Use REDIS_URL environment variable directly if provided
-REDIS_URL = os.getenv("REDIS_URL", REDIS_URL)
+settings = get_settings()
 
 # Create Celery application instance
 app = Celery(
     "content_automation",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=settings.celery.broker_url,
+    backend=settings.celery.result_backend,
     include=[
         "orchestration.tasks",  # Auto-discover tasks from this module
     ],

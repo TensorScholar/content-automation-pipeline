@@ -128,7 +128,9 @@ class SemanticAnalyzer:
         # Cache for future use
         if use_cache and self.cache_enabled:
             await self.redis_client.store_embedding(
-                key=cache_key, embedding=embedding, ttl=86400 * 90  # 90 days
+                key=cache_key,
+                embedding=embedding,
+                ttl=86400 * 90,  # 90 days
             )
 
         return embedding
@@ -151,7 +153,9 @@ class SemanticAnalyzer:
         if use_cache and self.cache_enabled:
             for idx, text in enumerate(texts):
                 cache_key = self._compute_cache_key(text, normalize)
-                cached = await self.redis_client.get_embedding(cache_key, shape=(self.embedding_dim,))
+                cached = await self.redis_client.get_embedding(
+                    cache_key, shape=(self.embedding_dim,)
+                )
 
                 if cached is not None:
                     results[idx] = cached

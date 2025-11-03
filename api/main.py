@@ -4,6 +4,7 @@ Main FastAPI application definitions, middleware, and request handlers.
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -17,10 +18,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from loguru import logger
 from pydantic import BaseModel, Field, validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+
+# Import structured logging
+from infrastructure.monitoring import configure_structlog, get_logger
+
+# Configure structlog for the application
+configure_structlog()
+logger = get_logger(__name__)
 
 # Import exception handlers from separate module
 from api.exceptions import add_exception_handlers
@@ -40,6 +47,12 @@ from api.schemas import (
     WorkflowStatusResponse,
 )
 from config.settings import settings
+from container import (
+    DatabaseManager as _DB,
+)
+from container import (
+    RedisClient as _RC,
+)
 
 # Import dependency injection functions from container
 from container import (
@@ -53,13 +66,9 @@ from container import (
 )
 from core.models import ContentPlan, GeneratedArticle, Project
 from orchestration.content_agent import ContentAgent
+from security import SECURITY_HEADERS
 from services.content_service import ContentService
 from services.project_service import ProjectService
-from security import SECURITY_HEADERS
-from container import (
-    DatabaseManager as _DB,
-    RedisClient as _RC,
-)
 
 # ============================================================================
 # MIDDLEWARE STACK (Cross-Cutting Concerns)
@@ -77,8 +86,11 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
 
-        logger.bind(request_id=request_id).info(
-            f"Request started | method={request.method} | path={request.url.path}"
+        logger.info(
+            "request_started",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
         )
 
         start_time = datetime.utcnow()
@@ -89,8 +101,11 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
 
             duration = (datetime.utcnow() - start_time).total_seconds()
 
-            logger.bind(request_id=request_id).info(
-                f"Request completed | status={response.status_code} | " f"duration={duration:.3f}s"
+            logger.info(
+                "request_completed",
+                request_id=request_id,
+                status=response.status_code,
+                duration_seconds=duration,
             )
 
             return response
@@ -98,8 +113,11 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             duration = (datetime.utcnow() - start_time).total_seconds()
 
-            logger.bind(request_id=request_id).error(
-                f"Request failed | error={e} | duration={duration:.3f}s"
+            logger.error(
+                "request_failed",
+                request_id=request_id,
+                error=str(e),
+                duration_seconds=duration,
             )
 
             return JSONResponse(
@@ -153,7 +171,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         current_count = await redis.zcard(key)
 
         if current_count >= self.rate_limit:
-            logger.warning(f"Rate limit exceeded | client={client_id}")
+            logger.warning("rate_limit_exceeded", client_id=client_id)
 
             # Calculate Retry-After header: Find the score of the oldest request in the set
             oldest_request = await redis.zrange_withscores(key, 0, 0)
@@ -215,34 +233,35 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 # FASTAPI APPLICATION INITIALIZATION
 # ============================================================================
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Modern FastAPI lifespan context manager for startup/shutdown.
-    
+
     Replaces deprecated @app.on_event decorators with context manager pattern.
     """
     # Startup
     try:
         database_manager = container.database()
         await database_manager.initialize()
-        logger.info("Database manager initialized")
-        logger.info("Application startup complete")
+        logger.info("database_manager_initialized")
+        logger.info("application_startup_complete")
     except Exception as e:
-        logger.warning(f"Container initialization failed: {e}")
-        logger.info("Application startup complete (without container initialization)")
-    
+        logger.warning("container_initialization_failed", error=str(e))
+        logger.info("application_startup_complete", container_initialized=False)
+
     yield  # Application runs here
-    
+
     # Shutdown
     try:
         database_manager = container.database()
         await database_manager.close()
-        logger.info("Database manager closed")
+        logger.info("database_manager_closed")
     except Exception as e:
-        logger.warning(f"Database cleanup failed: {e}")
-    
-    logger.info("Application shutdown complete")
+        logger.warning("database_cleanup_failed", error=str(e))
+
+    logger.info("application_shutdown_complete")
 
 
 app = FastAPI(
@@ -288,18 +307,17 @@ app.include_router(system.router)
 app.include_router(auth.router)
 
 # Mount static files for web interface (only if directory exists)
-import os
-
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 if os.path.exists(_static_dir) and os.path.isdir(_static_dir):
     app.mount("/static", StaticFiles(directory=_static_dir), name="static")
-    logger.info(f"Static files mounted from: {_static_dir}")
+    logger.info("static_files_mounted", directory=_static_dir)
 else:
-    logger.info("Static directory not found - skipping static file mounting (UI is embedded)")
+    logger.info("static_directory_not_found", ui_mode="embedded")
 
 
 # Web interface route (only in non-production environments)
 if not settings.is_production:
+
     @app.get("/", response_class=HTMLResponse)
     async def web_interface():
         """Serve the comprehensive web interface with Old Money aesthetic."""
@@ -1827,8 +1845,14 @@ class HostValidationMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         host = request.headers.get("host", "").split(":")[0].lower()
-        if settings.allowed_hosts and host and host not in [h.lower() for h in settings.allowed_hosts]:
-            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Invalid Host header"})
+        if (
+            settings.allowed_hosts
+            and host
+            and host not in [h.lower() for h in settings.allowed_hosts]
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Invalid Host header"}
+            )
         return await call_next(request)
 
 

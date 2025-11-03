@@ -374,9 +374,8 @@ class RulebookManager:
 
     async def _get_next_version(self, project_id: UUID) -> int:
         """Get next version number for project's rulebook using SQLAlchemy Core."""
-        query = (
-            select(func.coalesce(func.max(rulebooks_table.c.version), 0) + 1)
-            .where(rulebooks_table.c.project_id == project_id)
+        query = select(func.coalesce(func.max(rulebooks_table.c.version), 0) + 1).where(
+            rulebooks_table.c.project_id == project_id
         )
 
         result = await self.session.execute(query)
@@ -499,7 +498,9 @@ class RulebookManager:
                     rules_table.c.created_at,
                 )
                 .select_from(
-                    rules_table.join(rulebooks_table, rules_table.c.rulebook_id == rulebooks_table.c.id)
+                    rules_table.join(
+                        rulebooks_table, rules_table.c.rulebook_id == rulebooks_table.c.id
+                    )
                 )
                 .where(
                     (rulebooks_table.c.project_id == project_id)

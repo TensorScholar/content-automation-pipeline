@@ -312,6 +312,7 @@ class ProjectService:
         # Check if rulebook exists
         async with self.database_manager.session() as session:
             from container import container
+
             semantic_analyzer = container.semantic_analyzer()
             rulebook_manager = RulebookManager(session, semantic_analyzer)
             existing_rulebook = await rulebook_manager.get_rulebook(project_id)
@@ -320,6 +321,7 @@ class ProjectService:
             # Update existing
             async with self.database_manager.session() as session:
                 from container import container
+
                 semantic_analyzer = container.semantic_analyzer()
                 rulebook_manager = RulebookManager(session, semantic_analyzer)
                 rulebook = await rulebook_manager.update_rulebook(
@@ -330,9 +332,12 @@ class ProjectService:
             # Create new
             async with self.database_manager.session() as session:
                 from container import container
+
                 semantic_analyzer = container.semantic_analyzer()
                 rulebook_manager = RulebookManager(session, semantic_analyzer)
-                rulebook = await rulebook_manager.create_rulebook(project_id=project_id, raw_content=content)
+                rulebook = await rulebook_manager.create_rulebook(
+                    project_id=project_id, raw_content=content
+                )
             status_message = "created"
 
         return {
@@ -363,6 +368,7 @@ class ProjectService:
 
         async with self.database_manager.session() as session:
             from container import container
+
             semantic_analyzer = container.semantic_analyzer()
             rulebook_manager = RulebookManager(session, semantic_analyzer)
             if version:
@@ -394,6 +400,7 @@ class ProjectService:
         """
         async with self.database_manager.session() as session:
             from container import container
+
             semantic_analyzer = container.semantic_analyzer()
             rulebook_manager = RulebookManager(session, semantic_analyzer)
             history = await rulebook_manager.get_rulebook_history(project_id)
@@ -419,6 +426,7 @@ class ProjectService:
         """
         async with self.database_manager.session() as session:
             from container import container
+
             semantic_analyzer = container.semantic_analyzer()
             rulebook_manager = RulebookManager(session, semantic_analyzer)
             await rulebook_manager.delete_rulebook(project_id)

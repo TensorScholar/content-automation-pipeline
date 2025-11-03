@@ -457,6 +457,134 @@ class TestLLMResponse:
             )
 
 
+class TestLLMClientRetryLogic:
+    """Test retry logic in LLM client."""
+
+    @pytest.mark.asyncio
+    async def test_llm_client_retries_on_connection_error(self, mocker):
+        """Test that LLM client retries when httpx.ConnectError is raised."""
+        import httpx
+
+        # Mock settings
+        mock_settings = MagicMock()
+        mock_settings.llm = MagicMock()
+        mock_settings.llm.openai_api_key = MagicMock()
+        mock_settings.llm.openai_api_key.get_secret_value.return_value = "test-key"
+
+        # Mock Redis client
+        mock_redis = MagicMock()
+        mock_redis.get = MagicMock(return_value=None)
+        mock_redis.setex = MagicMock()
+        mock_redis.incr = MagicMock()
+
+        # Create LLM client
+        client = get_llm_client(
+            provider="openai", redis_client=mock_redis, settings=mock_settings, timeout=5.0
+        )
+
+        # Mock the OpenAI client's chat.completions.create to raise ConnectError
+        mock_create = mocker.patch.object(
+            client.openai_client.chat.completions, "create", side_effect=httpx.ConnectError("Connection failed")
+        )
+
+        # Create a request
+        request = LLMRequest(prompt="Test prompt", model="gpt-4", max_tokens=100)
+
+        # Attempt to call the client - should raise exception after retries
+        with pytest.raises(httpx.ConnectError):
+            await client.generate(request)
+
+        # Verify the client was called multiple times (proving retry logic)
+        assert mock_create.call_count > 1, "Client should have retried after ConnectError"
+        assert mock_create.call_count <= 5, "Client should not exceed max retries"
+
+    @pytest.mark.asyncio
+    async def test_llm_client_retries_on_timeout_error(self, mocker):
+        """Test that LLM client retries when httpx.TimeoutException is raised."""
+        import httpx
+
+        # Mock settings
+        mock_settings = MagicMock()
+        mock_settings.llm = MagicMock()
+        mock_settings.llm.openai_api_key = MagicMock()
+        mock_settings.llm.openai_api_key.get_secret_value.return_value = "test-key"
+
+        # Mock Redis client
+        mock_redis = MagicMock()
+        mock_redis.get = MagicMock(return_value=None)
+        mock_redis.setex = MagicMock()
+        mock_redis.incr = MagicMock()
+
+        # Create LLM client
+        client = get_llm_client(
+            provider="openai", redis_client=mock_redis, settings=mock_settings, timeout=5.0
+        )
+
+        # Mock the OpenAI client's chat.completions.create to raise TimeoutException
+        mock_create = mocker.patch.object(
+            client.openai_client.chat.completions,
+            "create",
+            side_effect=httpx.TimeoutException("Request timeout"),
+        )
+
+        # Create a request
+        request = LLMRequest(prompt="Test prompt", model="gpt-4", max_tokens=100)
+
+        # Attempt to call the client - should raise exception after retries
+        with pytest.raises(httpx.TimeoutException):
+            await client.generate(request)
+
+        # Verify the client was called multiple times (proving retry logic)
+        assert mock_create.call_count > 1, "Client should have retried after TimeoutException"
+        assert mock_create.call_count <= 5, "Client should not exceed max retries"
+
+    @pytest.mark.asyncio
+    async def test_llm_client_retries_on_http_status_error(self, mocker):
+        """Test that LLM client retries when httpx.HTTPStatusError is raised."""
+        import httpx
+
+        # Mock settings
+        mock_settings = MagicMock()
+        mock_settings.llm = MagicMock()
+        mock_settings.llm.openai_api_key = MagicMock()
+        mock_settings.llm.openai_api_key.get_secret_value.return_value = "test-key"
+
+        # Mock Redis client
+        mock_redis = MagicMock()
+        mock_redis.get = MagicMock(return_value=None)
+        mock_redis.setex = MagicMock()
+        mock_redis.incr = MagicMock()
+
+        # Create LLM client
+        client = get_llm_client(
+            provider="openai", redis_client=mock_redis, settings=mock_settings, timeout=5.0
+        )
+
+        # Create a mock response for HTTPStatusError
+        mock_request = httpx.Request("POST", "https://api.openai.com")
+        mock_response = httpx.Response(503, request=mock_request)
+
+        # Mock the OpenAI client's chat.completions.create to raise HTTPStatusError
+        mock_create = mocker.patch.object(
+            client.openai_client.chat.completions,
+            "create",
+            side_effect=httpx.HTTPStatusError(
+                "Service unavailable", request=mock_request, response=mock_response
+            ),
+        )
+
+        # Create a request
+        request = LLMRequest(prompt="Test prompt", model="gpt-4", max_tokens=100)
+
+        # Attempt to call the client - should raise exception after retries
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.generate(request)
+
+        # Verify the client was called multiple times (proving retry logic)
+        assert mock_create.call_count > 1, "Client should have retried after HTTPStatusError"
+        assert mock_create.call_count <= 5, "Client should not exceed max retries"
+
+
 # Test module coverage
 def test_module_imports():
     """Test that all required LLM client components are importable."""

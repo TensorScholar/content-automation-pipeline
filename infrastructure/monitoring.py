@@ -1,12 +1,15 @@
 """
-Monitoring Infrastructure: Prometheus Metrics
+Monitoring Infrastructure: Structured Logging with Structlog
 
-Provides metrics for the content automation service in Prometheus format.
+Provides JSON-based structured logging for production observability.
+Configures structlog with processors for consistent, parseable log output.
 """
 
+import logging
+import sys
 from typing import Any, Dict, Optional
 
-from loguru import logger
+import structlog
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     REGISTRY,
@@ -16,6 +19,45 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
+
+
+def configure_structlog() -> None:
+    """
+    Configure structlog for JSON-based production logging.
+
+    Sets up processors for:
+    - Timestamping (ISO 8601)
+    - Log level formatting
+    - Exception formatting with stack traces
+    - JSON rendering
+    """
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.StackInfoRenderer(),
+            structlog.dev.set_exc_info,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
+        cache_logger_on_first_use=True,
+    )
+
+
+def get_logger(name: str) -> structlog.BoundLogger:
+    """
+    Get a structlog logger instance bound with a name context.
+
+    Args:
+        name: Logger name (typically module __name__)
+
+    Returns:
+        Configured structlog BoundLogger
+    """
+    return structlog.get_logger(name)
 
 
 class MetricsCollector:
@@ -105,7 +147,8 @@ class MetricsCollector:
             "error_rate", "Current error rate (errors per minute)", labelnames=["error_type"]
         )
 
-        logger.info("Metrics collector initialized with Prometheus metrics")
+        log = get_logger(__name__)
+        log.info("metrics_collector_initialized", metrics_type="prometheus")
 
     def record_workflow_completion(
         self,

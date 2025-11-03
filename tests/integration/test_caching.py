@@ -116,7 +116,8 @@ async def test_caching_without_cache_manager(redis):
 async def test_cache_manager_cleanup_and_optimize():
     """Validate CacheManager maintenance paths (cleanup_expired, optimize)."""
     from datetime import timedelta as td
-    from optimization.cache_manager import CacheManager, CacheLevel
+
+    from optimization.cache_manager import CacheLevel, CacheManager
 
     # Use a small memory limit to trigger eviction code paths
     cm = CacheManager(redis_client=MagicMock(), max_memory_entries=2)
@@ -127,6 +128,7 @@ async def test_cache_manager_cleanup_and_optimize():
 
     # Force an expired state
     import asyncio as aio
+
     await aio.sleep(1.1)
 
     removed = await cm.cleanup_expired()

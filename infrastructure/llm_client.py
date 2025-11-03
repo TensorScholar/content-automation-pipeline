@@ -130,7 +130,7 @@ class LLMResponse:
 
 class LLMRequest(BaseModel):
     """Validated LLM request with constraint enforcement."""
-    
+
     model_config = {"frozen": True}  # Pydantic V2: Immutable after creation
 
     prompt: str = Field(..., min_length=1, max_length=100000)
@@ -140,7 +140,9 @@ class LLMRequest(BaseModel):
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
     frequency_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
     presence_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
-    stop_sequences: Optional[List[str]] = Field(default=None, max_length=4)  # Pydantic V2: max_length
+    stop_sequences: Optional[List[str]] = Field(
+        default=None, max_length=4
+    )  # Pydantic V2: max_length
 
     @field_validator("max_tokens")  # Pydantic V2: field_validator
     @classmethod
@@ -679,13 +681,17 @@ class LLMClient(AbstractLLMClient):
                     # Read existing
                     usage = await self.redis_client.get(usage_key) or {"tokens": 0, "cost": 0.0}
                     # response may not be defined on exception
-                    if 'response' in locals() and response:
-                        usage["tokens"] = int(usage.get("tokens", 0)) + int(response.usage.total_tokens)
+                    if "response" in locals() and response:
+                        usage["tokens"] = int(usage.get("tokens", 0)) + int(
+                            response.usage.total_tokens
+                        )
                         usage["cost"] = float(usage.get("cost", 0.0)) + float(response.cost)
                         # Persist with 2-day TTL
                         await self.redis_client.set(usage_key, usage, ttl=172800)
                         # Alert threshold
-                        threshold = float(getattr(self.settings.llm, "cost_alert_threshold", 0.0) or 0.0)
+                        threshold = float(
+                            getattr(self.settings.llm, "cost_alert_threshold", 0.0) or 0.0
+                        )
                         if threshold and usage["cost"] >= threshold:
                             logger.warning(
                                 f"LLM daily cost crossed alert threshold: ${usage['cost']:.2f} >= ${threshold:.2f}"
@@ -694,6 +700,14 @@ class LLMClient(AbstractLLMClient):
                 # Never fail due to accounting
                 pass
 
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        stop=stop_after_attempt(5),
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError, APITimeoutError, RateLimitError)
+        ),
+        before_sleep=before_sleep_log(logger, "WARNING"),
+    )
     async def _execute_with_retry(
         self,
         request: LLMRequest,
@@ -704,57 +718,38 @@ class LLMClient(AbstractLLMClient):
 
         Retry Strategy:
         - Exponential backoff: 2^attempt seconds with jitter
-        - Max attempts: 3 (configurable)
-        - Retry conditions: Timeout, rate limit, transient errors
+        - Max attempts: 5
+        - Retry conditions: Timeout, rate limit, connection errors, HTTP errors
         - No retry: Authentication, validation errors
         """
+        start_time = time.perf_counter()
 
-        @retry(
-            stop=stop_after_attempt(self.max_retries),
-            wait=wait_exponential(multiplier=1, min=2, max=30),
-            retry=retry_if_exception_type(
-                (APITimeoutError, RateLimitError, httpx.TimeoutException)
-            ),
-            before_sleep=before_sleep_log(logger, "WARNING"),
+        if provider == ModelProvider.OPENAI:
+            result = await self._call_openai(request)
+        elif provider == ModelProvider.ANTHROPIC:
+            result = await self._call_anthropic(request)
+        else:
+            raise LLMProviderError(f"Unsupported provider: {provider}")
+
+        latency_ms = (time.perf_counter() - start_time) * 1000
+
+        # Calculate cost
+        pricing = self.model_pricing.get(request.model)
+        if not pricing:
+            logger.warning(f"No pricing data for model: {request.model}")
+            cost = 0.0
+        else:
+            cost = pricing.calculate_cost(result[1])  # result[1] is TokenUsage
+
+        return LLMResponse(
+            content=result[0],
+            model=request.model,
+            usage=result[1],
+            cost=cost,
+            latency_ms=latency_ms,
+            provider=provider,
+            finish_reason=result[2],
         )
-        async def _execute():
-            start_time = time.perf_counter()
-
-            if provider == ModelProvider.OPENAI:
-                result = await self._call_openai(request)
-            elif provider == ModelProvider.ANTHROPIC:
-                result = await self._call_anthropic(request)
-            else:
-                raise LLMProviderError(f"Unsupported provider: {provider}")
-
-            latency_ms = (time.perf_counter() - start_time) * 1000
-
-            # Calculate cost
-            pricing = self.model_pricing.get(request.model)
-            if not pricing:
-                logger.warning(f"No pricing data for model: {request.model}")
-                cost = 0.0
-            else:
-                cost = pricing.calculate_cost(result[1])  # result[1] is TokenUsage
-
-            return LLMResponse(
-                content=result[0],
-                model=request.model,
-                usage=result[1],
-                cost=cost,
-                latency_ms=latency_ms,
-                provider=provider,
-                finish_reason=result[2],
-            )
-
-        try:
-            return await _execute()
-        except RateLimitError as e:
-            raise LLMRateLimitError(f"Rate limit exceeded: {str(e)}") from e
-        except APITimeoutError as e:
-            raise LLMTimeoutError(f"Request timeout: {str(e)}") from e
-        except (OpenAIError, AnthropicError) as e:
-            raise LLMProviderError(f"Provider error: {str(e)}") from e
 
     async def _call_openai(self, request: LLMRequest) -> tuple:
         """Call OpenAI API with request mapping."""

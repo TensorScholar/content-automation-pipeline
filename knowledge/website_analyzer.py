@@ -377,7 +377,18 @@ class WebsiteAnalyzer:
         """
         # Remove common boilerplate sections before extraction
         for tag in soup(
-            ["nav", "footer", "header", "aside", "script", "style", ".sidebar", ".menu", ".related-posts", ".comments"]
+            [
+                "nav",
+                "footer",
+                "header",
+                "aside",
+                "script",
+                "style",
+                ".sidebar",
+                ".menu",
+                ".related-posts",
+                ".comments",
+            ]
         ):
             try:
                 tag.decompose()

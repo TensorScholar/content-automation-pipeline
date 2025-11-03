@@ -120,7 +120,9 @@ class PatternExtractor:
 
         """
         # 1. Remove script, style, nav, footer, header, aside
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside", ".sidebar", ".menu"]):
+        for tag in soup(
+            ["script", "style", "nav", "footer", "header", "aside", ".sidebar", ".menu"]
+        ):
             try:
                 tag.decompose()
             except Exception:

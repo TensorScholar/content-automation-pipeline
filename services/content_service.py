@@ -21,7 +21,6 @@ from loguru import logger
 from knowledge.article_repository import ArticleRepository
 
 
-
 class ContentService:
     """
     Service layer for content business logic.

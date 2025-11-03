@@ -237,7 +237,7 @@ def decode_access_token(token: str) -> TokenData:
         if username is None or user_id is None:
             logger.error("JWT token missing required fields (sub or user_id)")
             raise credentials_exception
-        
+
         # Issuer check
         if iss != settings.jwt_issuer:
             logger.warning(f"JWT issuer mismatch: expected {settings.jwt_issuer}, got {iss}")

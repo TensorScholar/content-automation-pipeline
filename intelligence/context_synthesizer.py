@@ -104,7 +104,7 @@ class ContextSynthesizer:
 
     def __init__(self, semantic_analyzer: Optional[SemanticAnalyzer] = None):
         """Initialize synthesizer with NLP models and semantic analyzer.
-        
+
         Args:
             semantic_analyzer: SemanticAnalyzer instance for embeddings (optional, created if not provided)
         """
@@ -112,7 +112,7 @@ class ContextSynthesizer:
             # Lightweight spaCy for sentence tokenization
             self.nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
             self.nlp.add_pipe("sentencizer")
-            
+
             # Store semantic analyzer instance
             self.semantic_analyzer = semantic_analyzer
 

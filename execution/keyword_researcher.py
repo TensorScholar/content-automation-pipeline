@@ -489,7 +489,7 @@ class KeywordResearcher:
         cache_manager: Optional[CacheManager] = None,
     ):
         """Initialize keyword researcher with semantic analyzer and cache manager.
-        
+
         Args:
             semantic_analyzer: SemanticAnalyzer instance for embeddings (optional)
             cache_manager: CacheManager instance for caching (optional)

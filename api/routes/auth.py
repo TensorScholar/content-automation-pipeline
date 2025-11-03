@@ -250,7 +250,11 @@ async def list_users(
     return [
         {
             "id": u.id,
-            "username": (u.username if hasattr(u, "username") and u.username else (u.email.split("@")[0] if u.email else None)),
+            "username": (
+                u.username
+                if hasattr(u, "username") and u.username
+                else (u.email.split("@")[0] if u.email else None)
+            ),
             "email": u.email,
             "full_name": u.full_name,
             "is_active": u.is_active,

@@ -18,11 +18,12 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from api.schemas import CreateProjectRequest
+
 # Import dependency functions from container
 from container import container, get_project_service
 from core.exceptions import ProjectNotFoundError
 from core.models import InferredPatterns, Project, Rulebook
-from api.schemas import CreateProjectRequest
 from infrastructure.database import DatabaseManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
@@ -204,6 +205,7 @@ async def get_project_analytics(
     start_date: Optional[datetime] = Query(None, description="Analytics period start"),
     end_date: Optional[datetime] = Query(None, description="Analytics period end"),
     project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve project performance analytics.
@@ -251,6 +253,7 @@ async def get_rulebook(
     project_id: UUID,
     version: Optional[int] = Query(None, description="Specific version (default: latest)"),
     project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve project rulebook.
@@ -267,7 +270,9 @@ async def get_rulebook(
     summary="Get rulebook version history",
 )
 async def get_rulebook_history(
-    project_id: UUID, project_service: ProjectService = Depends(get_project_service_dependency)
+    project_id: UUID,
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve complete rulebook version history.
@@ -332,7 +337,9 @@ async def trigger_website_analysis(
     summary="Get inferred patterns",
 )
 async def get_inferred_patterns(
-    project_id: UUID, project_service: ProjectService = Depends(get_project_service_dependency)
+    project_id: UUID,
+    project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Retrieve inferred content patterns for project.
@@ -375,6 +382,7 @@ async def search_projects(
     field: str = Query("name", pattern="^(name|domain)$", description="Field to search"),
     limit: int = Query(20, ge=1, le=100),
     project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Search projects by name or domain.
@@ -391,6 +399,7 @@ async def filter_projects(
     min_articles: Optional[int] = Query(None, ge=0, description="Minimum article count"),
     created_after: Optional[datetime] = Query(None, description="Created after date"),
     project_service: ProjectService = Depends(get_project_service_dependency),
+    user: User = Depends(get_current_active_user),
 ):
     """
     Filter projects with multiple criteria.

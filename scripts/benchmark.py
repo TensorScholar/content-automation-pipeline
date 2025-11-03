@@ -293,7 +293,7 @@ class BenchmarkExecutor:
         try:
             hits = await self.redis.get("cache:hits")
             return int(hits) if hits else 0
-        except:
+        except Exception:
             return 0
 
     async def run_sequential_benchmark(self) -> List[BenchmarkResult]:

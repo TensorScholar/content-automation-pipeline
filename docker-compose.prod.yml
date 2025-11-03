@@ -12,7 +12,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: content-automation-postgres-prod
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_DB: content_automation
       POSTGRES_USER: content_user
@@ -36,7 +36,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: content-automation-redis-prod
-    restart: always
+    restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -54,12 +54,9 @@ services:
   # API Server (Production with Gunicorn)
   # --------------------------------------------------------------------------
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: my-registry/content-pipeline:latest
     container_name: content-automation-api-prod
-    restart: always
-    command: poetry run gunicorn -w 4 -k uvicorn.workers.UvicornWorker api.main:app -b 0.0.0.0:8000
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,9 +86,6 @@ services:
       # Performance tuning
       WORKERS: 4
       MAX_CONNECTIONS: ${MAX_CONNECTIONS:-100}
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data
     ports:
       - "8000:8000"
     healthcheck:
@@ -115,12 +109,10 @@ services:
   # Celery Worker (Primary - for content generation tasks)
   # --------------------------------------------------------------------------
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: my-registry/content-pipeline:latest
     container_name: content-automation-worker-prod
-    restart: always
-    command: poetry run celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4
+    restart: unless-stopped
+    command: celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,9 +125,6 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ENVIRONMENT: production
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data
     networks:
       - content-automation-network
     deploy:
@@ -151,12 +140,10 @@ services:
   # Celery Beat (Scheduler)
   # --------------------------------------------------------------------------
   celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: my-registry/content-pipeline:latest
     container_name: content-automation-celery-beat-prod
-    restart: always
-    command: poetry run celery -A orchestration.celery_app.app beat --loglevel=info
+    restart: unless-stopped
+    command: celery -A orchestration.celery_app.app beat --loglevel=info
     depends_on:
       redis:
         condition: service_healthy
@@ -164,8 +151,6 @@ services:
       REDIS_URL: redis://redis:6379/0
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ENVIRONMENT: production
-    volumes:
-      - ./logs:/app/logs
     networks:
       - content-automation-network
 
@@ -173,12 +158,10 @@ services:
   # Flower (Celery Monitoring)
   # --------------------------------------------------------------------------
   flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: my-registry/content-pipeline:latest
     container_name: content-automation-flower-prod
-    restart: always
-    command: poetry run celery -A orchestration.celery_app.app flower --port=5555
+    restart: unless-stopped
+    command: celery -A orchestration.celery_app.app flower --port=5555
     depends_on:
       redis:
         condition: service_healthy

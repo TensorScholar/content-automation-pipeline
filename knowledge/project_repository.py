@@ -112,7 +112,7 @@ class ProjectRepository:
                 query = select(projects_table).where(
                     and_(
                         projects_table.c.id == project_id,
-                        projects_table.c.deleted_at == None,
+                        projects_table.c.deleted_at.is_(None),
                     )
                 )
 
@@ -135,7 +135,7 @@ class ProjectRepository:
                 query = select(projects_table).where(
                     and_(
                         projects_table.c.name == name,
-                        projects_table.c.deleted_at == None,
+                        projects_table.c.deleted_at.is_(None),
                     )
                 )
 
@@ -167,11 +167,11 @@ class ProjectRepository:
         """
         try:
             async with self.database_manager.session() as session:
-                query = select(projects_table).where(projects_table.c.deleted_at == None)
+                query = select(projects_table).where(projects_table.c.deleted_at.is_(None))
 
                 if not include_inactive:
                     query = query.where(
-                        (projects_table.c.last_active == None)
+                        (projects_table.c.last_active.is_(None))
                         | (projects_table.c.last_active > func.now() - text("INTERVAL '90 days'"))
                     )
 
@@ -228,7 +228,7 @@ class ProjectRepository:
                     .where(
                         and_(
                             projects_table.c.id == project_id,
-                            projects_table.c.deleted_at == None,
+                            projects_table.c.deleted_at.is_(None),
                         )
                     )
                     .values(**valid_updates)
@@ -262,7 +262,7 @@ class ProjectRepository:
                     .where(
                         and_(
                             projects_table.c.id == project_id,
-                            projects_table.c.deleted_at == None,
+                            projects_table.c.deleted_at.is_(None),
                         )
                     )
                     .values(last_active=func.now())
@@ -296,7 +296,7 @@ class ProjectRepository:
                     .where(
                         and_(
                             projects_table.c.id == project_id,
-                            projects_table.c.deleted_at == None,
+                            projects_table.c.deleted_at.is_(None),
                         )
                     )
                     .values(deleted_at=func.now())
@@ -370,7 +370,7 @@ class ProjectRepository:
                     .where(
                         and_(
                             p.c.id == project_id,
-                            p.c.deleted_at == None,
+                            p.c.deleted_at.is_(None),
                         )
                     )
                     .group_by(
@@ -406,18 +406,15 @@ class ProjectRepository:
         """Get system-wide statistics across all projects using SQLAlchemy Core."""
         try:
             async with self.database_manager.session() as session:
-                query = (
-                    select(
-                        func.count(projects_table.c.id).label("total_projects"),
-                        func.sum(projects_table.c.total_articles_generated).label("total_articles"),
-                        func.sum(projects_table.c.total_tokens_consumed).label("total_tokens"),
-                        func.sum(projects_table.c.total_cost_usd).label("total_cost"),
-                        func.avg(projects_table.c.total_articles_generated).label(
-                            "avg_articles_per_project"
-                        ),
-                    )
-                    .where(projects_table.c.deleted_at == None)
-                )
+                query = select(
+                    func.count(projects_table.c.id).label("total_projects"),
+                    func.sum(projects_table.c.total_articles_generated).label("total_articles"),
+                    func.sum(projects_table.c.total_tokens_consumed).label("total_tokens"),
+                    func.sum(projects_table.c.total_cost_usd).label("total_cost"),
+                    func.avg(projects_table.c.total_articles_generated).label(
+                        "avg_articles_per_project"
+                    ),
+                ).where(projects_table.c.deleted_at.is_(None))
 
                 result = await session.execute(query)
                 row = result.fetchone()
@@ -604,7 +601,7 @@ class ProjectRepository:
                 query = select(1).where(
                     and_(
                         projects_table.c.id == project_id,
-                        projects_table.c.deleted_at == None,
+                        projects_table.c.deleted_at.is_(None),
                     )
                 )
                 result = await session.execute(query)

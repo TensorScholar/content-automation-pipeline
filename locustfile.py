@@ -34,7 +34,7 @@ import random
 import time
 from typing import Optional
 
-from locust import HttpUser, between, events, task
+from locust import HttpUser, LoadTestShape, between, events, task
 from loguru import logger
 
 # ============================================================================
@@ -188,9 +188,7 @@ class ContentAutomationUser(HttpUser):
             logger.warning("No access token, skipping project creation")
             return
 
-        project_name = random.choice(
-            LoadTestConfig.PROJECT_NAMES
-        )  # nosec B311 - Load testing randomization
+        project_name = random.choice(LoadTestConfig.PROJECT_NAMES)  # nosec B311 - Load testing randomization
         project_data = {
             "name": f"{project_name} {random.randint(1000, 9999)}",  # nosec B311 - Load testing randomization
             "domain": f"https://loadtest-{random.randint(1000, 9999)}.com",  # nosec B311 - Load testing randomization
@@ -238,9 +236,7 @@ class ContentAutomationUser(HttpUser):
 
         project_id = random.choice(self.project_ids)  # nosec B311 - Load testing randomization
         topic = random.choice(LoadTestConfig.TOPICS)  # nosec B311 - Load testing randomization
-        priority = random.choice(
-            LoadTestConfig.PRIORITIES
-        )  # nosec B311 - Load testing randomization
+        priority = random.choice(LoadTestConfig.PRIORITIES)  # nosec B311 - Load testing randomization
 
         generation_request = {
             "project_id": project_id,
@@ -378,11 +374,6 @@ def on_test_stop(environment, **kwargs):
 # ============================================================================
 # CUSTOM LOAD SHAPES (Optional)
 # ============================================================================
-
-
-from locust import LoadTestShape
-
-
 class StepLoadShape(LoadTestShape):
     """
     A load test shape that steps up users gradually.

@@ -15,13 +15,9 @@ from loguru import logger
 
 from config.settings import Settings, get_settings
 
-# Type variables for generic container access
-T = TypeVar("T")
-
 # Execution layer imports
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
-
 from execution.keyword_researcher import KeywordResearcher
 
 # Infrastructure layer imports
@@ -69,6 +65,8 @@ from services.content_service import ContentService
 from services.project_service import ProjectService
 from services.user_service import UserService
 
+# Type variables for generic container access
+T = TypeVar("T")
 
 
 class Container(containers.DeclarativeContainer):
@@ -560,7 +558,6 @@ def get_content_generator(
 ) -> ContentGenerator:
     """Get content generator instance."""
     return generator
-
 
 
 @inject
