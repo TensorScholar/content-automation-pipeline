@@ -61,12 +61,13 @@ app.conf.update(
     # Task acknowledgment (critical for reliability)
     task_acks_late=True,  # Acknowledge after completion, not before
     task_reject_on_worker_lost=True,  # Re-queue tasks if worker dies
-    # Queue configuration with priority support
+    # Queue configuration with priority support and dead letter queue
     task_queues=(
         Queue("critical", routing_key="critical", priority=10),
         Queue("high", routing_key="high", priority=7),
         Queue("default", routing_key="default", priority=5),
         Queue("low", routing_key="low", priority=3),
+        Queue("dead_letter", routing_key="dead_letter", priority=0),  # DLQ for permanently failed tasks
     ),
     task_default_queue="default",
     task_default_routing_key="default",
