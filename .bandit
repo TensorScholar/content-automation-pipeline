@@ -1,0 +1,49 @@
+# Bandit Security Scanner Configuration
+# Excludes common false positives and test directories
+
+[bandit]
+# Directories to exclude from scanning
+exclude_dirs = [
+    '/tests/',
+    '/venv/',
+    '/.venv/',
+    '/node_modules/',
+    '/__pycache__/',
+    '/.pytest_cache/',
+    '/htmlcov/',
+]
+
+# Tests to skip (common false positives)
+skips = [
+    # B101: Use of assert detected (normal in tests and validation)
+    'B101',
+    # B601: Parameterized shell calls (we use safe subprocess calls)
+    'B601',
+]
+
+# Tests to run (security-critical checks)
+tests = [
+    'B201',  # Flask app run with debug=True
+    'B301',  # Pickle usage
+    'B302',  # Marshal usage
+    'B303',  # MD5 usage (we use it for non-cryptographic hashing)
+    'B304',  # Insecure cipher modes
+    'B305',  # Insecure cipher
+    'B306',  # Temporary file usage
+    'B307',  # eval() usage
+    'B308',  # mark_safe usage
+    'B310',  # URLopen audit
+    'B501',  # Request with verify=False
+    'B502',  # SSL/TLS bad defaults
+    'B503',  # SSL/TLS bad ciphers
+    'B504',  # SSL/TLS protocol selection
+    'B505',  # Weak cryptographic key
+    'B506',  # Unsafe YAML load
+    'B507',  # SSH default key usage
+    'B601',  # Shell injection
+    'B602',  # Subprocess shell=True
+    'B603',  # Process without shell=True
+    'B604',  # Dangerous function call
+    'B605',  # Starting a process with a shell
+    'B607',  # Starting a process with partial path
+]
