@@ -39,7 +39,7 @@ Content Automation Pipeline is designed to solve the challenge of generating hig
 
 ## Architecture
 
-\`\`\`
+```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        API Gateway                               │
 │                   (FastAPI + Rate Limiting)                      │
@@ -79,7 +79,7 @@ Content Automation Pipeline is designed to solve the challenge of generating hig
 │  │(asyncpg) │  │ (Cache)  │  │(Metrics) │  │(Tracing) │        │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
 └─────────────────────────────────────────────────────────────────┘
-\`\`\`
+```
 
 ## Quick Start
 
@@ -92,7 +92,7 @@ Content Automation Pipeline is designed to solve the challenge of generating hig
 
 ### Installation
 
-\`\`\`bash
+```bash
 # Clone the repository
 git clone https://github.com/TensorScholar/content-automation-pipeline.git
 cd content-automation-pipeline
@@ -105,21 +105,21 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -e ".[dev]"
 # or using Poetry
 poetry install
-\`\`\`
+```
 
 ### Configuration
 
-\`\`\`bash
+```bash
 # Copy environment template
 cp .env.example .env
 
 # Edit with your credentials
 nano .env
-\`\`\`
+```
 
 Required environment variables:
 
-\`\`\`bash
+```bash
 # Database
 DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/content_db
 
@@ -132,31 +132,33 @@ OPENAI_API_KEY=sk-...
 
 # Security
 SECRET_KEY=your-secure-secret-key-min-32-chars
-\`\`\`
+```
 
 ### Database Setup
 
-\`\`\`bash
+```bash
 # Run migrations
 alembic upgrade head
 
 # Seed initial data (optional)
 python scripts/setup_database.py
-\`\`\`
+```
 
 ### Running the Application
 
 **Development Mode:**
-\`\`\`bash
+
+```bash
 # Start API server
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Start Celery worker (in another terminal)
 celery -A orchestration.celery_app worker --loglevel=info
-\`\`\`
+```
 
 **Docker Compose (Recommended):**
-\`\`\`bash
+
+```bash
 # Start all services
 docker-compose up -d
 
@@ -165,7 +167,7 @@ docker-compose logs -f api
 
 # Scale workers for higher throughput
 docker-compose up -d --scale celery-worker=4
-\`\`\`
+```
 
 ## API Documentation
 
@@ -179,29 +181,29 @@ Once the server is running, access interactive documentation:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| \`/api/v1/content/generate\` | POST | Generate content for a topic |
-| \`/api/v1/content/batch\` | POST | Batch generate multiple articles |
-| \`/api/v1/projects\` | GET/POST | Manage content projects |
-| \`/api/v1/projects/{id}/analyze\` | POST | Analyze website patterns |
-| \`/health\` | GET | Health check with dependency status |
-| \`/system/metrics\` | GET | Prometheus metrics |
+| `/api/v1/content/generate` | POST | Generate content for a topic |
+| `/api/v1/content/batch` | POST | Batch generate multiple articles |
+| `/api/v1/projects` | GET/POST | Manage content projects |
+| `/api/v1/projects/{id}/analyze` | POST | Analyze website patterns |
+| `/health` | GET | Health check with dependency status |
+| `/system/metrics` | GET | Prometheus metrics |
 
 ### Example: Generate Content
 
-\`\`\`bash
-curl -X POST http://localhost:8000/api/v1/content/generate \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer <token>" \\
+```bash
+curl -X POST http://localhost:8000/api/v1/content/generate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "project_id": "123e4567-e89b-12d3-a456-426614174000",
     "topic": "Best practices for cloud-native applications",
     "priority": "high"
   }'
-\`\`\`
+```
 
 ## Project Structure
 
-\`\`\`
+```
 content-automation-pipeline/
 ├── api/                      # FastAPI application layer
 │   ├── main.py              # Application entry point
@@ -277,13 +279,13 @@ content-automation-pipeline/
 ├── docker-compose.yml       # Service orchestration
 ├── Dockerfile               # Container build
 └── pyproject.toml           # Project dependencies
-\`\`\`
+```
 
 ## Development
 
 ### Running Tests
 
-\`\`\`bash
+```bash
 # Run all tests
 pytest tests/ -v
 
@@ -293,11 +295,11 @@ pytest tests/ --cov=. --cov-report=html
 # Run specific test categories
 pytest tests/unit/ -v
 pytest tests/integration/ -v
-\`\`\`
+```
 
 ### Code Quality
 
-\`\`\`bash
+```bash
 # Linting
 ruff check .
 
@@ -309,25 +311,26 @@ bandit -r . -x tests
 
 # Format code
 ruff format .
-\`\`\`
+```
 
 ### Load Testing
 
-\`\`\`bash
+```bash
 # Run Locust load tests
 locust -f locustfile.py --host=http://localhost:8000
-\`\`\`
+```
 
 ## Monitoring
 
 ### Health Check
 
-\`\`\`bash
+```bash
 curl http://localhost:8000/health
-\`\`\`
+```
 
 Response:
-\`\`\`json
+
+```json
 {
   "status": "healthy",
   "timestamp": "2025-11-25T10:30:00Z",
@@ -337,16 +340,16 @@ Response:
     "redis": "healthy"
   }
 }
-\`\`\`
+```
 
 ### Prometheus Metrics
 
-Key metrics exposed at \`/system/metrics\`:
+Key metrics exposed at `/system/metrics`:
 
-- \`llm_api_calls_total\` - LLM API call count by provider/status
-- \`llm_tokens_used_total\` - Token consumption by model
-- \`content_generation_duration_seconds\` - Generation latency histogram
-- \`workflow_completion_total\` - Workflow success/failure counts
+- `llm_api_calls_total` - LLM API call count by provider/status
+- `llm_tokens_used_total` - Token consumption by model
+- `content_generation_duration_seconds` - Generation latency histogram
+- `workflow_completion_total` - Workflow success/failure counts
 
 ## Deployment
 
@@ -363,9 +366,9 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions includin
 Contributions are welcome! Please read our contributing guidelines before submitting PRs.
 
 1. Fork the repository
-2. Create a feature branch (\`git checkout -b feature/amazing-feature\`)
-3. Commit your changes (\`git commit -m 'Add amazing feature'\`)
-4. Push to the branch (\`git push origin feature/amazing-feature\`)
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
 ## License
@@ -375,7 +378,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Author
 
 **Mohammad Atashi** - [GitHub](https://github.com/TensorScholar)
-
----
-
-Built with ❤️ using FastAPI, Celery, and cutting-edge NLP technology.
