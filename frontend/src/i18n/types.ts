@@ -31,6 +31,7 @@ export type MessageKey =
   | "auth.showPassword"
   | "auth.hidePassword"
   | "auth.systemOnline"
+  | "auth.systemDegraded"
   | "auth.heroHeadline"
   | "auth.heroTagline"
   | "auth.invalidEmail"
@@ -40,6 +41,7 @@ export type MessageKey =
   | "auth.networkError"
   | "auth.cooldown"
   | "auth.tooManyAttempts"
+  | "auth.dismiss"
   /* ── Navigation ── */
   | "nav.dashboard"
   | "nav.projects"
