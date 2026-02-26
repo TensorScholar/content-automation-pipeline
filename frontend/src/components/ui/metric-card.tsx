@@ -5,45 +5,45 @@ export interface MetricCardProps {
     label: string;
     value: string | number;
     statusDot?: string;
-    icon?: React.ReactNode;
-    emptyAction?: string;
     onClick?: () => void;
     loading?: boolean;
     className?: string;
     children?: React.ReactNode;
 }
 
-export function MetricCard({ label, value, statusDot, icon, emptyAction, onClick, loading, className, children }: MetricCardProps) {
+/**
+ * MetricCard — Clean SaaS metric display.
+ * - 32px bold number for data-ink ratio
+ * - Label in muted secondary text
+ * - Status dot at inline-end
+ * - Soft shadow + border-gray-100
+ * - Full RTL support via logical properties
+ */
+export function MetricCard({ label, value, statusDot, onClick, loading, className, children }: MetricCardProps) {
     const Tag = onClick ? "button" : "div";
-    const isEmpty = !loading && (value === "0" || value === 0);
     return (
         <Tag
             onClick={onClick}
             className={clsx(
-                "elevated-card relative p-4 text-start transition-all duration-base",
-                onClick && "cursor-pointer smx-card-hover",
+                "relative rounded-2xl bg-white border border-gray-100 p-5 text-start",
+                "shadow-sm transition-all duration-200",
+                onClick && "cursor-pointer hover:shadow-md hover:border-gray-200",
                 className,
             )}
         >
-            <div className="flex items-center justify-between">
-                <p className="text-body-sm text-ink-secondary">{label}</p>
+            <div className="flex items-start justify-between">
+                <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-gray-500 mb-1">{label}</p>
+                    {loading ? (
+                        <div className="h-9 w-20 rounded-lg bg-gray-100 animate-pulse" />
+                    ) : (
+                        <p className="text-[32px] font-bold leading-none tracking-tight text-gray-900">{value}</p>
+                    )}
+                </div>
                 {statusDot && (
-                    <span className={clsx("h-2 w-2 rounded-full", statusDot)} aria-hidden />
+                    <span className={clsx("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", statusDot)} aria-hidden />
                 )}
             </div>
-            {loading ? (
-                <div className="mt-1.5 skeleton h-7 w-16" />
-            ) : (
-                <>
-                    <p className={clsx(
-                        "mt-1 text-[1.75rem] font-bold leading-tight",
-                        isEmpty ? "text-ink-tertiary" : "text-ink"
-                    )}>{value}</p>
-                    {isEmpty && emptyAction && (
-                        <p className="mt-1 text-body-sm text-brand">{emptyAction} →</p>
-                    )}
-                </>
-            )}
             {children}
         </Tag>
     );

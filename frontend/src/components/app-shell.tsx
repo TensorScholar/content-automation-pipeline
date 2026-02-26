@@ -223,30 +223,36 @@ export function AppShell({ token, user }: AppShellProps) {
         </div>
       </aside>
 
+      {/* ── Sidebar collapse toggle — mounted ON the border ── */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="hidden lg:flex fixed z-modal top-1/2 -translate-y-1/2 h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm text-gray-400 hover:text-gray-700 hover:shadow-md transition-all duration-200"
+        style={{ insetInlineStart: `${sidebarW - 14}px` }}
+        aria-label="Toggle sidebar"
+      >
+        <IconChevron className={clsx(
+          "h-3.5 w-3.5 transition-transform duration-200",
+          collapsed && direction === "ltr" && "rotate-180",
+          collapsed && direction === "rtl" && "",
+          !collapsed && direction === "rtl" && "rotate-180",
+        )} />
+      </button>
+
       {/* ═══ MAIN CONTENT AREA ═══ */}
       <div
         className="flex min-h-screen flex-col transition-all duration-slow ease-apple"
         style={{ marginInlineStart: `${sidebarW}px` }}
       >
         {/* ── Top Header — no duplicate page title, just language + collapse ── */}
-        <header className="sticky top-0 z-sticky flex h-14 shrink-0 items-center gap-4 border-b border-border bg-surface/80 backdrop-blur-md px-4 lg:px-6">
+        <header className="sticky top-0 z-sticky flex h-14 shrink-0 items-center gap-4 border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 lg:px-6">
           {/* Mobile menu */}
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="lg:hidden h-9 w-9 flex items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-tertiary transition-colors duration-fast"
+            className="lg:hidden h-9 w-9 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
           >
             <IconMenu className="h-5 w-5" />
-          </button>
-
-          {/* Collapse toggle for desktop — also in header for quick access */}
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            className="hidden lg:flex h-8 w-8 items-center justify-center rounded-lg text-ink-tertiary hover:bg-surface-tertiary hover:text-ink transition-colors duration-fast"
-            aria-label="Toggle sidebar"
-          >
-            <IconChevron className={clsx("h-4 w-4 transition-transform duration-normal ease-apple", collapsed ? "rotate-180" : "")} />
           </button>
 
           {/* Spacer */}
