@@ -37,7 +37,15 @@ interface DashboardPanelProps {
 }
 
 export function DashboardPanel({ token, projects, onNavigate }: DashboardPanelProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+
+  // Locale-aware number formatting (Farsi/Arabic digits)
+  const ln = (n: number | string): string => {
+    const s = String(n);
+    if (locale === "fa") return s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[+d]);
+    if (locale === "ar") return s.replace(/\d/g, d => "٠١٢٣٤٥٦٧٨٩"[+d]);
+    return s;
+  };
   const [performance, setPerformance] = useState<PerformancePayload | null>(null);
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,9 +109,6 @@ export function DashboardPanel({ token, projects, onNavigate }: DashboardPanelPr
       {/* ── Header row ── */}
       <div className="flex items-center justify-between">
         <h2 className="text-display-lg text-ink">{t("dashboard.title")}</h2>
-        <span className="rounded-full border border-border bg-surface px-3 py-1 text-body-sm text-ink-tertiary">
-          {t("dashboard.apiVersion")} {health?.version ?? "v1"}
-        </span>
       </div>
 
       {/* ── Cost warnings ── */}
@@ -138,24 +143,24 @@ export function DashboardPanel({ token, projects, onNavigate }: DashboardPanelPr
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           label={t("dashboard.totalProjects")}
-          value={loading ? "-" : String(projects.length)}
+          value={loading ? "-" : ln(projects.length)}
           loading={loading}
           onClick={() => onNavigate?.("projects")}
         />
         <MetricCard
           label={t("dashboard.articlesToday")}
-          value={loading ? "-" : String(todayArticles)}
+          value={loading ? "-" : ln(todayArticles)}
           loading={loading}
         />
         <MetricCard
           label={t("dashboard.wpConnected")}
-          value={loading ? "-" : String(wordpressConnected)}
+          value={loading ? "-" : ln(wordpressConnected)}
           statusDot={wordpressConnected > 0 ? "bg-success" : "bg-ink-tertiary"}
           loading={loading}
         />
         <MetricCard
           label={t("dashboard.wpPending")}
-          value={loading ? "-" : String(pendingWordpress)}
+          value={loading ? "-" : ln(pendingWordpress)}
           statusDot={pendingWordpress > 0 ? "bg-warning" : "bg-success"}
           loading={loading}
         />
@@ -182,7 +187,7 @@ export function DashboardPanel({ token, projects, onNavigate }: DashboardPanelPr
           ) : (
             <>
               <div className="mt-1 flex items-baseline gap-2">
-                <p className="text-[1.75rem] font-bold text-ink">${todayCost.toFixed(2)}</p>
+                <p className="text-[1.5rem] font-bold text-ink">${ln(todayCost.toFixed(2))}</p>
                 {todayCost === 0 && (
                   <span className="text-body-sm text-ink-tertiary">{t("dashboard.noUsageToday")}</span>
                 )}

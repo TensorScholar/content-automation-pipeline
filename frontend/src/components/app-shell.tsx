@@ -33,6 +33,15 @@ const PAGE_ICONS: Record<AppPage, (p: { className?: string }) => React.ReactElem
   monitoring: IconMonitoring,
 };
 
+/* Globe icon for language toggle */
+function IconGlobe({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10" cy="10" r="8" /><path d="M2 10h16" /><path d="M10 2a13 13 0 0 1 0 16 13 13 0 0 1 0-16z" />
+    </svg>
+  );
+}
+
 export function AppShell({ token, user }: AppShellProps) {
   const { logout, isAdmin } = useAuth();
   const { t, direction } = useI18n();
@@ -43,6 +52,7 @@ export function AppShell({ token, user }: AppShellProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projectsLoading, setProjectsLoading] = useState(true);
+  const [health, setHealth] = useState<{ version?: string } | null>(null);
 
   const navItems = useMemo(() => {
     const base: Array<{ key: AppPage; label: string; adminOnly?: boolean }> = [
@@ -76,9 +86,13 @@ export function AppShell({ token, user }: AppShellProps) {
 
   useEffect(() => { void refreshProjects(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch health for version in sidebar
+  useEffect(() => {
+    apiRequest<{ version?: string }>("/system/health", { token }).then(setHealth).catch(() => { });
+  }, [token]);
+
   const navigate = (next: AppPage) => { setPage(next); setMobileOpen(false); };
 
-  /* Mobile drawer transform — direction-aware to avoid Tailwind class conflicts */
   const drawerTransform = mobileOpen
     ? "translateX(0)"
     : direction === "rtl" ? "translateX(100%)" : "translateX(-100%)";
@@ -96,37 +110,48 @@ export function AppShell({ token, user }: AppShellProps) {
         />
       )}
 
-      {/* ═══ SIDEBAR ═══ */}
+      {/* ═══ SIDEBAR — distinct style with subtle gradient bg ═══ */}
       <aside
         className={clsx(
-          "fixed inset-y-0 start-0 z-modal flex flex-col bg-surface border-e border-border",
+          "fixed inset-y-0 start-0 z-modal flex flex-col border-e border-border",
           "transition-all duration-slow ease-apple overflow-hidden",
           collapsed ? "w-[72px]" : "w-[272px]",
           "lg:translate-x-0",
         )}
-        style={{ transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined }}
+        style={{
+          background: "linear-gradient(180deg, #FAFCFC 0%, #F4F7F7 100%)",
+          transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
+        }}
       >
-        {/* Sidebar Header — brand only, no duplicate user info (#8, #40) */}
+        {/* Sidebar Header — brand + user avatar */}
         <div className={clsx(
-          "flex h-16 shrink-0 items-center border-b border-border px-5",
-          collapsed ? "justify-center" : "justify-between",
+          "flex shrink-0 items-center border-b border-border/60 px-5",
+          collapsed ? "h-14 justify-center" : "h-16 justify-between",
         )}>
           {!collapsed && (
-            <p className="text-heading-sm font-bold text-ink truncate">{t("app.name")}</p>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-8 w-8 shrink-0 rounded-lg bg-brand flex items-center justify-center">
+                <span className="text-body-sm font-bold text-white">
+                  {(user.full_name ?? user.email).charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-body-sm font-bold text-ink truncate">{user.full_name ?? user.email}</p>
+                <p className="text-[11px] text-ink-tertiary truncate">{user.email}</p>
+              </div>
+            </div>
           )}
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            className="hidden lg:flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-tertiary transition-colors duration-fast hover:bg-surface-tertiary hover:text-ink"
-            aria-label="Toggle sidebar"
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            <IconChevron className={clsx("h-5 w-5 transition-transform duration-normal ease-apple", collapsed ? "rotate-180" : "")} />
-          </button>
+          {collapsed && (
+            <div className="h-8 w-8 rounded-lg bg-brand flex items-center justify-center">
+              <span className="text-body-sm font-bold text-white">
+                {(user.full_name ?? user.email).charAt(0).toUpperCase()}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
           {navItems.map((item) => {
             const Icon = PAGE_ICONS[item.key];
             const active = page === item.key;
@@ -141,26 +166,26 @@ export function AppShell({ token, user }: AppShellProps) {
                   "transition-all duration-fast",
                   active
                     ? "bg-brand text-white shadow-sm"
-                    : "text-ink-secondary hover:bg-surface-alt hover:text-ink",
+                    : "text-ink-secondary hover:bg-white/70 hover:text-ink",
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0" />
                 {!collapsed && (
-                  <span className="text-body-md font-medium truncate">{item.label}</span>
+                  <span className="text-[14px] font-medium truncate">{item.label}</span>
                 )}
               </button>
             );
           })}
         </nav>
 
-        {/* Project Selector */}
-        <div className={clsx("border-t border-border px-3 py-4", collapsed && "hidden")}>
-          <p className="text-body-sm font-semibold uppercase tracking-wider text-ink-tertiary mb-2">
+        {/* Project Selector — moved up, compact */}
+        <div className={clsx("border-t border-border/60 px-3 py-3", collapsed && "hidden")}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-tertiary mb-1.5">
             {t("shell.activeProject")}
           </p>
           <select
             disabled={projectsLoading || projects.length === 0}
-            className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-body-md text-ink outline-none focus:border-border-focus transition-colors duration-fast disabled:opacity-50"
+            className="w-full rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-ink outline-none focus:border-brand transition-colors duration-fast disabled:opacity-50"
             value={selectedProjectId ?? ""}
             onChange={(e) => setSelectedProjectId(e.target.value || null)}
           >
@@ -171,29 +196,30 @@ export function AppShell({ token, user }: AppShellProps) {
           </select>
         </div>
 
-        {/* User footer — explicit logout label (#25) */}
+        {/* Logout — right after project selector */}
         <div className={clsx(
-          "border-t border-border px-3 py-3 flex items-center",
+          "border-t border-border/60 px-3 py-2 flex items-center",
           collapsed ? "justify-center" : "gap-3",
         )}>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-body-sm font-semibold text-ink truncate">{user.full_name ?? user.email}</p>
-              <p className="text-body-sm text-ink-tertiary truncate">{user.email}</p>
-            </div>
-          )}
           <button
             type="button"
             title={t("nav.logout")}
             onClick={() => void logout()}
             className={clsx(
-              "shrink-0 flex items-center gap-2 rounded-lg transition-colors duration-fast hover:bg-danger/8 hover:text-danger",
-              collapsed ? "h-9 w-9 justify-center text-ink-tertiary" : "px-3 py-2 text-ink-secondary text-body-sm",
+              "flex items-center gap-2 rounded-lg transition-colors duration-fast hover:bg-danger/8 hover:text-danger",
+              collapsed ? "h-9 w-9 justify-center text-ink-tertiary" : "w-full px-3 py-2 text-ink-secondary text-[13px]",
             )}
           >
-            <IconLogout className="h-4 w-4" />
+            <IconLogout className="h-4 w-4 shrink-0" />
             {!collapsed && <span className="font-medium">{t("nav.logout")}</span>}
           </button>
+        </div>
+
+        {/* API Version — at very bottom of sidebar */}
+        <div className={clsx("py-2 text-center", collapsed && "hidden")}>
+          <p className="text-[10px] text-ink-tertiary/60 font-mono">
+            {t("dashboard.apiVersion")} · {health?.version ?? "1.0.0"}
+          </p>
         </div>
       </aside>
 
@@ -202,8 +228,8 @@ export function AppShell({ token, user }: AppShellProps) {
         className="flex min-h-screen flex-col transition-all duration-slow ease-apple"
         style={{ marginInlineStart: `${sidebarW}px` }}
       >
-        {/* ── Top Header ── */}
-        <header className="sticky top-0 z-sticky flex h-16 shrink-0 items-center gap-4 border-b border-border bg-surface/80 backdrop-blur-md px-4 lg:px-6">
+        {/* ── Top Header — no duplicate page title, just language + collapse ── */}
+        <header className="sticky top-0 z-sticky flex h-14 shrink-0 items-center gap-4 border-b border-border bg-surface/80 backdrop-blur-md px-4 lg:px-6">
           {/* Mobile menu */}
           <button
             type="button"
@@ -213,32 +239,28 @@ export function AppShell({ token, user }: AppShellProps) {
             <IconMenu className="h-5 w-5" />
           </button>
 
-          {/* Page title */}
-          <h1 className="text-heading-sm text-ink">
-            {navItems.find((n) => n.key === page)?.label ?? ""}
-          </h1>
+          {/* Collapse toggle for desktop — also in header for quick access */}
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className="hidden lg:flex h-8 w-8 items-center justify-center rounded-lg text-ink-tertiary hover:bg-surface-tertiary hover:text-ink transition-colors duration-fast"
+            aria-label="Toggle sidebar"
+          >
+            <IconChevron className={clsx("h-4 w-4 transition-transform duration-normal ease-apple", collapsed ? "rotate-180" : "")} />
+          </button>
 
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Language Toggle */}
-          <LanguageToggle />
-
-          {/* User badge */}
-          <div className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-surface-secondary px-3 py-1.5">
-            <div className="h-6 w-6 rounded-full bg-brand flex items-center justify-center">
-              <span className="text-body-sm font-bold text-ink-inverse">
-                {(user.full_name ?? user.email).charAt(0).toUpperCase()}
-              </span>
-            </div>
-            <span className="text-body-sm font-medium text-ink max-w-[120px] truncate">
-              {user.full_name ?? user.email}
-            </span>
+          {/* Language Toggle with globe icon */}
+          <div className="flex items-center gap-2">
+            <IconGlobe className="h-4 w-4 text-ink-tertiary" />
+            <LanguageToggle />
           </div>
         </header>
 
         {/* ── Panel Content ── */}
-        <main className="flex-1 px-4 py-6 lg:px-6 lg:py-8">
+        <main className="flex-1 px-4 py-5 lg:px-6 lg:py-6">
           <ErrorBoundary>
             {page === "dashboard" && <DashboardPanel token={token} projects={projects} onNavigate={navigate as unknown as (page: string) => void} />}
             {page === "projects" && (
