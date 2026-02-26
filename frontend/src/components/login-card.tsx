@@ -228,8 +228,8 @@ export function LoginCard() {
   };
 
   const formDir = isRtl ? "rtl" : "ltr";
-  const formOrderClass = isRtl ? "lg:order-2" : "lg:order-1";
-  const heroOrderClass = isRtl ? "lg:order-1" : "lg:order-2";
+  const formOrderClass = isRtl ? "lg:order-1" : "lg:order-2";
+  const heroOrderClass = isRtl ? "lg:order-2" : "lg:order-1";
 
   // #16 Dynamic system status — red when there was a recent server error
   const systemHealthy = !authError || getErrorSeverity(authError) !== "server";
@@ -259,11 +259,11 @@ export function LoginCard() {
 
               {/* #15 Centered text block */}
               <div className="flex flex-1 items-center">
-                <div className="space-y-4">
-                  <h1 className="text-[28px] font-bold leading-tight text-white">
+                <div className="space-y-5">
+                  <h1 className="text-[36px] font-extrabold leading-[1.15] tracking-tight text-white">
                     {t("auth.heroHeadline")}
                   </h1>
-                  <p className="whitespace-pre-line text-[18px] leading-[1.7]" style={{ color: "rgba(255,255,255,0.82)" }}>
+                  <p className="whitespace-pre-line text-lg leading-[1.8]" style={{ color: "rgba(255,255,255,0.78)" }}>
                     {t("auth.heroTagline")}
                   </p>
                 </div>
@@ -356,13 +356,14 @@ export function LoginCard() {
                   <input
                     id="login-email"
                     type="email"
+                    dir="ltr"
                     placeholder=" "
                     autoComplete="username"
                     required
                     aria-invalid={emailInvalid}
                     aria-label={t("auth.email")}
                     className={clsx(
-                      "auth-input peer h-[52px] w-full rounded-xl border px-4 pb-2 pt-6 text-body-md text-ink outline-none transition-all duration-base",
+                      "auth-input peer h-[52px] w-full rounded-xl border px-4 pb-2 pt-6 text-body-md text-ink outline-none transition-all duration-base text-left",
                       "focus:border-brand focus:shadow-[0_0_0_3px_rgba(13,148,136,0.12)]",
                       emailInvalid ? "border-danger shadow-[0_0_0_3px_rgba(239,68,68,0.08)]" : "border-border"
                     )}
@@ -398,12 +399,13 @@ export function LoginCard() {
                   <input
                     id="login-password"
                     type={showPassword ? "text" : "password"}
+                    dir="ltr"
                     placeholder=" "
                     autoComplete="current-password"
                     required
                     aria-invalid={false}
                     aria-label={t("auth.password")}
-                    className="auth-input peer h-[52px] w-full rounded-xl border border-border px-4 pb-2 pt-6 pe-12 text-body-md text-ink outline-none transition-all duration-base focus:border-brand focus:shadow-[0_0_0_3px_rgba(13,148,136,0.12)]"
+                    className="auth-input peer h-[52px] w-full rounded-xl border border-border px-4 pb-2 pt-6 pe-12 text-body-md text-ink outline-none transition-all duration-base text-left focus:border-brand focus:shadow-[0_0_0_3px_rgba(13,148,136,0.12)]"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                   />
