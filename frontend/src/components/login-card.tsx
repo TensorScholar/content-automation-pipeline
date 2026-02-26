@@ -228,8 +228,8 @@ export function LoginCard() {
   };
 
   const formDir = isRtl ? "rtl" : "ltr";
-  const formOrderClass = isRtl ? "lg:order-1" : "lg:order-2";
-  const heroOrderClass = isRtl ? "lg:order-2" : "lg:order-1";
+  const formOrderClass = isRtl ? "lg:order-2" : "lg:order-1";
+  const heroOrderClass = isRtl ? "lg:order-1" : "lg:order-2";
 
   // #16 Dynamic system status — red when there was a recent server error
   const systemHealthy = !authError || getErrorSeverity(authError) !== "server";
