@@ -258,19 +258,20 @@ export function LoginCard() {
               </p>
 
               {/* #15 Centered text block — premium visual treatment */}
-              <div className="flex flex-1 items-center">
-                <div className="space-y-6">
+              <div className="flex flex-1 items-center justify-center">
+                <div className="space-y-6 text-center">
                   {/* Decorative accent bar */}
-                  <div className="flex items-center gap-3" style={{ animation: "fade-in 400ms ease-out forwards", opacity: 0 }}>
+                  <div className="flex items-center justify-center gap-3" style={{ animation: "fade-in 400ms ease-out forwards", opacity: 0 }}>
                     <span className="block h-[3px] w-10 rounded-full" style={{ background: "linear-gradient(90deg, #5EEAD4, rgba(94,234,212,0.2))" }} />
                     <span className="text-[13px] font-medium uppercase tracking-[0.2em]" style={{ color: "rgba(94,234,212,0.8)" }}>
                       AI-Powered Platform
                     </span>
+                    <span className="block h-[3px] w-10 rounded-full" style={{ background: "linear-gradient(270deg, #5EEAD4, rgba(94,234,212,0.2))" }} />
                   </div>
 
                   {/* Gradient headline */}
                   <h1
-                    className="whitespace-pre-line text-[40px] font-extrabold leading-[1.12]"
+                    className="text-[30px] font-extrabold leading-[1.2] tracking-wide"
                     style={{
                       background: "linear-gradient(135deg, #FFFFFF 0%, #5EEAD4 45%, #2DD4BF 100%)",
                       WebkitBackgroundClip: "text",
