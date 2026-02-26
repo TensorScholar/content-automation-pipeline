@@ -271,12 +271,9 @@ export function LoginCard() {
 
                   {/* Gradient headline */}
                   <h1
-                    className="text-[30px] font-extrabold leading-[1.2] tracking-wide"
+                    className="text-[30px] font-extrabold leading-[1.2] tracking-wide text-white"
                     style={{
-                      background: "linear-gradient(135deg, #FFFFFF 0%, #5EEAD4 45%, #2DD4BF 100%)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                      backgroundClip: "text",
+                      textShadow: "0 2px 24px rgba(94,234,212,0.3), 0 0 60px rgba(94,234,212,0.12)",
                       animation: "fade-in 500ms 100ms ease-out forwards",
                       opacity: 0,
                     }}
