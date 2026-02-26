@@ -257,15 +257,48 @@ export function LoginCard() {
                 SMARLUX CONTENT OS
               </p>
 
-              {/* #15 Centered text block */}
+              {/* #15 Centered text block — premium visual treatment */}
               <div className="flex flex-1 items-center">
-                <div className="space-y-5">
-                  <h1 className="text-[36px] font-extrabold leading-[1.15] tracking-tight text-white">
+                <div className="space-y-6">
+                  {/* Decorative accent bar */}
+                  <div className="flex items-center gap-3" style={{ animation: "fade-in 400ms ease-out forwards", opacity: 0 }}>
+                    <span className="block h-[3px] w-10 rounded-full" style={{ background: "linear-gradient(90deg, #5EEAD4, rgba(94,234,212,0.2))" }} />
+                    <span className="text-[13px] font-medium uppercase tracking-[0.2em]" style={{ color: "rgba(94,234,212,0.8)" }}>
+                      AI-Powered Platform
+                    </span>
+                  </div>
+
+                  {/* Gradient headline */}
+                  <h1
+                    className="whitespace-pre-line text-[40px] font-extrabold leading-[1.12]"
+                    style={{
+                      background: "linear-gradient(135deg, #FFFFFF 0%, #5EEAD4 45%, #2DD4BF 100%)",
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      backgroundClip: "text",
+                      animation: "fade-in 500ms 100ms ease-out forwards",
+                      opacity: 0,
+                    }}
+                  >
                     {t("auth.heroHeadline")}
                   </h1>
-                  <p className="whitespace-pre-line text-lg leading-[1.8]" style={{ color: "rgba(255,255,255,0.78)" }}>
-                    {t("auth.heroTagline")}
-                  </p>
+
+                  {/* Tagline inside a subtle glass pill */}
+                  <div
+                    className="inline-block rounded-2xl px-5 py-3.5"
+                    style={{
+                      background: "rgba(255,255,255,0.06)",
+                      backdropFilter: "blur(8px)",
+                      WebkitBackdropFilter: "blur(8px)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      animation: "fade-in 500ms 250ms ease-out forwards",
+                      opacity: 0,
+                    }}
+                  >
+                    <p className="whitespace-pre-line text-[16px] leading-[1.9]" style={{ color: "rgba(255,255,255,0.82)" }}>
+                      {t("auth.heroTagline")}
+                    </p>
+                  </div>
                 </div>
               </div>
 
