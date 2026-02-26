@@ -106,6 +106,12 @@ export type MessageKey =
   | "dashboard.onboarding.connectWp"
   | "dashboard.onboarding.setupRulebook"
   | "dashboard.onboarding.generateFirst"
+  | "dashboard.welcome"
+  | "dashboard.systemHealthy"
+  | "dashboard.systemUnhealthy"
+  | "dashboard.lastUpdated"
+  | "dashboard.noUsageToday"
+  | "dashboard.onboardingTitle"
   /* ── Projects ── */
   | "projects.title"
   | "projects.createNew"

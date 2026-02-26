@@ -106,24 +106,22 @@ export function AppShell({ token, user }: AppShellProps) {
         )}
         style={{ transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined }}
       >
-        {/* Sidebar Header */}
+        {/* Sidebar Header — brand only, no duplicate user info (#8, #40) */}
         <div className={clsx(
-          "flex h-16 shrink-0 items-center border-b border-border px-4",
+          "flex h-16 shrink-0 items-center border-b border-border px-5",
           collapsed ? "justify-center" : "justify-between",
         )}>
           {!collapsed && (
-            <div className="min-w-0">
-              <p className="text-heading-sm text-ink truncate">{t("app.name")}</p>
-              <p className="text-body-sm text-ink-tertiary truncate">{user.email}</p>
-            </div>
+            <p className="text-heading-sm font-bold text-ink truncate">{t("app.name")}</p>
           )}
           <button
             type="button"
             onClick={() => setCollapsed((c) => !c)}
-            className="hidden lg:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-tertiary transition-colors duration-fast hover:bg-surface-tertiary hover:text-ink"
+            className="hidden lg:flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-tertiary transition-colors duration-fast hover:bg-surface-tertiary hover:text-ink"
             aria-label="Toggle sidebar"
+            title={collapsed ? "Expand" : "Collapse"}
           >
-            <IconChevron className={clsx("h-4 w-4 transition-transform duration-normal ease-apple", collapsed ? "rotate-180" : "")} />
+            <IconChevron className={clsx("h-5 w-5 transition-transform duration-normal ease-apple", collapsed ? "rotate-180" : "")} />
           </button>
         </div>
 
@@ -140,18 +138,15 @@ export function AppShell({ token, user }: AppShellProps) {
                 onClick={() => navigate(item.key)}
                 className={clsx(
                   "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-start",
-                  "transition-colors duration-fast",
+                  "transition-all duration-fast",
                   active
-                    ? "bg-brand text-white"
+                    ? "bg-brand text-white shadow-sm"
                     : "text-ink-secondary hover:bg-surface-alt hover:text-ink",
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0" />
                 {!collapsed && (
                   <span className="text-body-md font-medium truncate">{item.label}</span>
-                )}
-                {active && !collapsed && (
-                  <span className="ms-auto h-1.5 w-1.5 rounded-full bg-ink-inverse/60" />
                 )}
               </button>
             );
@@ -176,7 +171,7 @@ export function AppShell({ token, user }: AppShellProps) {
           </select>
         </div>
 
-        {/* User footer */}
+        {/* User footer — explicit logout label (#25) */}
         <div className={clsx(
           "border-t border-border px-3 py-3 flex items-center",
           collapsed ? "justify-center" : "gap-3",
@@ -184,20 +179,20 @@ export function AppShell({ token, user }: AppShellProps) {
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-body-sm font-semibold text-ink truncate">{user.full_name ?? user.email}</p>
-              {user.is_superuser && (
-                <span className="inline-block mt-0.5 rounded-full bg-brand/10 px-2 py-0.5 text-body-sm font-semibold text-brand">
-                  {t("role.manager")}
-                </span>
-              )}
+              <p className="text-body-sm text-ink-tertiary truncate">{user.email}</p>
             </div>
           )}
           <button
             type="button"
             title={t("nav.logout")}
             onClick={() => void logout()}
-            className="h-8 w-8 shrink-0 flex items-center justify-center rounded-lg text-ink-tertiary transition-colors duration-fast hover:bg-danger-subtle hover:text-danger"
+            className={clsx(
+              "shrink-0 flex items-center gap-2 rounded-lg transition-colors duration-fast hover:bg-danger/8 hover:text-danger",
+              collapsed ? "h-9 w-9 justify-center text-ink-tertiary" : "px-3 py-2 text-ink-secondary text-body-sm",
+            )}
           >
             <IconLogout className="h-4 w-4" />
+            {!collapsed && <span className="font-medium">{t("nav.logout")}</span>}
           </button>
         </div>
       </aside>
