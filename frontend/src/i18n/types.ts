@@ -114,6 +114,9 @@ export type MessageKey =
   | "dashboard.onboardingTitle"
   /* ── Projects ── */
   | "projects.title"
+  | "projects.tabGeneral"
+  | "projects.tabWordpress"
+  | "projects.tabRules"
   | "projects.createNew"
   | "projects.projectName"
   | "projects.projectNameHelper"
