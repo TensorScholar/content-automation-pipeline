@@ -416,7 +416,7 @@ export type MessageKey =
   | "tasks.kpiSuccess" | "tasks.kpiTotal" | "tasks.pendingNotice" | "tasks.pollNow"
   | "tasks.progress" | "tasks.qualityScore" | "tasks.rawHtml" | "tasks.readerMode"
   | "tasks.recommendations" | "tasks.selectTask" | "tasks.seoChecklist"
-  | "tasks.seoScore" | "tasks.seoTab" | "tasks.streaming" | "tasks.taskDeleted"
+  | "tasks.seoScore" | "tasks.seoTab" | "tasks.streaming" | "tasks.taskDeleted" | "tasks.subtitle"
   | "tasks.wpDraft" | "tasks.wpLive" | "tasks.wpPublish" | "tasks.wpPublishError"
   | "tasks.wpPublished"
   | "users.action" | "users.activate" | "users.activated" | "users.addUser"

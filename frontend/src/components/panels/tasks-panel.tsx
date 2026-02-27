@@ -179,7 +179,7 @@ export function TasksPanel({ token }: TasksPanelProps) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-[28px] font-bold text-gray-900 tracking-tight">{t("tasks.title") || "Task History"}</h2>
-          <p className="text-[14px] text-gray-500 mt-1">Review, export, and monitor pipeline progress.</p>
+          <p className="text-[14px] text-gray-500 mt-1">{t("tasks.subtitle") || "Review, export, and monitor pipeline progress."}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
