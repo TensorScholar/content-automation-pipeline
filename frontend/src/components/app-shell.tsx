@@ -97,7 +97,7 @@ export function AppShell({ token, user }: AppShellProps) {
     ? "translateX(0)"
     : direction === "rtl" ? "translateX(100%)" : "translateX(-100%)";
 
-  const sidebarW = collapsed ? 104 : 272; // Adjusted for the 16px lateral margin geometry
+  const sidebarW = collapsed ? 96 : 284; // Adjusted for the 24px lateral margin geometry
 
   return (
     <div className="min-h-screen bg-surface-secondary" dir={direction}>
@@ -113,30 +113,30 @@ export function AppShell({ token, user }: AppShellProps) {
       {/* ═══ SIDEBAR — FLOATING GLASS ISLAND ═══ */}
       <aside
         className={clsx(
-          "fixed top-4 bottom-4 start-4 z-modal flex flex-col h-[calc(100vh-32px)]",
-          "rounded-[40px] border-t border-white/10 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.05)]",
-          "transition-all duration-500 overflow-hidden",
-          collapsed ? "w-[72px]" : "w-[240px]",
-          "lg:translate-x-0 bg-[#0d3328]/95 backdrop-blur-2xl",
+          "fixed top-6 bottom-6 start-6 z-modal flex flex-col h-[calc(100vh-48px)]",
+          "rounded-[3rem] border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.5),0_10px_10px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.1)]",
+          "transition-all duration-700 overflow-hidden",
+          collapsed ? "w-[72px]" : "w-[260px]",
+          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328]/95 via-[#051c15]/98 to-[#020d0a] backdrop-blur-2xl",
         )}
         style={{
           transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
-          transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)"
+          transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
         }}
       >
-        {/* Subtle glass convex reflection layer */}
-        <div className="absolute inset-0 z-[-1] bg-gradient-to-b from-white/[0.06] to-transparent pointer-events-none" />
+        {/* Subtle radial glass convex reflection layer */}
+        <div className="absolute inset-0 z-[-1] rounded-[3rem] bg-[radial-gradient(ellipse_at_top_start,rgba(255,255,255,0.05),transparent_50%)] pointer-events-none" />
 
         {/* Sidebar Header — brand + collapse toggle */}
         <div className={clsx(
-          "flex shrink-0 items-center px-6 relative mt-2",
-          collapsed ? "h-16 justify-center px-0" : "h-20 justify-between",
+          "flex shrink-0 items-center px-8 py-6 relative",
+          collapsed ? "justify-center px-0" : "justify-between",
         )}>
           {!collapsed && (
             <div className="flex items-center gap-3">
               {/* Primary Brand Logo - Transparent */}
-              <img src="/logo.png" alt="Smarlux" className="h-[34px] w-auto shrink-0 object-contain invert drop-shadow-md" />
-              <span className="text-emerald-50 font-bold tracking-tight text-xl pt-0.5">Smarlux</span>
+              <img src="/logo.png" alt="Smarlux" className="h-[34px] w-auto shrink-0 object-contain invert text-emerald-50 drop-shadow-md" />
+              <span className="text-white font-black tracking-tighter text-xl pt-0.5">Smarlux</span>
             </div>
           )}
           {collapsed && (
@@ -148,7 +148,7 @@ export function AppShell({ token, user }: AppShellProps) {
             <button
               type="button"
               onClick={() => setCollapsed(true)}
-              className="absolute inset-inline-end-6 hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-emerald-100/50 hover:bg-white/10 hover:text-emerald-50 transition-all duration-300"
+              className="absolute inset-inline-end-6 hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-emerald-100/50 hover:bg-white/10 hover:text-emerald-50 transition-all duration-500"
               aria-label="Collapse sidebar"
             >
               <IconMenu className="h-4 w-4" />
@@ -168,24 +168,24 @@ export function AppShell({ token, user }: AppShellProps) {
                 title={collapsed ? item.label : undefined}
                 onClick={() => navigate(item.key)}
                 className={clsx(
-                  "relative flex items-center gap-3 px-4 py-2.5 mx-3 rounded-[16px] transition-all duration-500 text-start w-[calc(100%-24px)] group overflow-hidden",
+                  "relative flex items-center gap-4 px-5 py-3 mx-4 rounded-2xl transition-all duration-700 text-start w-[calc(100%-32px)] group overflow-hidden",
                   active
-                    ? "bg-white/10 text-white font-medium shadow-sm ring-1 ring-white/5"
+                    ? "bg-white/10 text-white font-medium shadow-sm"
                     : "text-emerald-100/60 hover:bg-white/5 hover:text-emerald-50",
-                  collapsed && "justify-center px-0 mx-3 w-auto"
+                  collapsed && "justify-center px-0 mx-4 w-auto"
                 )}
-                style={{ transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)" }}
+                style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
               >
-                {/* Active Indicator Dot (Left edge) */}
+                {/* Active Indicator Pill (Left edge) */}
                 {active && !collapsed && (
-                  <span className="absolute inset-inline-start-1.5 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                  <span className="absolute inset-inline-start-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                 )}
 
                 {/* Active Glass blur layer */}
                 {active && <div className="absolute inset-0 backdrop-blur-md z-[-1]" />}
 
                 <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <Icon className={clsx("h-5 w-5 transition-transform duration-500 group-hover:scale-110", active && "drop-shadow-md")} />
+                  <Icon className={clsx("h-5 w-5 transition-transform duration-700 group-hover:scale-110", active && "drop-shadow-md")} />
                 </div>
                 {!collapsed && (
                   <span className="text-[14px] truncate translate-y-[0.5px]">{item.label}</span>
@@ -196,14 +196,14 @@ export function AppShell({ token, user }: AppShellProps) {
         </nav>
 
         {/* Dynamic Footer Section (Card-in-Card style) */}
-        <div className="mt-auto px-4 pb-5 flex flex-col gap-3">
+        <div className="mt-auto px-0 pb-6 flex flex-col gap-2">
 
           {/* Project Selector — Recessed Card within a Card */}
-          <div className={clsx("w-full bg-black/20 rounded-2xl p-1.5 border border-white/5 shadow-inner", collapsed && "hidden")}>
+          <div className={clsx("w-auto bg-black/30 rounded-2xl p-4 mx-4 mb-2 border border-white/5", collapsed && "hidden")}>
             <select
               disabled={projectsLoading || projects.length === 0}
               title={t("shell.activeProject")}
-              className="w-full rounded-xl bg-transparent px-3 py-2 text-[13px] font-medium text-emerald-50 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-300 disabled:opacity-50 appearance-none cursor-pointer RTL-caret"
+              className="w-full rounded-xl bg-transparent text-[13px] font-medium text-emerald-50 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-500 disabled:opacity-50 appearance-none cursor-pointer RTL-caret"
               value={selectedProjectId ?? ""}
               onChange={(e) => setSelectedProjectId(e.target.value || null)}
             >
@@ -217,7 +217,7 @@ export function AppShell({ token, user }: AppShellProps) {
           <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-1" />
 
           {/* User Profile & Logout - Clean Row */}
-          <div className={clsx("flex items-center justify-between", collapsed ? "flex-col gap-4" : "gap-3 px-1")}>
+          <div className={clsx("flex items-center justify-between px-6", collapsed ? "flex-col gap-4 px-0" : "gap-3")}>
             {!collapsed && (
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="h-9 w-9 shrink-0 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 text-white text-[13px] font-bold uppercase shadow-sm">
@@ -225,7 +225,7 @@ export function AppShell({ token, user }: AppShellProps) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-semibold text-white truncate drop-shadow-sm">{user.full_name ?? "Manager"}</p>
-                  <p className="text-[11px] text-emerald-100/70 truncate">{user.email}</p>
+                  <p className="text-xs font-semibold text-emerald-100/60 truncate">{user.email}</p>
                 </div>
               </div>
             )}
@@ -235,7 +235,7 @@ export function AppShell({ token, user }: AppShellProps) {
               title={t("nav.logout")}
               onClick={() => void logout()}
               className={clsx(
-                "flex items-center justify-center rounded-full transition-all duration-300",
+                "flex items-center justify-center rounded-full transition-all duration-500",
                 "text-emerald-100/40 hover:text-red-400 hover:bg-white/5",
                 collapsed ? "h-10 w-10 mx-auto" : "h-9 w-9 shrink-0"
               )}
@@ -253,8 +253,8 @@ export function AppShell({ token, user }: AppShellProps) {
         className="flex min-h-screen flex-col transition-all overflow-hidden"
         style={{
           marginInlineStart: `${sidebarW}px`,
-          transitionDuration: "500ms",
-          transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)"
+          transitionDuration: "700ms",
+          transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
         }}
       >
         {/* ── Top Header — no duplicate page title, just language + collapse ── */}
