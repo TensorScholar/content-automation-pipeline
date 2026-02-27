@@ -100,7 +100,7 @@ export function AppShell({ token, user }: AppShellProps) {
   const sidebarW = collapsed ? 104 : 312; // 280px width + 32px lateral margin (m-8)
 
   return (
-    <div className="min-h-screen bg-surface-secondary" dir={direction}>
+    <div className="min-h-screen bg-[#FBFBFD]" dir={direction}>
 
       {/* ── Mobile overlay ── */}
       {mobileOpen && (
@@ -113,12 +113,12 @@ export function AppShell({ token, user }: AppShellProps) {
       {/* ═══ SIDEBAR — 9D LIQUID EMERALD GLASS ═══ */}
       <aside
         className={clsx(
-          "fixed top-8 bottom-8 start-8 z-modal flex flex-col h-[calc(100vh-64px)]",
+          "fixed start-6 top-1/2 -translate-y-1/2 z-modal flex flex-col h-[calc(100vh-48px)]",
           "rounded-[3.5rem] border-t border-l border-white/20 border-b border-r border-black/40",
           "shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8),0_20px_40px_-10px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.2)]",
           "transition-all duration-700 overflow-hidden",
           collapsed ? "w-[72px]" : "w-[280px]",
-          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328]/95 via-[#051c15]/98 to-[#020d0a] backdrop-blur-[50px]",
+          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328] via-[#082a21] to-[#020d0a] backdrop-blur-[50px]",
         )}
         style={{
           transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
@@ -130,28 +130,17 @@ export function AppShell({ token, user }: AppShellProps) {
 
         {/* Sidebar Header — brand + collapse toggle */}
         <div className={clsx(
-          "flex shrink-0 items-center px-8 py-6 relative",
+          "flex shrink-0 items-center px-8 py-8 relative",
           collapsed ? "justify-center px-0" : "justify-between",
         )}>
           {!collapsed && (
             <div className="flex items-center gap-3">
-              {/* Primary Brand Logo - CSS Filter Purification */}
-              <img
-                src="/logo.png"
-                alt="Smarlux"
-                className="h-[34px] w-auto shrink-0 object-contain drop-shadow-sm"
-                style={{ filter: "brightness(0) invert(1)", mixBlendMode: "lighten" }}
-              />
-              <span className="text-white font-black tracking-tighter text-xl pt-0.5">Smarlux</span>
+              {/* Refined Typographic Logo */}
+              <span className="text-white text-2xl font-black tracking-tighter pt-0.5">Smarlux</span>
             </div>
           )}
           {collapsed && (
-            <img
-              src="/logo.png"
-              alt="Smarlux"
-              className="h-8 w-8 shrink-0 object-contain drop-shadow-sm"
-              style={{ filter: "brightness(0) invert(1)", mixBlendMode: "lighten" }}
-            />
+            <span className="text-white text-2xl font-black tracking-tighter pt-0.5">S</span>
           )}
 
           {/* Toggle Button Clean Integration */}
@@ -181,14 +170,14 @@ export function AppShell({ token, user }: AppShellProps) {
                 className={clsx(
                   "relative flex items-center gap-4 px-6 py-4 mx-4 mb-2 rounded-[24px] transition-all duration-700 text-start w-[calc(100%-32px)] group",
                   active
-                    ? "bg-white/10 text-white font-medium shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-md"
-                    : "text-white/60 hover:bg-white/5 hover:text-white",
+                    ? "bg-white/10 text-white font-semibold shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-md"
+                    : "text-white/60 hover:bg-white/5 hover:text-white/90",
                   collapsed && "justify-center px-0 mx-4 w-auto"
                 )}
                 style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
               >
                 <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active && "drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]")} />
+                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "text-emerald-400/80")} />
                 </div>
                 {!collapsed && (
                   <span className="text-[15px] translate-y-[0.5px] font-medium">{item.label}</span>
@@ -201,20 +190,28 @@ export function AppShell({ token, user }: AppShellProps) {
         {/* Dynamic Footer Section (Card-in-Card style) */}
         <div className="mt-auto px-0 pb-6 flex flex-col gap-2">
 
-          {/* Project Selector — Recessed Carved-in Panel */}
-          <div className={clsx("w-auto bg-black/40 rounded-3xl p-4 mx-5 mb-5 border border-white/5 shadow-inner", collapsed && "hidden")}>
-            <select
-              disabled={projectsLoading || projects.length === 0}
-              title={t("shell.activeProject")}
-              className="w-full rounded-xl bg-transparent text-[13px] font-medium text-emerald-50 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-700 disabled:opacity-50 appearance-none cursor-pointer RTL-caret"
-              value={selectedProjectId ?? ""}
-              onChange={(e) => setSelectedProjectId(e.target.value || null)}
-            >
-              {projects.length === 0 && <option value="" className="bg-transparent">{t("shell.noProject")}</option>}
-              {projects.map((p) => (
-                <option key={p.id} value={p.id} className="bg-slate-900 font-sans">{p.name}</option>
-              ))}
-            </select>
+          {/* Project Selector — Active Project Control */}
+          <div className={clsx("w-auto bg-white/5 rounded-2xl p-3 mx-5 mb-5 border border-white/10 shadow-inner relative", collapsed && "hidden")}>
+            <div className="text-[10px] uppercase tracking-widest text-emerald-400/60 font-bold mb-1 px-1 pointer-events-none">
+              {t("shell.activeProject")}
+            </div>
+            <div className="relative flex justify-between items-center w-full px-1">
+              <select
+                disabled={projectsLoading || projects.length === 0}
+                className="w-full absolute inset-0 opacity-0 cursor-pointer z-10"
+                value={selectedProjectId ?? ""}
+                onChange={(e) => setSelectedProjectId(e.target.value || null)}
+              >
+                {projects.length === 0 && <option value="" className="bg-slate-900">{t("shell.noProject")}</option>}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id} className="bg-slate-900 font-sans">{p.name}</option>
+                ))}
+              </select>
+              <span className="text-[14px] font-medium text-white/90 truncate drop-shadow-sm pr-6">
+                {projects.find(p => p.id === selectedProjectId)?.name || t("shell.noProject")}
+              </span>
+              <svg className="w-4 h-4 text-emerald-400/80 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+            </div>
           </div>
 
           <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-1" />
@@ -260,29 +257,8 @@ export function AppShell({ token, user }: AppShellProps) {
           transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
         }}
       >
-        {/* ── Top Header — no duplicate page title, just language + collapse ── */}
-        <header className="sticky top-0 z-sticky flex h-14 shrink-0 items-center gap-4 border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 lg:px-6">
-          {/* Mobile menu */}
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            className="lg:hidden h-9 w-9 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
-          >
-            <IconMenu className="h-5 w-5" />
-          </button>
-
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Language Toggle with globe icon */}
-          <div className="flex items-center gap-2">
-            <IconGlobe className="h-4 w-4 text-ink-tertiary" />
-            <LanguageToggle />
-          </div>
-        </header>
-
         {/* ── Panel Content ── */}
-        <main className="flex-1 px-4 py-5 lg:px-6 lg:py-6">
+        <main className="flex-1 px-4 py-8 lg:px-12 lg:py-8 pt-10">
           <ErrorBoundary>
             {page === "dashboard" && <DashboardPanel token={token} projects={projects} onNavigate={navigate as unknown as (page: string) => void} />}
             {page === "projects" && (
