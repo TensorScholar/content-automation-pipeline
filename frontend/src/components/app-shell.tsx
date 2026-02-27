@@ -130,11 +130,11 @@ export function AppShell({ token, user }: AppShellProps) {
         {/* Sidebar Header — brand + collapse toggle */}
         <div className={clsx(
           "flex shrink-0 items-center px-8 py-8 relative",
-          collapsed ? "justify-center px-0" : "justify-between",
+          "justify-center flex-col", // Always center the contents
         )}>
           {!collapsed && (
             <div className="flex items-center gap-3">
-              {/* Refined Typographic Logo */}
+              {/* Refined Typographic Logo — Centered */}
               <span className="text-white text-3xl font-black tracking-tighter truncate">Smarlux</span>
             </div>
           )}
@@ -142,13 +142,13 @@ export function AppShell({ token, user }: AppShellProps) {
             <span className="text-white text-3xl font-black tracking-tighter pt-0.5">S</span>
           )}
 
-          {/* Toggle Button Clean Integration (Visible in both states) */}
+          {/* Toggle Button Clean Integration (Absolutely Positioned when open, centered below when closed) */}
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
             className={clsx(
               "hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 hover:text-white transition-all duration-500",
-              collapsed ? "absolute inset-x-0 mx-auto mt-20" : "shrink-0 ml-2"
+              collapsed ? "absolute inset-x-0 mx-auto mt-20" : "absolute right-4 top-1/2 -translate-y-1/2"
             )}
             aria-label="Toggle sidebar"
           >
@@ -171,13 +171,13 @@ export function AppShell({ token, user }: AppShellProps) {
                   "relative flex items-center gap-4 px-6 py-4 mx-4 mb-2 rounded-[24px] transition-all duration-700 text-start w-[calc(100%-32px)] group",
                   active
                     ? "bg-white/10 text-white font-semibold shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-md"
-                    : "text-emerald-50/70 hover:bg-white/5 hover:text-white/95",
+                    : "text-emerald-50/80 hover:bg-white/5 hover:text-white/95", // Brighter base text
                   collapsed && "justify-center px-0 mx-4 w-auto"
                 )}
                 style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
               >
                 <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "text-emerald-400")} />
+                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active ? "text-emerald-300 drop-shadow-[0_0_12px_rgba(52,211,153,0.8)]" : "text-emerald-300/90")} />
                 </div>
                 {!collapsed && (
                   <span className="text-[15px] translate-y-[0.5px] font-medium">{item.label}</span>
@@ -190,9 +190,9 @@ export function AppShell({ token, user }: AppShellProps) {
         {/* Dynamic Footer Section (Card-in-Card style) */}
         <div className="mt-auto px-0 pb-6 flex flex-col gap-2">
 
-          {/* Project Selector — Active Project Control */}
-          <div className={clsx("w-auto bg-white/5 rounded-2xl p-3 mx-5 mb-5 border border-white/10 shadow-inner relative", collapsed && "hidden")}>
-            <div className="text-[10px] uppercase tracking-widest text-emerald-400/60 font-bold mb-1 px-1 pointer-events-none">
+          {/* Project Selector — High Contrast Active Project Control */}
+          <div className={clsx("w-auto bg-white/10 rounded-2xl p-3 mx-5 mb-5 border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.3)] relative backdrop-blur-md hover:bg-white/15 transition-colors cursor-pointer", collapsed && "hidden")}>
+            <div className="text-[10px] uppercase tracking-widest text-[#5EEAD4] font-bold mb-1 px-1 pointer-events-none drop-shadow-sm">
               {t("shell.activeProject")}
             </div>
             <div className="relative flex justify-between items-center w-full px-1">
