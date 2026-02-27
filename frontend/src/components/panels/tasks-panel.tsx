@@ -175,17 +175,17 @@ export function TasksPanel({ token }: TasksPanelProps) {
   return (
     <section className="animate-fade-in relative flex flex-col space-y-6 bg-[#F5F5F7] min-h-[calc(100vh-80px)] p-4 md:p-8">
 
-      {/* ── Apple-Style Header & KPI Chips ── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+      {/* ── Apple-Style Header & Toolbar ── */}
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-2">
+        <div className="flex-1">
           <h2 className="text-[28px] font-bold text-gray-900 tracking-tight">{t("tasks.title") || "Task History"}</h2>
           <p className="text-[14px] text-gray-500 mt-1">{t("tasks.subtitle") || "Review, export, and monitor pipeline progress."}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto mt-2 md:mt-0 bg-white/60 backdrop-blur-md border border-gray-200/60 p-2 rounded-2xl shadow-sm">
           {/* iOS Toggle Switch for Auto Refresh */}
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-medium text-gray-700">{t("tasks.autoRefresh") || "Auto-refresh"}</span>
+          <div className="flex items-center gap-3 px-3">
+            <span className="text-[13px] font-semibold text-gray-700">{t("tasks.autoRefresh") || "Auto-refresh"}</span>
             <button
               type="button"
               role="switch"
@@ -206,38 +206,53 @@ export function TasksPanel({ token }: TasksPanelProps) {
             </button>
           </div>
 
+          <div className="w-px h-6 bg-gray-200 mx-1 hidden sm:block" />
+
           <button
             type="button"
             onClick={() => void loadTasks()}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white text-gray-700 shadow-sm border border-gray-100 hover:bg-gray-50 transition-colors"
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
             title={t("common.refresh")}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           </button>
 
           {kpis.success > 0 && (
-            <Button variant="outlined" onClick={() => void onBulkDownload()} className="bg-white">
+            <Button variant="outlined" onClick={() => void onBulkDownload()} className="bg-white h-9 px-4 text-[13px] rounded-xl border-gray-200 hover:border-teal-500 hover:text-teal-700 hover:bg-teal-50/50 shadow-none">
+              <svg className="w-4 h-4 mie-2 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
               {t("tasks.bulkDownload") || "Bulk Download"}
             </Button>
           )}
         </div>
       </div>
 
-      {/* KPI Chips */}
-      <div className="flex flex-wrap gap-3">
+      {/* Interactive KPI Filter Chips */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: t("tasks.kpiTotal") || "Total", value: kpis.total, bg: "bg-white", text: "text-gray-900" },
-          { label: t("tasks.kpiSuccess") || "Success", value: kpis.success, bg: "bg-emerald-50 text-emerald-700", text: "text-emerald-900" },
-          { label: t("tasks.kpiFailure") || "Failed", value: kpis.failure, bg: "bg-red-50 text-red-700", text: "text-red-900" },
-          { label: t("tasks.kpiRunning") || "Running", value: kpis.running, bg: "bg-teal-50 text-teal-700 animate-pulse-soft", text: "text-teal-900" },
-        ].map((card) => (
-          <div key={card.label} className={clsx("flex items-center gap-3 rounded-2xl px-5 py-3 border border-black/5 shadow-sm", card.bg)}>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-bold uppercase tracking-widest opacity-70">{card.label}</span>
-              <span className={clsx("text-[24px] font-semibold leading-tight mt-0.5", card.text)}>{card.value}</span>
-            </div>
-          </div>
-        ))}
+          { key: "all", label: t("tasks.kpiTotal") || "Total", value: kpis.total, bg: "bg-white", text: "text-gray-900", border: "border-gray-200", icon: <svg className="w-5 h-5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg> },
+          { key: "SUCCESS", label: t("tasks.kpiSuccess") || "Success", value: kpis.success, bg: "bg-emerald-50/50", text: "text-emerald-700", border: "border-emerald-200", icon: <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+          { key: "FAILURE", label: t("tasks.kpiFailure") || "Failed", value: kpis.failure, bg: "bg-red-50/50", text: "text-red-700", border: "border-red-200", icon: <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+          { key: "RUNNING", label: t("tasks.kpiRunning") || "Running", value: kpis.running, bg: "bg-teal-50/50", text: "text-teal-700", border: "border-teal-200", icon: <svg className="w-5 h-5 text-teal-500 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
+        ].map((card) => {
+          const isActive = filter === card.key;
+          return (
+            <button
+              key={card.key}
+              onClick={() => setFilter(card.key as FilterTab)}
+              className={clsx(
+                "relative group flex flex-col justify-between text-start rounded-3xl p-5 border shadow-sm transition-all duration-300 outline-none focus:ring-4 focus:ring-teal-500/20",
+                card.bg, card.border,
+                isActive ? "ring-2 ring-offset-2 ring-slate-400 -translate-y-1 shadow-md bg-white" : "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+              )}
+            >
+              <div className="flex w-full items-center justify-between mb-3">
+                <span className="text-[12px] font-bold uppercase tracking-widest text-slate-500">{card.label}</span>
+                {card.icon}
+              </div>
+              <span className={clsx("text-[32px] font-black leading-none", card.text)}>{card.value}</span>
+            </button>
+          )
+        })}
       </div>
 
       <Modal open={Boolean(deleteConfirmId)} onClose={() => setDeleteConfirmId(null)} title={t("tasks.deleteTask") || "Delete Task"} footer={
@@ -249,33 +264,17 @@ export function TasksPanel({ token }: TasksPanelProps) {
         <p className="text-[14px] text-gray-600">{t("tasks.confirmDeleteTask") || "Are you sure you want to permanently delete this task data?"}</p>
       </Modal>
 
-      {/* ── Tool Bar ── */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mt-2">
-        {/* Segmented Control */}
-        <div className="inline-flex rounded-xl bg-gray-200/60 p-1">
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setFilter(tab.key)}
-              className={clsx(
-                "px-4 py-1.5 text-[13px] font-semibold rounded-lg transition-all duration-200",
-                filter === tab.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              {tab.label} <span className="text-[10px] bg-gray-100 rounded-full px-1.5 py-0.5 mis-1">{tab.count}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Search Input with Icon */}
-        <div className="relative w-full md:w-64 shrink-0">
+      {/* ── Search Bar ── */}
+      <div className="flex flex-wrap items-center justify-end w-full">
+        {/* Search Input with properly aligned Icon (pis) */}
+        <div className="relative w-full md:w-80 shrink-0 group">
           <input
             placeholder={t("tasks.searchPlaceholder") || "Search tasks..."}
-            className="w-full rounded-full border border-gray-200 bg-white pis-10 pie-4 py-2 text-[14px] outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+            className="w-full rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-sm pis-12 pie-4 py-3 text-[14px] font-medium text-slate-700 outline-none transition-all focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <svg className="absolute start-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="absolute start-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-teal-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
@@ -288,21 +287,34 @@ export function TasksPanel({ token }: TasksPanelProps) {
       )}>
 
         {/* Master: Data Table */}
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col min-w-0">
+        <div className="bg-white rounded-3xl border border-gray-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col min-w-0">
           <div className="flex-1 overflow-auto rounded-3xl">
-            <table className="w-full text-start">
-              <thead className="bg-[#fcfcfc] sticky top-0 z-10 border-b border-gray-100 backdrop-blur-md">
-                <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                  <th className="px-6 py-4 text-start font-bold">{t("tasks.topic") || "Topic"}</th>
-                  <th className="px-6 py-4 text-start font-bold">{t("tasks.status") || "Status"}</th>
-                  <th className="px-6 py-4 text-start font-bold">{t("tasks.created") || "Date"}</th>
-                  <th className="px-6 py-4 text-end font-bold sr-only">{t("users.action") || "Action"}</th>
+            <table className="w-full text-start border-collapse">
+              <thead className="bg-[#f8fafc] sticky top-0 z-10 border-b border-gray-200/80 backdrop-blur-xl">
+                <tr className="text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="px-6 py-5 text-start font-bold w-1/2">{t("tasks.topic") || "Topic"}</th>
+                  <th className="px-6 py-5 text-start font-bold w-1/4">{t("tasks.status") || "Status"}</th>
+                  <th className="px-6 py-5 text-start font-bold w-1/4">{t("tasks.created") || "Date"}</th>
+                  <th className="px-6 py-5 text-end font-bold sr-only w-16">{t("users.action") || "Action"}</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-100">
                 {loading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="border-b border-gray-50"><td colSpan={4} className="px-6 py-4"><div className="h-4 bg-gray-100 rounded w-full animate-pulse" /></td></tr>
+                  [1, 2, 3, 4, 5].map((i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-6 py-5">
+                        <div className="h-5 bg-slate-100 rounded-md w-3/4 mb-2"></div>
+                        <div className="h-3 bg-slate-50 rounded-md w-1/3"></div>
+                      </td>
+                      <td className="px-6 py-5"><div className="h-7 w-24 bg-slate-100 rounded-full"></div></td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-slate-100"></div>
+                          <div className="h-4 w-20 bg-slate-100 rounded-md"></div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-end"><div className="h-8 w-8 bg-slate-100 rounded-full ms-auto"></div></td>
+                    </tr>
                   ))
                 ) : filtered.length === 0 ? (
                   <tr className="hover:bg-transparent">
