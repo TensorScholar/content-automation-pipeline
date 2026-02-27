@@ -143,7 +143,7 @@ export function UsersPanel({ token, isAdmin }: UsersPanelProps) {
                     const roleLabel = user.is_superuser ? t("role.manager") : (user.role ?? "user");
                     return (
                       <tr key={user.id} className="border-b border-border transition-colors duration-fast hover:bg-surface-alt/50">
-                        <td className="px-4 py-3 text-body-md text-ink">{user.email}</td>
+                        <td dir="ltr" className="px-4 py-3 text-body-md text-ink text-start">{user.email}</td>
                         <td className="px-4 py-3 text-body-md text-ink-secondary">{user.full_name || "—"}</td>
                         <td className="px-4 py-3">
                           <StatusBadge

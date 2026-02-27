@@ -8,6 +8,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { SkeletonLoader } from "@/components/ui/skeleton-loader";
+import { clsx } from "clsx";
 
 /* ═══════════════════════════════════════════════════════════════
    Spec: Screen 8 — Monitoring (Manager-Only)
@@ -74,48 +75,71 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
   const poolPercent = poolSize > 0 ? Math.min(100, (poolUsed / poolSize) * 100) : 0;
 
   return (
-    <section className="animate-fade-in space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-display-lg text-ink">{t("monitoring.title")}</h2>
-        <div className="flex items-center gap-3">
+    <section className="animate-fade-in relative flex flex-col space-y-6 bg-[#F5F5F7] min-h-[calc(100vh-80px)] p-4 md:p-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+        <div>
+          <h2 className="text-[28px] font-bold text-slate-900 tracking-tight">{t("monitoring.title") || "System Monitoring"}</h2>
+          <p className="text-[14px] text-slate-500 mt-1">Review the live health status of backend microservices.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
           {lastCheckTime && (
-            <span className="text-body-sm text-ink-secondary">
-              {t("monitoring.lastCheck")}: {lastCheckTime}
+            <span className="text-[13px] font-medium text-slate-500 bg-white px-3 py-1.5 rounded-full border border-slate-200">
+              {t("monitoring.lastCheck") || "Last Check"}: {lastCheckTime}
             </span>
           )}
-          <Button variant="outlined" onClick={() => void load()}>
-            {t("common.refresh")}
-          </Button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 transition-colors"
+            title={t("common.refresh")}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          </button>
         </div>
       </div>
 
       {/* ── Health Dependency Grid ── */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
         {depKeys.map(({ key, label }) => {
           const dep = deps[key];
           const statusStr = key === "api" ? (health?.status ?? "unknown") : (dep?.status ?? "unknown");
           const isHealthy = statusStr.toLowerCase().includes("healthy") || statusStr.toLowerCase() === "ok" || statusStr.toLowerCase() === "connected";
           return (
-            <div key={key} className={`elevated-card border-s-2 p-4 ${isHealthy ? "border-s-success" : "border-s-danger"}`}>
+            <div key={key} className={clsx(
+              "relative overflow-hidden rounded-2xl border p-5 transition-all duration-300",
+              "bg-white backdrop-blur-xl shadow-sm hover:shadow-md",
+              isHealthy ? "border-emerald-100" : "border-red-100"
+            )}>
               {loading ? (
-                <div className="space-y-2">
-                  <SkeletonLoader height={12} width={80} />
-                  <SkeletonLoader height={20} width={64} />
+                <div className="space-y-3">
+                  <SkeletonLoader height={14} width={80} />
+                  <SkeletonLoader height={24} width={64} />
                 </div>
               ) : (
-                <>
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${isHealthy ? "bg-success" : "bg-danger animate-pulse-soft"}`} aria-hidden />
-                    <span className="text-body-sm font-semibold uppercase tracking-wider text-ink-secondary">{label}</span>
+                <div className="flex flex-col h-full justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                      {label}
+                    </span>
+                    <span className={clsx(
+                      "text-xl font-semibold tracking-tight",
+                      isHealthy ? "text-emerald-700" : "text-red-600"
+                    )}>
+                      {statusStr.toLowerCase() === "unknown"
+                        ? (t("monitoring.statusUnknown") || "Unknown")
+                        : statusStr.toLowerCase().includes("healthy")
+                          ? (t("monitoring.healthy") || "Healthy")
+                          : statusStr}
+                    </span>
                   </div>
-                  <StatusBadge variant={isHealthy ? "success" : "error"} dot={false}>
-                    {statusStr.toLowerCase() === "unknown"
-                      ? (t("monitoring.statusUnknown") || "Unknown")
-                      : statusStr.toLowerCase().includes("healthy")
-                        ? (t("monitoring.healthy") || "Healthy")
-                        : statusStr}
-                  </StatusBadge>
-                </>
+
+                  <div className="absolute top-4 end-4">
+                    <span className={clsx(
+                      "flex h-2.5 w-2.5 rounded-full",
+                      isHealthy ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "bg-red-500 animate-pulse-soft shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                    )} aria-hidden />
+                  </div>
+                </div>
               )}
             </div>
           );
@@ -125,49 +149,67 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
       {/* ── Performance Metrics ── */}
       <div className="grid gap-4 md:grid-cols-3">
         {/* Daily Cost */}
-        <MetricCard
-          label={t("monitoring.dailyCost")}
-          value={`$${todayCost.toFixed(2)}`}
-          loading={loading}
-        >
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 block mb-1">
+            {t("monitoring.dailyCost")}
+          </span>
+          {loading ? (
+            <SkeletonLoader height={32} width={120} className="mb-4" />
+          ) : (
+            <div className="text-3xl font-semibold text-slate-900 mb-4 tracking-tight">
+              ${todayCost.toFixed(2)}
+            </div>
+          )}
           <ProgressBar
             value={costPercent}
-            className="mt-3"
+            className="mt-2"
             showLabel
             label={t("dashboard.ofCap", { percent: costPercent.toFixed(0), cap: threshold.toFixed(0) })}
           />
-        </MetricCard>
+        </div>
 
         {/* Articles Today */}
-        <MetricCard
-          label={t("monitoring.articlesToday")}
-          value={String(todayArticles)}
-          loading={loading}
-        >
-          <p className="mt-3 text-body-sm text-ink-secondary">
-            {t("monitoring.avgCost")}: ${avgCostPerArticle.toFixed(3)}
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 block mb-1">
+            {t("monitoring.articlesToday")}
+          </span>
+          {loading ? (
+            <SkeletonLoader height={32} width={80} className="mb-4" />
+          ) : (
+            <div className="text-3xl font-semibold text-slate-900 mb-4 tracking-tight">
+              {String(todayArticles)}
+            </div>
+          )}
+          <p className="mt-2 text-[13px] font-medium text-slate-500">
+            {t("monitoring.avgCost")}: <span className="text-slate-700">${avgCostPerArticle.toFixed(3)}</span>
           </p>
-        </MetricCard>
+        </div>
 
         {/* Connection Pool */}
-        <MetricCard
-          label={t("monitoring.connectionPool")}
-          value={`${poolUsed}/${poolSize}`}
-          loading={loading}
-        >
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 block mb-1">
+            {t("monitoring.connectionPool")}
+          </span>
+          {loading ? (
+            <SkeletonLoader height={32} width={100} className="mb-4" />
+          ) : (
+            <div className="text-3xl font-semibold text-slate-900 mb-4 tracking-tight">
+              {`${poolUsed}/${poolSize}`}
+            </div>
+          )}
           <ProgressBar
             value={poolPercent}
-            className="mt-3"
+            className="mt-2"
             showLabel
             label={t("monitoring.utilized", { percent: poolPercent.toFixed(0) })}
           />
-        </MetricCard>
+        </div>
       </div>
 
       {/* ── Grafana Dashboard ── */}
-      <article className="elevated-card overflow-hidden">
-        <div className="border-b border-border px-5 py-4">
-          <h3 className="text-heading-sm text-ink">{t("monitoring.grafana")}</h3>
+      <article className="rounded-3xl border border-slate-200/60 bg-white shadow-sm overflow-hidden mt-6">
+        <div className="border-b border-slate-100 px-6 py-5 bg-slate-50/50">
+          <h3 className="text-[15px] font-bold text-slate-900">{t("monitoring.grafana")}</h3>
         </div>
         {GRAFANA_URL ? (
           <iframe
