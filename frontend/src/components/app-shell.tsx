@@ -118,7 +118,7 @@ export function AppShell({ token, user }: AppShellProps) {
           "shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8),0_20px_40px_-10px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.2)]",
           "transition-all duration-700 overflow-hidden",
           collapsed ? "w-[72px]" : "w-[280px]",
-          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328] via-[#082a21] to-[#020d0a] backdrop-blur-[50px]",
+          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328]/95 via-[#051c15]/98 to-[#020d0a] backdrop-blur-[50px]",
         )}
         style={{
           transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
@@ -136,11 +136,11 @@ export function AppShell({ token, user }: AppShellProps) {
           {!collapsed && (
             <div className="flex items-center gap-3">
               {/* Refined Typographic Logo */}
-              <span className="text-white text-2xl font-black tracking-tighter pt-0.5">Smarlux</span>
+              <span className="text-white text-2xl font-black tracking-tighter">Smarlux</span>
             </div>
           )}
           {collapsed && (
-            <span className="text-white text-2xl font-black tracking-tighter pt-0.5">S</span>
+            <span className="text-white text-2xl font-black tracking-tighter">S</span>
           )}
 
           {/* Toggle Button Clean Integration */}
@@ -250,13 +250,19 @@ export function AppShell({ token, user }: AppShellProps) {
 
       {/* ═══ MAIN CONTENT AREA (Offset by Sidebar width + Margin Geometry) ═══ */}
       <div
-        className="flex min-h-screen flex-col transition-all overflow-hidden"
+        className="flex min-h-screen flex-col transition-all overflow-hidden relative"
         style={{
           marginInlineStart: `${sidebarW}px`,
           transitionDuration: "700ms",
           transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
         }}
       >
+        {/* ── Floating Utilities ─ */}
+        <div className="fixed top-8 end-8 z-50 flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-3 py-1.5 shadow-sm border border-white/50">
+          <IconGlobe className="h-4 w-4 text-ink-tertiary" />
+          <LanguageToggle />
+        </div>
+
         {/* ── Panel Content ── */}
         <main className="flex-1 px-4 py-8 lg:px-12 lg:py-8 pt-10">
           <ErrorBoundary>
