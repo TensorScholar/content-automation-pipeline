@@ -262,10 +262,11 @@ export function LoginCard() {
               <div className="flex flex-col items-center text-center gap-6 max-w-lg w-full">
 
                 <div className="flex items-center justify-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
-                  <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+                  <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400/20 to-emerald-400" />
                   <span className="text-xs font-bold tracking-widest text-emerald-300 uppercase">
                     AI-POWERED PLATFORM
                   </span>
+                  <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
                 </div>
 
                 {/* Typography Confidence: text-3xl/4xl */}
@@ -296,8 +297,9 @@ export function LoginCard() {
           <HeroMeshGradient />
           <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in flex flex-col items-center text-center">
             <div className="flex items-center justify-center gap-3">
-              <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+              <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400/20 to-emerald-400" />
               <span className="text-[11px] font-bold tracking-widest text-emerald-300 uppercase">AI-POWERED PLATFORM</span>
+              <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
             </div>
             <p className="text-[22px] font-bold text-white/90 leading-snug">{cleanTagline}</p>
           </div>
@@ -309,8 +311,9 @@ export function LoginCard() {
           </div>
           <div key={`mb-hero-${locale}`} className="relative z-10 flex flex-col items-center justify-center gap-2 animate-fade-in text-center">
             <div className="flex items-center justify-center gap-2">
-              <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+              <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400/20 to-emerald-400" />
               <span className="text-[10px] font-bold tracking-widest text-emerald-300 uppercase">PLATFORM</span>
+              <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
             </div>
             <span className="inline-flex items-center gap-2 text-[12px] text-white/80 font-medium">
               <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-emerald-500" : "bg-red-500")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />{systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
