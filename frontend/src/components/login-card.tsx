@@ -248,8 +248,8 @@ export function LoginCard() {
         <section
           className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]"
         >
-          {/* Ghost Watermark Logo */}
-          <div className="absolute -bottom-32 -inset-inline-end-32 w-[130%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+          {/* Ghost Watermark Logo - Prominent */}
+          <div className="absolute -bottom-32 -inset-inline-end-32 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
 
@@ -285,25 +285,12 @@ export function LoginCard() {
                 </p>
               </div>
             </div>
-
-            {/* Dynamic system status with breathing pulse */}
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 text-white/80">
-                <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-emerald-500" : "bg-red-500")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />
-                <p className="text-body-sm font-medium">
-                  {systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
-                </p>
-              </div>
-              <p className="font-mono text-[11px] text-white/40 mt-2.5">
-                {t("app.version")}
-              </p>
-            </div>
           </div>
         </section>
 
         {/* ═══ MOBILE OVERRIDES ═══ */}
         <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
-          <div className="absolute -bottom-16 -inset-inline-end-16 w-[130%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+          <div className="absolute -bottom-16 -inset-inline-end-16 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <HeroMeshGradient />
@@ -317,7 +304,7 @@ export function LoginCard() {
         </section>
 
         <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
-          <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+          <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <div key={`mb-hero-${locale}`} className="relative z-10 flex items-center justify-between animate-fade-in">
@@ -341,7 +328,7 @@ export function LoginCard() {
 
           <div className="w-full max-w-sm mx-auto flex flex-col pt-8 lg:pt-0">
             <div key={`form-title-${locale}`} className="animate-fade-in mb-8">
-              <img src="/logo.png" alt="Smarlux" className="h-12 w-auto mb-6 object-contain" style={{ imageRendering: "auto" }} />
+              <img src="/logo.png" alt="Smarlux" className="h-12 w-auto mb-6 object-contain bg-transparent" style={{ imageRendering: "auto" }} />
               <h3 className="text-[28px] font-bold text-slate-900 tracking-tight">{t("auth.title")}</h3>
               <p className="mt-2 text-[15px] font-medium text-slate-500">{t("auth.subtitle")}</p>
             </div>
@@ -387,7 +374,7 @@ export function LoginCard() {
                   aria-label={t("auth.email")}
                   className={clsx(
                     "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] text-slate-900 outline-none transition-all duration-200 text-start",
-                    "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50 focus:bg-white",
+                    "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50/50 focus:bg-white",
                     emailInvalid ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.08)] bg-red-50/30" : "border-slate-200"
                   )}
                   value={email}
@@ -412,7 +399,7 @@ export function LoginCard() {
                     aria-label={t("auth.password")}
                     className={clsx(
                       "auth-input h-[50px] w-full rounded-xl border px-4 pe-[48px] text-[15px] text-slate-900 outline-none transition-all duration-200 text-start",
-                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50 focus:bg-white border-slate-200"
+                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50/50 focus:bg-white border-slate-200"
                     )}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -446,7 +433,7 @@ export function LoginCard() {
                 type="submit"
                 disabled={submitting || cooldownRemaining > 0 || loginSuccess}
                 className={clsx(
-                  "animate-fade-in w-full rounded-xl bg-teal-700 px-4 text-[15px] font-medium text-white shadow-md shadow-teal-700/20 transition-all duration-200 hover:bg-teal-800 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
+                  "animate-fade-in w-full rounded-xl bg-[#064e3b] hover:bg-[#022c22] px-4 text-[15px] font-medium text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
                   shakeButton && "animate-shake",
                   loginSuccess && "!bg-emerald-500 shadow-emerald-500/20",
                 )}
