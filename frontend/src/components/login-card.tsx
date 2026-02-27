@@ -263,14 +263,14 @@ export function LoginCard() {
 
                 <div className="flex items-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
                   <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
-                  <span className="text-xs font-bold tracking-widest text-emerald-400/80 uppercase">
+                  <span className="text-xs font-bold tracking-widest text-emerald-300 uppercase">
                     AI-POWERED PLATFORM
                   </span>
                 </div>
 
-                {/* Typography Confidence: text-4xl/5xl */}
+                {/* Typography Confidence: text-3xl/4xl */}
                 <h1
-                  className="text-4xl md:text-5xl font-extrabold text-white tracking-tight leading-tight animate-fade-in w-full text-balance text-start"
+                  className="text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-snug animate-fade-in w-full text-balance text-start"
                   style={{ opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards' }}
                 >
                   {t("auth.heroHeadline")}
@@ -278,7 +278,7 @@ export function LoginCard() {
 
                 {/* Decoupled from Glassmorphic Card */}
                 <p
-                  className="whitespace-pre-line text-lg text-emerald-100/70 font-medium max-w-md mt-2 leading-relaxed text-start animate-fade-in"
+                  className="whitespace-pre-line text-lg text-emerald-50/90 font-medium max-w-md mt-2 leading-relaxed text-start animate-fade-in"
                   style={{ opacity: 0, animationDelay: "250ms", animationFillMode: 'forwards' }}
                 >
                   {cleanTagline}
@@ -297,7 +297,7 @@ export function LoginCard() {
           <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in">
             <div className="flex items-center gap-3">
               <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
-              <span className="text-[11px] font-bold tracking-widest text-emerald-400/80 uppercase">AI-POWERED PLATFORM</span>
+              <span className="text-[11px] font-bold tracking-widest text-emerald-300 uppercase">AI-POWERED PLATFORM</span>
             </div>
             <p className="text-[22px] font-bold text-white/90 leading-snug">{cleanTagline}</p>
           </div>
@@ -310,7 +310,7 @@ export function LoginCard() {
           <div key={`mb-hero-${locale}`} className="relative z-10 flex items-center justify-between animate-fade-in">
             <div className="flex items-center gap-2">
               <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
-              <span className="text-[10px] font-bold tracking-widest text-emerald-400/80 uppercase">PLATFORM</span>
+              <span className="text-[10px] font-bold tracking-widest text-emerald-300 uppercase">PLATFORM</span>
             </div>
             <span className="inline-flex items-center gap-2 text-[12px] text-white/80 font-medium">
               <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-emerald-500" : "bg-red-500")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />{systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
@@ -322,13 +322,13 @@ export function LoginCard() {
         <section className="bg-surface px-8 py-10 sm:px-14 lg:w-1/2 flex flex-col justify-center relative min-h-[640px]">
 
           {/* Strict logical end-alignment for Language Switcher */}
-          <div className="absolute top-6 inset-inline-end-6 animate-fade-in z-50">
+          <div className="absolute top-6 inset-inline-end-6 animate-fade-in z-50 flex items-center gap-2 text-slate-500">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
             <LanguageToggle />
           </div>
 
           <div className="w-full max-w-sm mx-auto flex flex-col pt-8 lg:pt-0">
             <div key={`form-title-${locale}`} className="animate-fade-in mb-8">
-              <img src="/logo.png" alt="Smarlux" className="h-12 w-auto mb-6 object-contain bg-transparent" style={{ imageRendering: "auto" }} />
               <h3 className="text-[28px] font-bold text-slate-900 tracking-tight">{t("auth.title")}</h3>
               <p className="mt-2 text-[15px] font-medium text-slate-500">{t("auth.subtitle")}</p>
             </div>
