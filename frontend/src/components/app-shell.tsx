@@ -118,15 +118,14 @@ export function AppShell({ token, user }: AppShellProps) {
           "shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8),0_20px_40px_-10px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.2)]",
           "transition-all duration-700 overflow-hidden",
           collapsed ? "w-[72px]" : "w-[280px]",
-          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328]/95 via-[#051c15]/98 to-[#020d0a] backdrop-blur-[50px]",
+          "lg:translate-x-0 bg-gradient-to-b from-[#0a2920]/95 via-[#041611]/98 to-[#010806] backdrop-blur-[50px]",
         )}
         style={{
           transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
           transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
         }}
       >
-        {/* Subtle radial glass convex reflection layer */}
-        <div className="absolute inset-0 z-[-1] rounded-[3.5rem] bg-[radial-gradient(ellipse_at_top_start,rgba(255,255,255,0.1),transparent_50%)] pointer-events-none" />
+        {/* ── Removed the underlying radial bloop causing text-overlap shadow ── */}
 
         {/* Sidebar Header — brand + collapse toggle */}
         <div className={clsx(
@@ -136,11 +135,11 @@ export function AppShell({ token, user }: AppShellProps) {
           {!collapsed && (
             <div className="flex items-center gap-3">
               {/* Refined Typographic Logo */}
-              <span className="text-white text-2xl font-black tracking-tighter">Smarlux</span>
+              <span className="text-white text-3xl font-black tracking-tighter">Smarlux</span>
             </div>
           )}
           {collapsed && (
-            <span className="text-white text-2xl font-black tracking-tighter">S</span>
+            <span className="text-white text-3xl font-black tracking-tighter">S</span>
           )}
 
           {/* Toggle Button Clean Integration */}
@@ -171,13 +170,13 @@ export function AppShell({ token, user }: AppShellProps) {
                   "relative flex items-center gap-4 px-6 py-4 mx-4 mb-2 rounded-[24px] transition-all duration-700 text-start w-[calc(100%-32px)] group",
                   active
                     ? "bg-white/10 text-white font-semibold shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-md"
-                    : "text-white/60 hover:bg-white/5 hover:text-white/90",
+                    : "text-emerald-50/70 hover:bg-white/5 hover:text-white/95",
                   collapsed && "justify-center px-0 mx-4 w-auto"
                 )}
                 style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
               >
                 <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "text-emerald-400/80")} />
+                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "text-emerald-400")} />
                 </div>
                 {!collapsed && (
                   <span className="text-[15px] translate-y-[0.5px] font-medium">{item.label}</span>
