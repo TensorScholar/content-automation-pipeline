@@ -240,13 +240,13 @@ export function LoginCard() {
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-4 py-6" style={{ background: "radial-gradient(ellipse at 50% 40%, #F0F7F7 0%, #F0F2F5 70%)" }}>
       <div
         dir={direction} /* 100% Native RTL Layout Mirroring via DOM Engine */
-        className="w-full flex flex-col lg:flex-row overflow-hidden rounded-[24px] border border-black/[0.04] bg-surface"
+        className="w-full flex flex-col lg:flex-row overflow-hidden rounded-[24px] border border-black/[0.04] bg-[#FBFBFD]"
         style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)" }}
       >
 
         {/* ═══ HERO PANEL (Takes exactly 50% width on Desktop) ═══ */}
         <section
-          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#0d3328] via-[#051c15] to-[#020d0a]"
+          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#0f5132] via-[#064e3b] to-[#022c22]"
         >
           {/* Ghost Watermark Logo - Prominent */}
           <div className="absolute -bottom-32 -inset-inline-end-32 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
@@ -271,13 +271,13 @@ export function LoginCard() {
 
                 {/* Typography Confidence: text-3xl/4xl */}
                 <h1
-                  className="text-3xl md:text-4xl font-extrabold text-white/90 tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
+                  className="text-3xl md:text-4xl font-extrabold text-emerald-50/85 tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
                   style={{ opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards' }}
                 >
                   {t("auth.heroHeadline").split("·").length === 2 ? (
                     <>
                       {t("auth.heroHeadline").split("·")[0].trim()}
-                      <span className="mx-3 text-emerald-500/50 inline-block font-light">&middot;</span>
+                      <span className="mx-4 text-emerald-400/40 inline-block font-light">&middot;</span>
                       {t("auth.heroHeadline").split("·")[1].trim()}
                     </>
                   ) : (
@@ -287,7 +287,7 @@ export function LoginCard() {
 
                 {/* Decoupled from Glassmorphic Card */}
                 <p
-                  className="whitespace-pre-line text-lg text-emerald-50/90 font-medium max-w-md mt-2 leading-relaxed text-center animate-fade-in"
+                  className="whitespace-pre-line text-lg text-emerald-50/85 font-medium max-w-md mt-2 leading-relaxed text-center animate-fade-in"
                   style={{ opacity: 0, animationDelay: "250ms", animationFillMode: 'forwards' }}
                 >
                   {cleanTagline}
@@ -298,7 +298,7 @@ export function LoginCard() {
         </section>
 
         {/* ═══ MOBILE OVERRIDES ═══ */}
-        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#0d3328] via-[#051c15] to-[#020d0a]">
+        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#0f5132] via-[#064e3b] to-[#022c22]">
           <div className="absolute -bottom-16 -inset-inline-end-16 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
@@ -313,7 +313,7 @@ export function LoginCard() {
           </div>
         </section>
 
-        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#0d3328] via-[#051c15] to-[#020d0a]">
+        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#0f5132] via-[#064e3b] to-[#022c22]">
           <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
@@ -330,7 +330,7 @@ export function LoginCard() {
         </section>
 
         {/* ═══ FORM PANEL (Takes 50% width on Desktop, positioned purely by flex DOM logic) ═══ */}
-        <section className="bg-surface px-8 py-10 sm:px-14 lg:w-1/2 flex flex-col justify-center relative min-h-[640px]">
+        <section className="px-8 py-10 sm:px-14 lg:w-1/2 flex flex-col justify-center relative min-h-[640px]">
 
           {/* Strict logical end-alignment for Language Switcher */}
           <div className="absolute top-6 inset-inline-end-6 animate-fade-in z-50 flex items-center gap-2 text-slate-500">
@@ -366,9 +366,9 @@ export function LoginCard() {
                   aria-invalid={emailInvalid}
                   aria-label={t("auth.email")}
                   className={clsx(
-                    "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] text-slate-900 outline-none transition-all duration-200 text-start",
-                    "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50/50 focus:bg-white",
-                    emailInvalid ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.08)] bg-red-50/30" : "border-slate-200"
+                    "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] text-slate-900 outline-none transition-all duration-200 text-start bg-white",
+                    "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20",
+                    emailInvalid ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.08)] bg-red-50/30" : "border-slate-200/60"
                   )}
                   value={email}
                   onChange={e => setEmail(e.target.value)}
@@ -391,8 +391,8 @@ export function LoginCard() {
                     required
                     aria-label={t("auth.password")}
                     className={clsx(
-                      "auth-input h-[50px] w-full rounded-xl border px-4 pe-[48px] text-[15px] text-slate-900 outline-none transition-all duration-200 text-start",
-                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50/50 focus:bg-white border-slate-200"
+                      "auth-input h-[50px] w-full rounded-xl border px-4 pe-[48px] text-[15px] text-slate-900 outline-none transition-all duration-200 text-start bg-white",
+                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 border-slate-200/60"
                     )}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -437,7 +437,7 @@ export function LoginCard() {
                 type="submit"
                 disabled={submitting || cooldownRemaining > 0 || loginSuccess}
                 className={clsx(
-                  "animate-fade-in w-full rounded-xl bg-[#0d3328] hover:bg-[#0a271f] px-4 text-[15px] font-medium text-white/95 border border-white/10 shadow-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
+                  "animate-fade-in w-full rounded-xl bg-[#0f5132] hover:bg-[#0c4128] px-4 text-[15px] font-medium text-white/95 shadow-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
                   shakeButton && "animate-shake",
                   loginSuccess && "!bg-emerald-500 shadow-emerald-500/20",
                 )}
