@@ -110,7 +110,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
   // Fallback Translation Helper (Eradicate Leaking Keys)
   const safe_t = (key: string, fallback: string) => {
-    const val = t(key);
+    const val = t(key as any);
     return val && val !== key ? val : fallback;
   };
 

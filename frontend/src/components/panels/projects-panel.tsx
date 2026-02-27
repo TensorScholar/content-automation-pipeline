@@ -179,7 +179,7 @@ export function ProjectsPanel({
                 label={t("projects.domain")}
                 helperText={
                   <span className="flex gap-1">
-                    example.com ({t("common.without")} <span dir="ltr">https://</span>)
+                    example.com ({t("common.without" as any)} <span dir="ltr">https://</span>)
                   </span>
                 }
                 successText={domainValid === true ? t("projects.domainValid") : undefined}
@@ -323,7 +323,7 @@ export function ProjectsPanel({
                     label={t("projects.domain")}
                     helperText={
                       <span className="flex gap-1">
-                        example.com ({t("common.without")} <span dir="ltr">https://</span>)
+                        example.com ({t("common.without" as any)} <span dir="ltr">https://</span>)
                       </span>
                     }
                     successText={domainValid === true ? t("projects.domainValid") : undefined}

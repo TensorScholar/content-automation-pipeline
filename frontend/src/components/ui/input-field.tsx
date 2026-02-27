@@ -2,17 +2,22 @@
 import { forwardRef, useId } from "react";
 import clsx from "clsx";
 
-export interface InputFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> {
-    label: string;
-    helperText?: string;
+export interface InputFieldProps
+    extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size" | "prefix"> {
+    label?: string;
+    error?: boolean;
     errorText?: string;
     successText?: string;
+    helperText?: React.ReactNode;
+    prefix?: React.ReactNode;
+    suffix?: React.ReactNode;
+    fullWidth?: boolean;
     showCharCount?: boolean;
     inputSize?: "sm" | "md" | "lg";
 }
 
 export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function InputField(
-    { label, helperText, errorText, successText, showCharCount, maxLength, inputSize = "md", className, id: providedId, value, ...rest },
+    { label, helperText, showCharCount, errorText, successText, maxLength, inputSize = "md", className, id: providedId, value, prefix, suffix, fullWidth, ...rest },
     ref
 ) {
     const autoId = useId();
