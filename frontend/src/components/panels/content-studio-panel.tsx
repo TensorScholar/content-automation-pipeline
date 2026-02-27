@@ -87,6 +87,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const [structure, setStructure] = useState("standard");
   const [customStructure, setCustomStructure] = useState("");
   const [pov, setPov] = useState("second_person");
+  const [customPov, setCustomPov] = useState("");
   const [audience, setAudience] = useState("general");
   const [customAudience, setCustomAudience] = useState("");
 
@@ -117,7 +118,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const translateOptions = (opts: typeof TONE_OPTIONS) => opts.map(o => ({
     value: o.value,
     label: locale === "fa" ? o.fa : locale === "ar" ? o.ar : o.en
-  })).concat(opts === POV_OPTIONS ? [] : [{ value: "__custom__", label: safe_t("common.custom", "Custom") }]);
+  })).concat([{ value: "__custom__", label: safe_t("common.custom", "سفارشی") }]); // Hardcoded fallback for now since common.custom might not exist in dictionary
 
   const labelFor = (opts: typeof TONE_OPTIONS, val: string) => {
     const found = opts.find((o) => o.value === val);
@@ -180,7 +181,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
       sourceUrls.trim() ? `Source URLs:\n${sourceUrls.trim()}` : "",
       `Tone: ${resolvedTone}`,
       `Structure: ${resolvedStructure}`,
-      `Point of View: ${labelFor(POV_OPTIONS, pov)}`,
+      `Point of View: ${pov === "__custom__" ? customPov.trim() : labelFor(POV_OPTIONS, pov)}`,
       `Target audience: ${resolvedAudience}`,
       "After article generation, preserve social repurposing outputs.",
       "Ensure schema-friendly structure for FAQ/HowTo rich snippets."
@@ -316,33 +317,59 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     <div className="col-span-12 lg:col-span-6 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col gap-4">
                       <h2 className={HeaderClass}>{safe_t("studio.tonalDna", "Tonal DNA")}</h2>
                       
-                      <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 flex flex-col gap-0">
-                          <label className={LabelClass}>{safe_t("studio.tone", "Brand Tone")}</label>
-                          <select className={InputClass} value={tone} onChange={e => setTone(e.target.value)}>
-                            {translateOptions(TONE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
-                        </div>
-                        <div className="flex-1 flex flex-col gap-0">
-                          <label className={LabelClass}>{safe_t("studio.audience", "Target Audience")}</label>
-                          <select className={InputClass} value={audience} onChange={e => setAudience(e.target.value)}>
-                            {translateOptions(AUDIENCE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col md:flex-row gap-4">
+                          <div className="flex-1 flex flex-col gap-0 relative">
+                            <label className={LabelClass}>{safe_t("studio.tone", "Brand Tone")}</label>
+                            <select className={InputClass} value={tone} onChange={e => setTone(e.target.value)}>
+                              {translateOptions(TONE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                            {tone === "__custom__" && (
+                              <div className="mt-3 animate-fade-in">
+                                <input autoFocus placeholder="..." className={InputClass} value={customTone} onChange={e => setCustomTone(e.target.value)} />
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="flex-1 flex flex-col gap-0 relative">
+                            <label className={LabelClass}>{safe_t("studio.audience", "Target Audience")}</label>
+                            <select className={InputClass} value={audience} onChange={e => setAudience(e.target.value)}>
+                              {translateOptions(AUDIENCE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                            {audience === "__custom__" && (
+                              <div className="mt-3 animate-fade-in">
+                                <input autoFocus placeholder="..." className={InputClass} value={customAudience} onChange={e => setCustomAudience(e.target.value)} />
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 flex flex-col gap-0">
-                          <label className={LabelClass}>{safe_t("studio.structure", "Structure")}</label>
-                          <select className={InputClass} value={structure} onChange={e => setStructure(e.target.value)}>
-                            {translateOptions(STRUCTURE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
-                        </div>
-                        <div className="flex-1 flex flex-col gap-0">
-                          <label className={LabelClass}>{safe_t("studio.pointOfView", "Point of View")}</label>
-                          <select className={InputClass} value={pov} onChange={e => setPov(e.target.value)}>
-                            {translateOptions(POV_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col md:flex-row gap-4">
+                          <div className="flex-1 flex flex-col gap-0 relative">
+                            <label className={LabelClass}>{safe_t("studio.structure", "Structure")}</label>
+                            <select className={InputClass} value={structure} onChange={e => setStructure(e.target.value)}>
+                              {translateOptions(STRUCTURE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                            {structure === "__custom__" && (
+                              <div className="mt-3 animate-fade-in">
+                                <input autoFocus placeholder="..." className={InputClass} value={customStructure} onChange={e => setCustomStructure(e.target.value)} />
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="flex-1 flex flex-col gap-0 relative">
+                            <label className={LabelClass}>{safe_t("studio.pointOfView", "Point of View")}</label>
+                            <select className={InputClass} value={pov} onChange={e => setPov(e.target.value)}>
+                              {translateOptions(POV_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                            {pov === "__custom__" && (
+                              <div className="mt-3 animate-fade-in">
+                                <input autoFocus placeholder="..." className={InputClass} value={customPov} onChange={e => setCustomPov(e.target.value)} />
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>

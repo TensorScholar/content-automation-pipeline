@@ -81,6 +81,7 @@ export type MessageKey =
   | "common.email"
   | "common.role"
   | "common.date"
+  | "common.custom"
   | "common.showing"
   | "common.of"
   | "common.perPage"
@@ -229,6 +230,8 @@ export type MessageKey =
   | "studio.reference"
   | "studio.socialEmpty"
   | "studio.schemaEmpty"
+  | "studio.pointOfView"
+  | "studio.extraInstructions"
   /* ── Tasks ── */
   | "tasks.title"
   | "tasks.searchPlaceholder"
