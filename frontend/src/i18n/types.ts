@@ -222,6 +222,10 @@ export type MessageKey =
   | "studio.batchConfirmMsg"
   | "studio.batchEstCost"
   | "studio.batchPasteDetected"
+  | "studio.coreIdentity"
+  | "studio.tonalDna"
+  | "studio.parametersLimits"
+  | "studio.context"
   /* ── Tasks ── */
   | "tasks.title"
   | "tasks.searchPlaceholder"
