@@ -135,24 +135,25 @@ export function AppShell({ token, user }: AppShellProps) {
           {!collapsed && (
             <div className="flex items-center gap-3">
               {/* Refined Typographic Logo */}
-              <span className="text-white text-3xl font-black tracking-tighter">Smarlux</span>
+              <span className="text-white text-3xl font-black tracking-tighter truncate">Smarlux</span>
             </div>
           )}
           {collapsed && (
-            <span className="text-white text-3xl font-black tracking-tighter">S</span>
+            <span className="text-white text-3xl font-black tracking-tighter pt-0.5">S</span>
           )}
 
-          {/* Toggle Button Clean Integration */}
-          {!collapsed && (
-            <button
-              type="button"
-              onClick={() => setCollapsed(true)}
-              className="absolute inset-inline-end-6 hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 hover:text-white transition-all duration-500"
-              aria-label="Collapse sidebar"
-            >
-              <IconMenu className="h-4 w-4" />
-            </button>
-          )}
+          {/* Toggle Button Clean Integration (Visible in both states) */}
+          <button
+            type="button"
+            onClick={() => setCollapsed(!collapsed)}
+            className={clsx(
+              "hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 hover:text-white transition-all duration-500",
+              collapsed ? "absolute inset-x-0 mx-auto mt-20" : "shrink-0 ml-2"
+            )}
+            aria-label="Toggle sidebar"
+          >
+            <IconMenu className={clsx("h-4 w-4 transition-transform duration-500", collapsed && "rotate-180")} />
+          </button>
         </div>
 
         {/* Nav — Mathematical Axis alignment with VisionOS Spring interactions */}
