@@ -126,7 +126,7 @@ export function DashboardPanel({ token, projects, onNavigate }: DashboardPanelPr
     <section className="animate-fade-in">
 
       {/* ── Page title — aligned with content grid ── */}
-      <h2 className="text-[24px] font-bold text-gray-900 mb-5">{t("dashboard.title")}</h2>
+      <h2 className="text-2xl font-black text-gray-900 mb-8 mt-2 tracking-tight">{t("dashboard.title")}</h2>
 
       {/* ── Cost warnings ── */}
       {percent >= 95 && (
@@ -177,18 +177,18 @@ export function DashboardPanel({ token, projects, onNavigate }: DashboardPanelPr
                 {onboardingSteps.map((step, i) => (
                   <li key={step.key} className="flex items-center gap-3">
                     <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold ${step.done
-                        ? "bg-teal-600 text-white"
-                        : i === 0
-                          ? "border-2 border-teal-600 text-teal-600"
-                          : "border border-gray-200 text-gray-300"
+                      ? "bg-teal-600 text-white"
+                      : i === 0
+                        ? "border-2 border-teal-600 text-teal-600"
+                        : "border border-gray-200 text-gray-300"
                       }`}>
                       {step.done ? "✓" : ln(i + 1)}
                     </span>
                     <span className={`text-[14px] ${step.done
-                        ? "text-gray-400 line-through"
-                        : i === 0
-                          ? "text-gray-700 font-medium"
-                          : "text-gray-300"
+                      ? "text-gray-400 line-through"
+                      : i === 0
+                        ? "text-gray-700 font-medium"
+                        : "text-gray-300"
                       }`}>
                       {step.label}
                     </span>
@@ -286,8 +286,8 @@ export function DashboardPanel({ token, projects, onNavigate }: DashboardPanelPr
                   {onboardingSteps.map((step, i) => (
                     <li key={step.key} className="flex items-center gap-2.5">
                       <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${step.done
-                          ? "bg-teal-600 text-white"
-                          : "border border-gray-200 text-gray-400"
+                        ? "bg-teal-600 text-white"
+                        : "border border-gray-200 text-gray-400"
                         }`}>
                         {step.done ? "✓" : ln(i + 1)}
                       </span>

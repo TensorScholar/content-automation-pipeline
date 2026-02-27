@@ -97,7 +97,7 @@ export function AppShell({ token, user }: AppShellProps) {
     ? "translateX(0)"
     : direction === "rtl" ? "translateX(100%)" : "translateX(-100%)";
 
-  const sidebarW = collapsed ? 96 : 284; // Adjusted for the 24px lateral margin geometry
+  const sidebarW = collapsed ? 104 : 312; // 280px width + 32px lateral margin (m-8)
 
   return (
     <div className="min-h-screen bg-surface-secondary" dir={direction}>
@@ -110,14 +110,14 @@ export function AppShell({ token, user }: AppShellProps) {
         />
       )}
 
-      {/* ═══ SIDEBAR — FLOATING GLASS ISLAND ═══ */}
+      {/* ═══ SIDEBAR — VISIONOS LIQUID GLASS ═══ */}
       <aside
         className={clsx(
-          "fixed top-6 bottom-6 start-6 z-modal flex flex-col h-[calc(100vh-48px)]",
-          "rounded-[3rem] border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.5),0_10px_10px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.1)]",
+          "fixed top-8 bottom-8 start-8 z-modal flex flex-col h-[calc(100vh-64px)]",
+          "rounded-[3.5rem] border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_30px_60px_rgba(0,0,0,0.6)]",
           "transition-all duration-700 overflow-hidden",
-          collapsed ? "w-[72px]" : "w-[260px]",
-          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328]/95 via-[#051c15]/98 to-[#020d0a] backdrop-blur-2xl",
+          collapsed ? "w-[72px]" : "w-[280px]",
+          "lg:translate-x-0 bg-slate-900/80 backdrop-blur-[40px]",
         )}
         style={{
           transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
@@ -125,7 +125,7 @@ export function AppShell({ token, user }: AppShellProps) {
         }}
       >
         {/* Subtle radial glass convex reflection layer */}
-        <div className="absolute inset-0 z-[-1] rounded-[3rem] bg-[radial-gradient(ellipse_at_top_start,rgba(255,255,255,0.05),transparent_50%)] pointer-events-none" />
+        <div className="absolute inset-0 z-[-1] rounded-[3.5rem] bg-[radial-gradient(ellipse_at_top_start,rgba(255,255,255,0.1),transparent_50%)] pointer-events-none" />
 
         {/* Sidebar Header — brand + collapse toggle */}
         <div className={clsx(
@@ -134,13 +134,13 @@ export function AppShell({ token, user }: AppShellProps) {
         )}>
           {!collapsed && (
             <div className="flex items-center gap-3">
-              {/* Primary Brand Logo - Transparent */}
-              <img src="/logo.png" alt="Smarlux" className="h-[34px] w-auto shrink-0 object-contain invert text-emerald-50 drop-shadow-md" />
+              {/* Primary Brand Logo - Pure Transparent Mask */}
+              <img src="/logo.png" alt="Smarlux" className="h-[34px] w-auto shrink-0 object-contain brightness-0 invert opacity-100 drop-shadow-sm" />
               <span className="text-white font-black tracking-tighter text-xl pt-0.5">Smarlux</span>
             </div>
           )}
           {collapsed && (
-            <img src="/logo.png" alt="Smarlux" className="h-8 w-8 shrink-0 object-contain invert drop-shadow-md" />
+            <img src="/logo.png" alt="Smarlux" className="h-8 w-8 shrink-0 object-contain brightness-0 invert opacity-100 drop-shadow-sm" />
           )}
 
           {/* Toggle Button Clean Integration */}
@@ -148,7 +148,7 @@ export function AppShell({ token, user }: AppShellProps) {
             <button
               type="button"
               onClick={() => setCollapsed(true)}
-              className="absolute inset-inline-end-6 hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-emerald-100/50 hover:bg-white/10 hover:text-emerald-50 transition-all duration-500"
+              className="absolute inset-inline-end-6 hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 hover:text-white transition-all duration-500"
               aria-label="Collapse sidebar"
             >
               <IconMenu className="h-4 w-4" />
@@ -156,8 +156,8 @@ export function AppShell({ token, user }: AppShellProps) {
           )}
         </div>
 
-        {/* Nav — Strict Axis alignment with Premium Spring interactions */}
-        <nav className="flex-1 overflow-y-auto pt-2 space-y-1">
+        {/* Nav — Mathematical Axis alignment with VisionOS Spring interactions */}
+        <nav className="flex-1 overflow-y-auto pt-2 space-y-0">
           {navItems.map((item) => {
             const Icon = PAGE_ICONS[item.key];
             const active = page === item.key;
@@ -168,27 +168,19 @@ export function AppShell({ token, user }: AppShellProps) {
                 title={collapsed ? item.label : undefined}
                 onClick={() => navigate(item.key)}
                 className={clsx(
-                  "relative flex items-center gap-4 px-5 py-3 mx-4 rounded-2xl transition-all duration-700 text-start w-[calc(100%-32px)] group overflow-hidden",
+                  "relative flex items-center gap-4 px-6 py-4 mx-4 mb-2 rounded-[24px] transition-all duration-700 text-start w-[calc(100%-32px)] group",
                   active
-                    ? "bg-white/10 text-white font-medium shadow-sm"
-                    : "text-emerald-100/60 hover:bg-white/5 hover:text-emerald-50",
+                    ? "bg-white/10 text-white font-medium shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-md"
+                    : "text-white/60 hover:bg-white/5 hover:text-white",
                   collapsed && "justify-center px-0 mx-4 w-auto"
                 )}
                 style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
               >
-                {/* Active Indicator Pill (Left edge) */}
-                {active && !collapsed && (
-                  <span className="absolute inset-inline-start-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                )}
-
-                {/* Active Glass blur layer */}
-                {active && <div className="absolute inset-0 backdrop-blur-md z-[-1]" />}
-
                 <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <Icon className={clsx("h-5 w-5 transition-transform duration-700 group-hover:scale-110", active && "drop-shadow-md")} />
+                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active && "drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]")} />
                 </div>
                 {!collapsed && (
-                  <span className="text-[14px] truncate translate-y-[0.5px]">{item.label}</span>
+                  <span className="text-[15px] translate-y-[0.5px] font-medium">{item.label}</span>
                 )}
               </button>
             );
