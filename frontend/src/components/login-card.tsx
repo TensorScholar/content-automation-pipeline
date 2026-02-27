@@ -259,9 +259,9 @@ export function LoginCard() {
 
             <div className="flex flex-1 items-center justify-center">
               {/* Increased breathing room gap */}
-              <div className="flex flex-col items-start gap-6 max-w-lg w-full">
+              <div className="flex flex-col items-center text-center gap-6 max-w-lg w-full">
 
-                <div className="flex items-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
+                <div className="flex items-center justify-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
                   <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
                   <span className="text-xs font-bold tracking-widest text-emerald-300 uppercase">
                     AI-POWERED PLATFORM
@@ -270,7 +270,7 @@ export function LoginCard() {
 
                 {/* Typography Confidence: text-3xl/4xl */}
                 <h1
-                  className="text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-snug animate-fade-in w-full text-balance text-start"
+                  className="text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
                   style={{ opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards' }}
                 >
                   {t("auth.heroHeadline")}
@@ -278,7 +278,7 @@ export function LoginCard() {
 
                 {/* Decoupled from Glassmorphic Card */}
                 <p
-                  className="whitespace-pre-line text-lg text-emerald-50/90 font-medium max-w-md mt-2 leading-relaxed text-start animate-fade-in"
+                  className="whitespace-pre-line text-lg text-emerald-50/90 font-medium max-w-md mt-2 leading-relaxed text-center animate-fade-in"
                   style={{ opacity: 0, animationDelay: "250ms", animationFillMode: 'forwards' }}
                 >
                   {cleanTagline}
@@ -294,8 +294,8 @@ export function LoginCard() {
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <HeroMeshGradient />
-          <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in">
-            <div className="flex items-center gap-3">
+          <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in flex flex-col items-center text-center">
+            <div className="flex items-center justify-center gap-3">
               <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
               <span className="text-[11px] font-bold tracking-widest text-emerald-300 uppercase">AI-POWERED PLATFORM</span>
             </div>
@@ -307,8 +307,8 @@ export function LoginCard() {
           <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
-          <div key={`mb-hero-${locale}`} className="relative z-10 flex items-center justify-between animate-fade-in">
-            <div className="flex items-center gap-2">
+          <div key={`mb-hero-${locale}`} className="relative z-10 flex flex-col items-center justify-center gap-2 animate-fade-in text-center">
+            <div className="flex items-center justify-center gap-2">
               <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
               <span className="text-[10px] font-bold tracking-widest text-emerald-300 uppercase">PLATFORM</span>
             </div>
