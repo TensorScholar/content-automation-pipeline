@@ -9,16 +9,15 @@ import { LanguageToggle } from "./language-toggle";
 import { MessageKey } from "@/i18n/types";
 
 /* ═══════════════════════════════════════════════════════════════
-   Login Page v2 — Complete Redesign
-   Fixes: #1 brand Latin, #2 copy, #3 neutral borders, #4 error
-   severity, #5 RTL, #6 hero visual, #7 no duplicate brand,
-   #8 checkbox, #9 eye icon, #11 version, #13 subtitle,
-   #14 spacing, #15 hero centering, #16 system status,
-   #18 button states, #19 floating labels, #21 card shadow,
-   #22 page background
+   Login Page v3 — Apple/Linear SaaS Form Split
+   - STRICT RTL MACRO-LAYOUT: Uses flex-row to naturally flip sides.
+   - ACCESSIBILITY: Explicit labels above inputs; dropped floating tricks.
+   - RECOVERY ACTION: Added "Forgot Password?" below the password input.
+   - BREATHING ROOM: Increased hero banner line-heights and padding.
+   - BIDI PERFECTION: `inset-inline-end` vs `right`, no `order` classes.
    ═══════════════════════════════════════════════════════════════ */
 
-// ── Error resolution (#4 severity system) ─────────────────────
+// ── Error resolution severity system ──────────────────────────────
 
 type ErrorSeverity = "server" | "credentials" | "network";
 interface ApiLikeError { status: number; detail?: string; }
@@ -61,7 +60,7 @@ const SEVERITY_ICON: Record<ErrorSeverity, string> = {
 const FAILED_ATTEMPTS_LIMIT = 5;
 const COOLDOWN_SECONDS = 60;
 
-// ── SVG Icons (#9 enlarged to h-5 w-5) ───────────────────────
+// ── SVG Icons ───────────────────────────────────────────────────
 
 function EyeIcon() {
   return (
@@ -108,12 +107,11 @@ function upsertLink(rel: string, href: string, hrefLang?: string) {
   link.href = href;
 }
 
-// ── Flowing mesh gradient animation (#6 replace dot grid) ─────
+// ── Flowing mesh gradient animation ───────────────────────────
 
 function HeroMeshGradient() {
   return (
     <div className="absolute inset-0 overflow-hidden" aria-hidden>
-      {/* Slow-moving organic mesh gradient — 20s loop */}
       <div className="absolute inset-0" style={{
         background: `
           radial-gradient(ellipse 60% 50% at 20% 30%, rgba(14,110,110,0.35) 0%, transparent 70%),
@@ -122,7 +120,6 @@ function HeroMeshGradient() {
         `,
         animation: "hero-mesh-drift 20s ease-in-out infinite alternate",
       }} />
-      {/* Subtle node-line network */}
       <svg viewBox="0 0 520 280" className="absolute inset-0 h-full w-full opacity-[0.08]" fill="none" aria-hidden>
         <g stroke="white" strokeWidth="0.5">
           <path d="M48 44h86" /><path d="M184 44h74" /><path d="M304 44h80" />
@@ -146,7 +143,6 @@ function HeroMeshGradient() {
 export function LoginCard() {
   const { login } = useAuth();
   const { t, locale, direction } = useI18n();
-  const isRtl = direction === "rtl";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -162,14 +158,26 @@ export function LoginCard() {
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const errorTimerRef = useRef<number | null>(null);
 
-  // Email validation — #3 ONLY emailInvalid triggers red on email field
+  // Email validation — ONLY emailInvalid triggers red on email field
   const emailInvalid = emailTouched && email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const errorKey = authError && !errorDismissed ? getErrorKey(authError) : null;
   const localizedError = errorKey ? t(errorKey) : null;
   const errorSeverity = authError && !errorDismissed ? getErrorSeverity(authError) : null;
 
-  const cooldownText = useMemo(() => t("auth.cooldown", { seconds: cooldownRemaining }), [cooldownRemaining, t]);
+  const cooldownText = useMemo(() => t("auth.cooldown", { seconds: String(cooldownRemaining) }), [cooldownRemaining, t]);
+
+  // Clean Persian tagline formatting (replace zero with bullet)
+  const cleanTagline = useMemo(() => {
+    let text = t("auth.heroTagline");
+    return text ? text.replace(" 0 ", " • ") : text;
+  }, [t]);
+
+  // Safe fallback localization
+  const safe_t = (key: string, fallback: string) => {
+    const val = t(key as any);
+    return val && val !== key ? val : fallback;
+  };
 
   useEffect(() => {
     if (cooldownRemaining <= 0) return;
@@ -177,7 +185,7 @@ export function LoginCard() {
     return () => window.clearInterval(timer);
   }, [cooldownRemaining]);
 
-  // #4 Auto-dismiss non-critical errors after 8s
+  // Auto-dismiss non-critical errors after 8s
   useEffect(() => {
     if (!authError || errorDismissed) return;
     if (errorTimerRef.current) window.clearTimeout(errorTimerRef.current);
@@ -210,11 +218,9 @@ export function LoginCard() {
     try {
       await login(email, password, rememberMe);
       setFailedAttempts(0);
-      // #18 Success state — checkmark for 600ms then redirect
       setLoginSuccess(true);
     } catch (error) {
       setAuthError(error);
-      // #18 Error shake
       setShakeButton(true);
       window.setTimeout(() => setShakeButton(false), 400);
       setFailedAttempts(prev => {
@@ -227,143 +233,122 @@ export function LoginCard() {
     }
   };
 
-  const formDir = isRtl ? "rtl" : "ltr";
-  const formOrderClass = isRtl ? "lg:order-2" : "lg:order-1";
-  const heroOrderClass = isRtl ? "lg:order-1" : "lg:order-2";
-
-  // #16 Dynamic system status — red when there was a recent server error
+  // Dynamic system status — red when there was a recent server error
   const systemHealthy = !authError || getErrorSeverity(authError) !== "server";
 
   return (
-    /* #22 Page background — subtle teal-tinted radial gradient */
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-4 py-6" style={{ background: "radial-gradient(ellipse at 50% 40%, #F0F7F7 0%, #F0F2F5 70%)" }}>
-      {/* #21 Enhanced card shadow + subtle border */}
-      <div className="w-full overflow-hidden rounded-2xl border border-black/[0.04] bg-surface" style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)", borderRadius: 20 }}>
-        <div className="lg:grid lg:grid-cols-[1fr_1fr]">
+      <div
+        dir={direction} /* 100% Native RTL Layout Mirroring via DOM Engine */
+        className="w-full flex flex-col lg:flex-row overflow-hidden rounded-[24px] border border-black/[0.04] bg-surface"
+        style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)" }}
+      >
 
-          {/* ═══ HERO PANEL — Brand (#6 mesh, #7 brand only here, #15 centered) ═══ */}
-          <section
-            dir={formDir}
-            className={clsx(
-              "hero-gradient relative hidden min-h-[640px] overflow-hidden text-white lg:flex lg:flex-col",
-              heroOrderClass,
-            )}
-          >
-            <HeroMeshGradient />
+        {/* ═══ HERO PANEL (Takes exactly 50% width on Desktop) ═══ */}
+        <section
+          className="hero-gradient relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col"
+        >
+          <HeroMeshGradient />
 
-            <div key={`hero-${locale}`} className="relative z-10 flex h-full flex-col p-12" style={{ animation: "fade-in 200ms ease-in-out forwards" }}>
-              {/* Brand — ALWAYS Latin (#1) */}
-              <p className="text-body-sm font-semibold uppercase tracking-[0.18em]" style={{ color: "rgba(255,255,255,0.72)" }}>
-                SMARLUX CONTENT OS
-              </p>
+          <div key={`hero-${locale}`} className="relative z-10 flex h-full flex-col p-12 animate-fade-in">
+            {/* Brand — ALWAYS Latin */}
+            <p className="text-[12px] font-bold uppercase tracking-[0.18em]" style={{ color: "rgba(255,255,255,0.72)" }}>
+              SMARLUX CONTENT OS
+            </p>
 
-              {/* #15 Centered text block — premium visual treatment */}
-              <div className="flex flex-1 items-center justify-center">
-                <div className="space-y-6 text-center">
-                  {/* Decorative accent bar */}
-                  <div className="flex items-center justify-center gap-3" style={{ animation: "fade-in 400ms ease-out forwards", opacity: 0 }}>
-                    <span className="block h-[3px] w-10 rounded-full" style={{ background: "linear-gradient(90deg, #5EEAD4, rgba(94,234,212,0.2))" }} />
-                    <span className="text-[13px] font-medium uppercase tracking-[0.2em]" style={{ color: "rgba(94,234,212,0.8)" }}>
-                      AI-Powered Platform
-                    </span>
-                    <span className="block h-[3px] w-10 rounded-full" style={{ background: "linear-gradient(270deg, #5EEAD4, rgba(94,234,212,0.2))" }} />
-                  </div>
+            <div className="flex flex-1 items-center justify-center">
+              {/* Increased breathing room gap */}
+              <div className="flex flex-col items-center text-center gap-8 max-w-md w-full">
 
-                  {/* Gradient headline */}
-                  <h1
-                    className="text-[30px] font-extrabold leading-[1.2] tracking-wide text-white"
-                    style={{
-                      textShadow: "0 2px 24px rgba(94,234,212,0.3), 0 0 60px rgba(94,234,212,0.12)",
-                      animation: "fade-in 500ms 100ms ease-out forwards",
-                      opacity: 0,
-                    }}
-                  >
-                    {t("auth.heroHeadline")}
-                  </h1>
-
-                  {/* Tagline inside a subtle glass pill */}
-                  <div
-                    className="inline-block rounded-2xl px-5 py-3.5"
-                    style={{
-                      background: "rgba(255,255,255,0.06)",
-                      backdropFilter: "blur(8px)",
-                      WebkitBackdropFilter: "blur(8px)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      animation: "fade-in 500ms 250ms ease-out forwards",
-                      opacity: 0,
-                    }}
-                  >
-                    <p className="whitespace-pre-line text-[16px] leading-[1.9]" style={{ color: "rgba(255,255,255,0.82)" }}>
-                      {t("auth.heroTagline")}
-                    </p>
-                  </div>
+                <div className="flex items-center justify-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
+                  <span className="block h-[3px] w-10 rounded-full bg-gradient-to-r from-teal-400 to-teal-400/20" />
+                  <span className="text-[13px] font-bold uppercase tracking-[0.2em] text-teal-400/90">
+                    AI-Powered Platform
+                  </span>
+                  <span className="block h-[3px] w-10 rounded-full bg-gradient-to-l from-teal-400 to-teal-400/20" />
                 </div>
-              </div>
 
-              {/* #16 Dynamic system status with breathing pulse */}
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-2" style={{ color: "rgba(255,255,255,0.82)" }}>
-                  <span
-                    className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-success" : "bg-danger")}
-                    style={{ animation: "status-pulse 2s ease-in-out infinite" }}
-                    aria-hidden
-                  />
-                  <p className="text-body-sm">
-                    {systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
+                {/* Breathing Room: Use leading-snug instead of leading-[1.2] */}
+                <h1
+                  className="text-[32px] md:text-[36px] font-extrabold leading-snug tracking-wide text-white animate-fade-in w-full text-balance"
+                  style={{
+                    textShadow: "0 2px 24px rgba(94,234,212,0.3), 0 0 60px rgba(94,234,212,0.12)",
+                    opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards'
+                  }}
+                >
+                  {t("auth.heroHeadline")}
+                </h1>
+
+                {/* Breathing Room: Increased padding inside the glass card */}
+                <div
+                  className="inline-block rounded-[20px] px-8 py-5 animate-fade-in bg-white/5 backdrop-blur-md border border-white/10"
+                  style={{ opacity: 0, animationDelay: "250ms", animationFillMode: 'forwards' }}
+                >
+                  <p className="whitespace-pre-line text-[16px] leading-relaxed text-teal-50 font-medium">
+                    {cleanTagline}
                   </p>
                 </div>
-                {/* #11 Version — reduced opacity/size, separated */}
-                <p className="font-mono text-[11px]" style={{ opacity: 0.35, marginTop: 10 }}>
-                  {t("app.version")}
-                </p>
               </div>
             </div>
-          </section>
 
-          {/* ═══ HERO — Tablet ═══ */}
-          <section dir={formDir} className="hero-gradient relative hidden overflow-hidden border-b border-white/10 px-8 py-6 text-white md:block lg:hidden">
-            <HeroMeshGradient />
-            <div key={`tb-hero-${locale}`} className="relative z-10 space-y-2 animate-fade-in">
-              <p className="text-body-sm font-semibold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.72)" }}>SMARLUX CONTENT OS</p>
-              <p className="text-body-lg" style={{ color: "rgba(255,255,255,0.82)" }}>{t("auth.heroTagline")}</p>
+            {/* Dynamic system status with breathing pulse */}
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 text-white/80">
+                <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-emerald-500" : "bg-red-500")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />
+                <p className="text-body-sm font-medium">
+                  {systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
+                </p>
+              </div>
+              <p className="font-mono text-[11px] text-white/40 mt-2.5">
+                {t("app.version")}
+              </p>
             </div>
-          </section>
+          </div>
+        </section>
 
-          {/* ═══ HERO — Mobile ═══ */}
-          <section dir={formDir} className="hero-gradient relative overflow-hidden border-b border-white/10 px-5 py-4 text-white md:hidden">
-            <div key={`mb-hero-${locale}`} className="relative z-10 flex items-center justify-between animate-fade-in">
-              <p className="text-body-sm font-semibold uppercase tracking-[0.15em]" style={{ color: "rgba(255,255,255,0.82)" }}>SMARLUX CONTENT OS</p>
-              <span className="inline-flex items-center gap-2 text-body-sm" style={{ color: "rgba(255,255,255,0.82)" }}>
-                <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-success" : "bg-danger")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />{systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
-              </span>
+        {/* ═══ MOBILE OVERRIDES ═══ */}
+        <section className="hero-gradient relative hidden overflow-hidden border-b border-white/10 px-8 py-6 text-white md:block lg:hidden">
+          <HeroMeshGradient />
+          <div key={`tb-hero-${locale}`} className="relative z-10 space-y-2 animate-fade-in">
+            <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-white/70">SMARLUX CONTENT OS</p>
+            <p className="text-[18px] font-medium text-white/90">{cleanTagline}</p>
+          </div>
+        </section>
+
+        <section className="hero-gradient relative overflow-hidden border-b border-white/10 px-5 py-4 text-white md:hidden">
+          <div key={`mb-hero-${locale}`} className="relative z-10 flex items-center justify-between animate-fade-in">
+            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/80">SMARLUX CONTENT OS</p>
+            <span className="inline-flex items-center gap-2 text-[12px] text-white/80 font-medium">
+              <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-emerald-500" : "bg-red-500")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />{systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
+            </span>
+          </div>
+        </section>
+
+        {/* ═══ FORM PANEL (Takes 50% width on Desktop, positioned purely by flex DOM logic) ═══ */}
+        <section className="bg-surface px-8 py-10 sm:px-14 lg:w-1/2 flex flex-col justify-center relative min-h-[640px]">
+
+          {/* Strict logical end-alignment for Language Switcher */}
+          <div className="absolute top-6 inset-inline-end-6 animate-fade-in z-50">
+            <LanguageToggle />
+          </div>
+
+          <div className="w-full max-w-sm mx-auto flex flex-col pt-8 lg:pt-0">
+            <div key={`form-title-${locale}`} className="animate-fade-in mb-8">
+              <h3 className="text-[28px] font-bold text-slate-900 tracking-tight">{t("auth.title")}</h3>
+              <p className="mt-2 text-[15px] font-medium text-slate-500">{t("auth.subtitle")}</p>
             </div>
-          </section>
 
-          {/* ═══ FORM PANEL ═══ */}
-          <section dir={formDir} className={clsx("bg-surface px-7 py-10 sm:px-12", formOrderClass)}>
-            {/* #7 Remove duplicate brand, keep only LanguageToggle (#5 auto-mirrors via dir) */}
-            <div className="mb-6 flex items-center justify-end animate-fade-in">
-              <LanguageToggle />
-            </div>
+            <form method="POST" autoComplete="on" onSubmit={onSubmit} className="flex flex-col gap-5">
 
-            {/* #12 Warm heading + #13 subtitle */}
-            <div key={`form-title-${locale}`} className="animate-fade-in">
-              <h3 className="text-[28px] font-bold text-ink">{t("auth.title")}</h3>
-              <p className="mt-2 text-body-md text-ink-secondary">{t("auth.subtitle")}</p>
-            </div>
-
-            {/* #14 Consistent spacing scale: 24px between sections */}
-            <form method="POST" autoComplete="on" className="mt-8" onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-              {/* ── Error alert (#4 severity + dismiss + slide-in) ── */}
+              {/* ── Error alert ── */}
               {localizedError && errorSeverity && (
                 <div
-                  className={clsx("flex items-start gap-3 rounded-lg px-4 py-3", SEVERITY_STYLES[errorSeverity])}
+                  className={clsx("flex items-start gap-3 rounded-xl px-4 py-3 border", SEVERITY_STYLES[errorSeverity])}
                   role="alert"
                   style={{ animation: "login-slide-in 200ms ease-out" }}
                 >
                   <span className="shrink-0 text-[18px]" aria-hidden>{SEVERITY_ICON[errorSeverity]}</span>
-                  <p className="flex-1 text-body-md">{localizedError}</p>
+                  <p className="flex-1 text-[13px] font-medium">{localizedError}</p>
                   <button
                     type="button"
                     onClick={() => setErrorDismissed(true)}
@@ -376,114 +361,106 @@ export function LoginCard() {
               )}
 
               {cooldownRemaining > 0 && (
-                <div className="rounded-lg border-s-[4px] border-s-warning bg-warning/5 px-4 py-3">
-                  <p className="text-body-md text-ink-secondary">{cooldownText}</p>
+                <div className="rounded-xl border-s-[4px] border border-warning bg-warning/5 px-4 py-3">
+                  <p className="text-[13px] font-medium text-warning-700">{cooldownText}</p>
                 </div>
               )}
 
-              {/* Email field (#3 neutral borders — only emailInvalid triggers red, NOT server error) (#19 floating label) */}
-              <div className="animate-fade-in" style={{ animationDelay: "60ms" }}>
-                <div className="relative">
-                  <input
-                    id="login-email"
-                    type="email"
-                    dir="ltr"
-                    placeholder=" "
-                    autoComplete="username"
-                    required
-                    aria-invalid={emailInvalid}
-                    aria-label={t("auth.email")}
-                    className={clsx(
-                      "auth-input peer h-[52px] w-full rounded-xl border px-4 pb-2 pt-6 text-body-md text-ink outline-none transition-all duration-base text-left",
-                      "focus:border-brand focus:shadow-[0_0_0_3px_rgba(13,148,136,0.12)]",
-                      emailInvalid ? "border-danger shadow-[0_0_0_3px_rgba(239,68,68,0.08)]" : "border-border"
-                    )}
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    onBlur={() => setEmailTouched(true)}
-                  />
-                  <label htmlFor="login-email" className="pointer-events-none absolute start-4 top-1/2 -translate-y-1/2 text-body-md text-ink-secondary transition-all duration-base peer-focus:top-3.5 peer-focus:text-body-sm peer-focus:text-brand peer-[:not(:placeholder-shown)]:top-3.5 peer-[:not(:placeholder-shown)]:text-body-sm">
-                    {t("auth.email")}
-                  </label>
-                </div>
+              {/* ── Email Field (Cognitive Structure: Explicit Labels Above) ── */}
+              <div className="animate-fade-in flex flex-col gap-1.5" style={{ animationDelay: "60ms", animationFillMode: 'forwards', opacity: 0 }}>
+                <label htmlFor="login-email" className="text-[13px] font-semibold text-slate-700">{safe_t("auth.email", "Email Address")}</label>
+                <input
+                  id="login-email"
+                  type="email"
+                  dir="ltr"
+                  autoComplete="username"
+                  required
+                  aria-invalid={emailInvalid}
+                  aria-label={t("auth.email")}
+                  className={clsx(
+                    "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] text-slate-900 outline-none transition-all duration-200 text-start",
+                    "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50 focus:bg-white",
+                    emailInvalid ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.08)] bg-red-50/30" : "border-slate-200"
+                  )}
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  onBlur={() => setEmailTouched(true)}
+                />
                 {emailInvalid && (
-                  <p className="mt-1.5 flex items-center gap-1 text-body-sm text-danger"><span aria-hidden>⚠</span>{t("auth.invalidEmail")}</p>
+                  <p className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-red-500"><span aria-hidden>⚠</span>{t("auth.invalidEmail")}</p>
                 )}
               </div>
 
-              {/* Password field (#9 eye icon polished: 20px, hover/active states) */}
-              <div className="animate-fade-in" style={{ animationDelay: "130ms" }}>
+              {/* ── Password Field (Cognitive Structure) ── */}
+              <div className="animate-fade-in flex flex-col gap-1.5" style={{ animationDelay: "130ms", animationFillMode: 'forwards', opacity: 0 }}>
+                <label htmlFor="login-password" className="text-[13px] font-semibold text-slate-700">{safe_t("auth.password", "Password")}</label>
                 <div className="relative">
+                  <input
+                    id="login-password"
+                    type={showPassword ? "text" : "password"}
+                    dir="ltr"
+                    autoComplete="current-password"
+                    required
+                    aria-label={t("auth.password")}
+                    className={clsx(
+                      "auth-input h-[50px] w-full rounded-xl border px-4 pe-[48px] text-[15px] text-slate-900 outline-none transition-all duration-200 text-start",
+                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 bg-slate-50 focus:bg-white border-slate-200"
+                    )}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                  />
+                  {/* BIDI Precise: inset-inline-end guarantees RTL mirror */}
                   <button
                     type="button"
-                    className={clsx(
-                      "absolute end-3 top-1/2 z-10 -translate-y-1/2 rounded-lg p-1.5 transition-colors duration-fast",
-                      showPassword
-                        ? "text-brand"
-                        : "text-ink-secondary hover:text-ink"
-                    )}
+                    className="absolute inset-inline-end-3 top-1/2 z-10 -translate-y-1/2 rounded-lg p-1.5 transition-colors duration-200 text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
                     onClick={() => setShowPassword(o => !o)}
                     aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                   >
                     {showPassword ? <EyeOffIcon /> : <EyeIcon />}
                   </button>
-                  <input
-                    id="login-password"
-                    type={showPassword ? "text" : "password"}
-                    dir="ltr"
-                    placeholder=" "
-                    autoComplete="current-password"
-                    required
-                    aria-invalid={false}
-                    aria-label={t("auth.password")}
-                    className="auth-input peer h-[52px] w-full rounded-xl border border-border px-4 pb-2 pt-6 pe-12 text-body-md text-ink outline-none transition-all duration-base text-left focus:border-brand focus:shadow-[0_0_0_3px_rgba(13,148,136,0.12)]"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                  />
-                  <label htmlFor="login-password" className="pointer-events-none absolute start-4 top-1/2 -translate-y-1/2 text-body-md text-ink-secondary transition-all duration-base peer-focus:top-3.5 peer-focus:text-body-sm peer-focus:text-brand peer-[:not(:placeholder-shown)]:top-3.5 peer-[:not(:placeholder-shown)]:text-body-sm">
-                    {t("auth.password")}
-                  </label>
                 </div>
               </div>
 
-              {/* #8 Remember me — custom 20×20px checkbox with animation */}
-              <label className="animate-fade-in inline-flex cursor-pointer items-center gap-3 text-body-md text-ink-secondary" style={{ animationDelay: "190ms" }}>
-                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="peer sr-only" />
-                <span className="grid h-5 w-5 shrink-0 place-items-center rounded border border-border bg-white text-white transition-all duration-fast peer-checked:border-brand peer-checked:bg-brand peer-focus-visible:ring-2 peer-focus-visible:ring-brand/30 peer-focus-visible:ring-offset-1">
-                  <CheckIcon />
-                </span>
-                <span>{t("auth.rememberMe")}</span>
-              </label>
+              {/* ── Recovery & Utility Row (Apple SaaS Tier) ── */}
+              <div className="animate-fade-in flex items-center justify-between mt-1" style={{ animationDelay: "190ms", animationFillMode: 'forwards', opacity: 0 }}>
+                {/* Remember me logical property lock (gap-2 forces inline-start text) */}
+                <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[13px] font-medium text-slate-600 group">
+                  <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="peer sr-only" />
+                  <span className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-md border-[1.5px] border-slate-300 bg-white text-white transition-all duration-200 peer-checked:border-teal-600 peer-checked:bg-teal-600 peer-focus-visible:ring-2 peer-focus-visible:ring-teal-600/30 group-hover:border-teal-500">
+                    <CheckIcon />
+                  </span>
+                  <span>{t("auth.rememberMe")}</span>
+                </label>
 
-              {/* ⚠ NO "Forgot Password" link — intentionally omitted per spec */}
+                {/* New Forgot Password Link */}
+                <button type="button" className="text-[13px] font-semibold text-teal-600 hover:text-teal-700 hover:underline hover:underline-offset-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:rounded-sm">
+                  {safe_t("auth.forgotPassword", "Forgot password?")}
+                </button>
+              </div>
 
-              {/* Submit (#18 loading/success/error states) */}
+              {/* ── Submit CTA ── */}
               <button
                 type="submit"
                 disabled={submitting || cooldownRemaining > 0 || loginSuccess}
                 className={clsx(
-                  "animate-fade-in w-full rounded-xl bg-brand px-4 text-body-md font-semibold text-white shadow-sm transition-all duration-base hover:bg-brand-hover active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60",
+                  "animate-fade-in w-full rounded-xl bg-teal-700 px-4 text-[15px] font-medium text-white shadow-md shadow-teal-700/20 transition-all duration-200 hover:bg-teal-800 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
                   shakeButton && "animate-shake",
-                  loginSuccess && "!bg-emerald-500",
+                  loginSuccess && "!bg-emerald-500 shadow-emerald-500/20",
                 )}
-                style={{ height: 52, animationDelay: "250ms", marginTop: 4 }}
+                style={{ height: 50, animationDelay: "250ms", marginTop: 12, animationFillMode: 'forwards', opacity: 0 }}
               >
                 {loginSuccess ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5 8 14.5 16 6.5" /></svg>
-                  </span>
+                  <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5 8 14.5 16 6.5" /></svg>
                 ) : submitting ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    {t("auth.submitting")}
-                  </span>
+                  <><span className="h-[22px] w-[22px] rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0" />{t("auth.submitting")}</>
                 ) : (
-                  t("auth.submit")
+                  safe_t("auth.submit", "Sign In")
                 )}
               </button>
+
             </form>
-          </section>
-        </div>
+          </div>
+        </section>
       </div>
     </main>
   );
