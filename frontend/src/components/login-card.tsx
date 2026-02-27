@@ -246,10 +246,10 @@ export function LoginCard() {
 
         {/* ═══ HERO PANEL (Takes exactly 50% width on Desktop) ═══ */}
         <section
-          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#0f5132] via-[#064e3b] to-[#022c22]"
+          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#044731] via-[#022c22] to-[#01120c]"
         >
           {/* Ghost Watermark Logo - Prominent */}
-          <div className="absolute -bottom-32 -inset-inline-end-32 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+          <div className="absolute -bottom-32 -inset-inline-end-24 w-[130%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
 
@@ -258,8 +258,8 @@ export function LoginCard() {
           <div key={`hero-${locale}`} className="relative z-10 flex h-full flex-col p-12 lg:px-16 animate-fade-in">
 
             <div className="flex flex-1 items-center justify-center">
-              {/* Increased breathing room gap */}
-              <div className="flex flex-col items-center text-center gap-6 max-w-lg w-full">
+              {/* Increased breathing room gap and optical elevation */}
+              <div className="flex flex-col items-center text-center gap-6 max-w-lg w-full mb-16">
 
                 <div className="flex items-center justify-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
                   <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400/20 to-emerald-400" />
@@ -298,8 +298,8 @@ export function LoginCard() {
         </section>
 
         {/* ═══ MOBILE OVERRIDES ═══ */}
-        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#0f5132] via-[#064e3b] to-[#022c22]">
-          <div className="absolute -bottom-16 -inset-inline-end-16 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#044731] via-[#022c22] to-[#01120c]">
+          <div className="absolute -bottom-16 -inset-inline-end-24 w-[130%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <HeroMeshGradient />
@@ -313,8 +313,8 @@ export function LoginCard() {
           </div>
         </section>
 
-        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#0f5132] via-[#064e3b] to-[#022c22]">
-          <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#044731] via-[#022c22] to-[#01120c]">
+          <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <div key={`mb-hero-${locale}`} className="relative z-10 flex flex-col items-center justify-center gap-2 animate-fade-in text-center">
@@ -333,7 +333,7 @@ export function LoginCard() {
         <section className="px-8 py-10 sm:px-14 lg:w-1/2 flex flex-col justify-center relative min-h-[640px]">
 
           {/* Strict logical end-alignment for Language Switcher */}
-          <div className="absolute top-6 inset-inline-end-6 animate-fade-in z-50 flex items-center gap-2 text-slate-500">
+          <div className="absolute top-8 inset-inline-end-8 animate-fade-in z-50 flex items-center gap-2 text-slate-500">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
             <LanguageToggle />
           </div>
@@ -437,7 +437,7 @@ export function LoginCard() {
                 type="submit"
                 disabled={submitting || cooldownRemaining > 0 || loginSuccess}
                 className={clsx(
-                  "animate-fade-in w-full rounded-xl bg-[#0f5132] hover:bg-[#0c4128] px-4 text-[15px] font-medium text-white/95 shadow-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
+                  "animate-fade-in w-full rounded-xl bg-[#044731] hover:bg-[#033624] px-4 text-[15px] font-medium text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
                   shakeButton && "animate-shake",
                   loginSuccess && "!bg-emerald-500 shadow-emerald-500/20",
                 )}
