@@ -227,12 +227,12 @@ export function TasksPanel({ token }: TasksPanelProps) {
       </div>
 
       {/* Interactive KPI Filter Chips */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { key: "all", label: t("tasks.kpiTotal") || "Total", value: kpis.total, bg: "bg-white", text: "text-gray-900", border: "border-gray-200", icon: <svg className="w-5 h-5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg> },
-          { key: "SUCCESS", label: t("tasks.kpiSuccess") || "Success", value: kpis.success, bg: "bg-emerald-50/50", text: "text-emerald-700", border: "border-emerald-200", icon: <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-          { key: "FAILURE", label: t("tasks.kpiFailure") || "Failed", value: kpis.failure, bg: "bg-red-50/50", text: "text-red-700", border: "border-red-200", icon: <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-          { key: "RUNNING", label: t("tasks.kpiRunning") || "Running", value: kpis.running, bg: "bg-teal-50/50", text: "text-teal-700", border: "border-teal-200", icon: <svg className="w-5 h-5 text-teal-500 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
+          { key: "all", label: t("tasks.kpiTotal") || "Total", value: kpis.total, bg: "bg-white", text: "text-slate-900", border: "border-slate-200", icon: <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg> },
+          { key: "SUCCESS", label: t("tasks.kpiSuccess") || "Success", value: kpis.success, bg: "bg-emerald-50/40", text: "text-emerald-700", border: "border-emerald-200", icon: <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+          { key: "FAILURE", label: t("tasks.kpiFailure") || "Failed", value: kpis.failure, bg: "bg-red-50/40", text: "text-red-700", border: "border-red-200", icon: <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+          { key: "RUNNING", label: t("tasks.kpiRunning") || "Running", value: kpis.running, bg: "bg-teal-50/40", text: "text-teal-700", border: "border-teal-200", icon: <svg className="w-5 h-5 text-teal-500 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
         ].map((card) => {
           const isActive = filter === card.key;
           return (
@@ -240,16 +240,20 @@ export function TasksPanel({ token }: TasksPanelProps) {
               key={card.key}
               onClick={() => setFilter(card.key as FilterTab)}
               className={clsx(
-                "relative group flex flex-col justify-between text-start rounded-3xl p-5 border shadow-sm transition-all duration-300 outline-none focus:ring-4 focus:ring-teal-500/20",
+                "relative group flex flex-col justify-between text-start rounded-3xl p-5 border shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all duration-300 outline-none focus:ring-4 focus:ring-teal-500/20",
                 card.bg, card.border,
-                isActive ? "ring-2 ring-offset-2 ring-slate-400 -translate-y-1 shadow-md bg-white" : "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+                isActive ? "ring-2 ring-offset-2 ring-slate-400 -translate-y-1 shadow-md bg-white" : "hover:-translate-y-0.5 hover:shadow-md cursor-pointer bg-white/50 backdrop-blur-xl"
               )}
             >
-              <div className="flex w-full items-center justify-between mb-3">
-                <span className="text-[12px] font-bold uppercase tracking-widest text-slate-500">{card.label}</span>
-                {card.icon}
+              <div className="flex w-full items-start justify-end mb-8">
+                <div className="p-2.5 rounded-2xl bg-white shadow-sm border border-black/5">
+                  {card.icon}
+                </div>
               </div>
-              <span className={clsx("text-[32px] font-black leading-none", card.text)}>{card.value}</span>
+              <div className="flex w-full items-end justify-between">
+                <span className={clsx("text-[36px] font-black leading-none tracking-tight", card.text)}>{card.value}</span>
+                <span className="text-[13px] font-bold uppercase tracking-widest text-slate-500 text-end pb-1">{card.label}</span>
+              </div>
             </button>
           )
         })}
@@ -270,7 +274,7 @@ export function TasksPanel({ token }: TasksPanelProps) {
         <div className="relative w-full md:w-80 shrink-0 group">
           <input
             placeholder={t("tasks.searchPlaceholder") || "Search tasks..."}
-            className="w-full rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-sm pis-12 pie-4 py-3 text-[14px] font-medium text-slate-700 outline-none transition-all focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
+            className="w-full rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-sm ps-11 pie-4 py-3 text-[14px] font-medium text-slate-700 outline-none transition-all focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
