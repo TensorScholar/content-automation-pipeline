@@ -396,7 +396,7 @@ export type MessageKey =
   | "monitoring.dailyCost" | "monitoring.grafana" | "monitoring.grafanaSetup"
   | "monitoring.healthApi" | "monitoring.healthCelery" | "monitoring.healthDb"
   | "monitoring.healthRedis" | "monitoring.lastCheck" | "monitoring.ofThreshold"
-  | "monitoring.utilized"
+  | "monitoring.utilized" | "monitoring.statusUnknown"
   | "projects.created" | "projects.customVertical" | "projects.deleted" | "projects.list"
   | "studio.audienceCustom" | "studio.batchProgress" | "studio.bulkTab"
   | "studio.bulkTopics" | "studio.bulkTopicsPlaceholder" | "studio.competitor"

@@ -109,7 +109,11 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
                     <span className="text-body-sm font-semibold uppercase tracking-wider text-ink-secondary">{label}</span>
                   </div>
                   <StatusBadge variant={isHealthy ? "success" : "error"} dot={false}>
-                    {statusStr}
+                    {statusStr.toLowerCase() === "unknown"
+                      ? (t("monitoring.statusUnknown") || "Unknown")
+                      : statusStr.toLowerCase().includes("healthy")
+                        ? (t("monitoring.healthy") || "Healthy")
+                        : statusStr}
                   </StatusBadge>
                 </>
               )}
