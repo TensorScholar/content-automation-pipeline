@@ -246,7 +246,7 @@ export function LoginCard() {
 
         {/* ═══ HERO PANEL (Takes exactly 50% width on Desktop) ═══ */}
         <section
-          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]"
+          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#0d3328] via-[#051c15] to-[#020d0a]"
         >
           {/* Ghost Watermark Logo - Prominent */}
           <div className="absolute -bottom-32 -inset-inline-end-32 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
@@ -271,10 +271,18 @@ export function LoginCard() {
 
                 {/* Typography Confidence: text-3xl/4xl */}
                 <h1
-                  className="text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
+                  className="text-3xl md:text-4xl font-extrabold text-white/90 tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
                   style={{ opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards' }}
                 >
-                  {t("auth.heroHeadline")}
+                  {t("auth.heroHeadline").split("·").length === 2 ? (
+                    <>
+                      {t("auth.heroHeadline").split("·")[0].trim()}
+                      <span className="mx-3 text-emerald-500/50 inline-block font-light">&middot;</span>
+                      {t("auth.heroHeadline").split("·")[1].trim()}
+                    </>
+                  ) : (
+                    t("auth.heroHeadline")
+                  )}
                 </h1>
 
                 {/* Decoupled from Glassmorphic Card */}
@@ -290,7 +298,7 @@ export function LoginCard() {
         </section>
 
         {/* ═══ MOBILE OVERRIDES ═══ */}
-        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
+        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#0d3328] via-[#051c15] to-[#020d0a]">
           <div className="absolute -bottom-16 -inset-inline-end-16 w-[130%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
@@ -305,7 +313,7 @@ export function LoginCard() {
           </div>
         </section>
 
-        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
+        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#0d3328] via-[#051c15] to-[#020d0a]">
           <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-10 mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
@@ -338,25 +346,7 @@ export function LoginCard() {
 
             <form method="POST" autoComplete="on" onSubmit={onSubmit} className="flex flex-col gap-5">
 
-              {/* ── Error alert ── */}
-              {localizedError && errorSeverity && (
-                <div
-                  className={clsx("flex items-start gap-3 rounded-xl px-4 py-3 border", SEVERITY_STYLES[errorSeverity])}
-                  role="alert"
-                  style={{ animation: "login-slide-in 200ms ease-out" }}
-                >
-                  <span className="shrink-0 text-[18px]" aria-hidden>{SEVERITY_ICON[errorSeverity]}</span>
-                  <p className="flex-1 text-[13px] font-medium">{localizedError}</p>
-                  <button
-                    type="button"
-                    onClick={() => setErrorDismissed(true)}
-                    className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100"
-                    aria-label={t("auth.dismiss")}
-                  >
-                    <DismissIcon />
-                  </button>
-                </div>
-              )}
+              {/* ── Error alert removed from here ── */}
 
               {cooldownRemaining > 0 && (
                 <div className="rounded-xl border-s-[4px] border border-warning bg-warning/5 px-4 py-3">
@@ -431,16 +421,27 @@ export function LoginCard() {
                 </label>
               </div>
 
+              {/* ── Error alert (Moved down here and redesigned) ── */}
+              {localizedError && errorSeverity && (
+                <div
+                  className="flex items-center gap-2 p-3 rounded-lg bg-red-50/50 border border-red-100/50 my-1 animate-fade-in"
+                  role="alert"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-red-500 h-4 w-4" aria-hidden><circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" /></svg>
+                  <p className="text-sm font-medium text-red-600">{localizedError}</p>
+                </div>
+              )}
+
               {/* ── Submit CTA ── */}
               <button
                 type="submit"
                 disabled={submitting || cooldownRemaining > 0 || loginSuccess}
                 className={clsx(
-                  "animate-fade-in w-full rounded-xl bg-[#064e3b] hover:bg-[#022c22] px-4 text-[15px] font-medium text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
+                  "animate-fade-in w-full rounded-xl bg-[#0d3328] hover:bg-[#0a271f] px-4 text-[15px] font-medium text-white/95 border border-white/10 shadow-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
                   shakeButton && "animate-shake",
                   loginSuccess && "!bg-emerald-500 shadow-emerald-500/20",
                 )}
-                style={{ height: 50, animationDelay: "250ms", marginTop: 12, animationFillMode: 'forwards', opacity: 0 }}
+                style={{ height: 50, animationDelay: "250ms", marginTop: localizedError ? 4 : 12, animationFillMode: 'forwards', opacity: 0 }}
               >
                 {loginSuccess ? (
                   <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5 8 14.5 16 6.5" /></svg>
