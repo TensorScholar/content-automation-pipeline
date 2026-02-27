@@ -248,8 +248,8 @@ export function LoginCard() {
         <section
           className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#044731] via-[#022c22] to-[#01120c]"
         >
-          {/* Ghost Watermark Logo - Prominent */}
-          <div className="absolute -bottom-32 -inset-inline-end-24 w-[130%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+          {/* Ghost Watermark Logo - Pushed to the corner */}
+          <div className="absolute -bottom-32 -inset-inline-end-32 w-[140%] opacity-[0.03] mix-blend-overlay pointer-events-none z-0" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
 
@@ -355,34 +355,36 @@ export function LoginCard() {
               )}
 
               {/* ── Email Field (Cognitive Structure: Explicit Labels Above) ── */}
-              <div className="animate-fade-in flex flex-col gap-1.5" style={{ animationDelay: "60ms", animationFillMode: 'forwards', opacity: 0 }}>
+              <div className="animate-fade-in flex flex-col items-start gap-1.5 w-full" style={{ animationDelay: "60ms", animationFillMode: 'forwards', opacity: 0 }}>
                 <label htmlFor="login-email" className="text-[13px] font-semibold text-slate-700">{safe_t("auth.email", "Email Address")}</label>
-                <input
-                  id="login-email"
-                  type="email"
-                  dir="ltr"
-                  autoComplete="username"
-                  required
-                  aria-invalid={emailInvalid}
-                  aria-label={t("auth.email")}
-                  className={clsx(
-                    "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] text-slate-900 outline-none transition-all duration-200 text-start bg-white",
-                    "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20",
-                    emailInvalid ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.08)] bg-red-50/30" : "border-slate-200/60"
-                  )}
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  onBlur={() => setEmailTouched(true)}
-                />
+                <div className="relative w-full flex items-center">
+                  <input
+                    id="login-email"
+                    type="email"
+                    dir="ltr"
+                    autoComplete="username"
+                    required
+                    aria-invalid={emailInvalid}
+                    aria-label={t("auth.email")}
+                    className={clsx(
+                      "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] text-slate-900 outline-none transition-all duration-200 text-start bg-white",
+                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20",
+                      emailInvalid ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.08)] bg-red-50/30" : "border-slate-200/60"
+                    )}
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    onBlur={() => setEmailTouched(true)}
+                  />
+                </div>
                 {emailInvalid && (
                   <p className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-red-500"><span aria-hidden>⚠</span>{t("auth.invalidEmail")}</p>
                 )}
               </div>
 
               {/* ── Password Field (Cognitive Structure) ── */}
-              <div className="animate-fade-in flex flex-col gap-1.5" style={{ animationDelay: "130ms", animationFillMode: 'forwards', opacity: 0 }}>
+              <div className="animate-fade-in flex flex-col items-start gap-1.5 w-full" style={{ animationDelay: "130ms", animationFillMode: 'forwards', opacity: 0 }}>
                 <label htmlFor="login-password" className="text-[13px] font-semibold text-slate-700">{safe_t("auth.password", "Password")}</label>
-                <div className="relative">
+                <div className="relative w-full flex items-center">
                   <input
                     id="login-password"
                     type={showPassword ? "text" : "password"}
@@ -392,7 +394,8 @@ export function LoginCard() {
                     aria-label={t("auth.password")}
                     className={clsx(
                       "auth-input h-[50px] w-full rounded-xl border px-4 pe-[48px] text-[15px] text-slate-900 outline-none transition-all duration-200 text-start bg-white",
-                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 border-slate-200/60"
+                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 border-slate-200/60",
+                      "[&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden lg:[&::-webkit-contacts-auto-fill-button]:hidden"
                     )}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -400,7 +403,7 @@ export function LoginCard() {
                   {/* BIDI Precise: inset-inline-end guarantees RTL mirror */}
                   <button
                     type="button"
-                    className="absolute inset-inline-end-3 top-1/2 z-10 -translate-y-1/2 rounded-lg p-1.5 transition-colors duration-200 text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
+                    className="absolute inset-inline-end-3 text-slate-400 hover:text-slate-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white rounded-lg p-1.5 z-10"
                     onClick={() => setShowPassword(o => !o)}
                     aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                   >
@@ -411,8 +414,8 @@ export function LoginCard() {
 
               {/* ── Recovery & Utility Row (Absolute Minimalism) ── */}
               <div className="animate-fade-in flex items-center justify-start mt-1" style={{ animationDelay: "190ms", animationFillMode: 'forwards', opacity: 0 }}>
-                {/* Remember me logical property lock (gap-2 forces inline-start text) */}
-                <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[13px] font-medium text-slate-600 group">
+                {/* Remember me logical property lock (strict flex container) */}
+                <label className="flex items-center gap-2 cursor-pointer select-none group w-full text-[13px] font-medium text-slate-600">
                   <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="peer sr-only" />
                   <span className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-md border-[1.5px] border-slate-300 bg-white text-white transition-all duration-200 peer-checked:border-teal-600 peer-checked:bg-teal-600 peer-focus-visible:ring-2 peer-focus-visible:ring-teal-600/30 group-hover:border-teal-500">
                     <CheckIcon />
