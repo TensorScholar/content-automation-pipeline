@@ -110,14 +110,15 @@ export function AppShell({ token, user }: AppShellProps) {
         />
       )}
 
-      {/* ═══ SIDEBAR — VISIONOS LIQUID GLASS ═══ */}
+      {/* ═══ SIDEBAR — 9D LIQUID EMERALD GLASS ═══ */}
       <aside
         className={clsx(
           "fixed top-8 bottom-8 start-8 z-modal flex flex-col h-[calc(100vh-64px)]",
-          "rounded-[3.5rem] border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_30px_60px_rgba(0,0,0,0.6)]",
+          "rounded-[3.5rem] border-t border-l border-white/20 border-b border-r border-black/40",
+          "shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8),0_20px_40px_-10px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.2)]",
           "transition-all duration-700 overflow-hidden",
           collapsed ? "w-[72px]" : "w-[280px]",
-          "lg:translate-x-0 bg-slate-900/80 backdrop-blur-[40px]",
+          "lg:translate-x-0 bg-gradient-to-b from-[#0d3328]/95 via-[#051c15]/98 to-[#020d0a] backdrop-blur-[50px]",
         )}
         style={{
           transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
@@ -134,13 +135,23 @@ export function AppShell({ token, user }: AppShellProps) {
         )}>
           {!collapsed && (
             <div className="flex items-center gap-3">
-              {/* Primary Brand Logo - Pure Transparent Mask */}
-              <img src="/logo.png" alt="Smarlux" className="h-[34px] w-auto shrink-0 object-contain brightness-0 invert opacity-100 drop-shadow-sm" />
+              {/* Primary Brand Logo - CSS Filter Purification */}
+              <img
+                src="/logo.png"
+                alt="Smarlux"
+                className="h-[34px] w-auto shrink-0 object-contain drop-shadow-sm"
+                style={{ filter: "brightness(0) invert(1)", mixBlendMode: "lighten" }}
+              />
               <span className="text-white font-black tracking-tighter text-xl pt-0.5">Smarlux</span>
             </div>
           )}
           {collapsed && (
-            <img src="/logo.png" alt="Smarlux" className="h-8 w-8 shrink-0 object-contain brightness-0 invert opacity-100 drop-shadow-sm" />
+            <img
+              src="/logo.png"
+              alt="Smarlux"
+              className="h-8 w-8 shrink-0 object-contain drop-shadow-sm"
+              style={{ filter: "brightness(0) invert(1)", mixBlendMode: "lighten" }}
+            />
           )}
 
           {/* Toggle Button Clean Integration */}
@@ -190,16 +201,16 @@ export function AppShell({ token, user }: AppShellProps) {
         {/* Dynamic Footer Section (Card-in-Card style) */}
         <div className="mt-auto px-0 pb-6 flex flex-col gap-2">
 
-          {/* Project Selector — Recessed Card within a Card */}
-          <div className={clsx("w-auto bg-black/30 rounded-2xl p-4 mx-4 mb-2 border border-white/5", collapsed && "hidden")}>
+          {/* Project Selector — Recessed Carved-in Panel */}
+          <div className={clsx("w-auto bg-black/40 rounded-3xl p-4 mx-5 mb-5 border border-white/5 shadow-inner", collapsed && "hidden")}>
             <select
               disabled={projectsLoading || projects.length === 0}
               title={t("shell.activeProject")}
-              className="w-full rounded-xl bg-transparent text-[13px] font-medium text-emerald-50 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-500 disabled:opacity-50 appearance-none cursor-pointer RTL-caret"
+              className="w-full rounded-xl bg-transparent text-[13px] font-medium text-emerald-50 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-700 disabled:opacity-50 appearance-none cursor-pointer RTL-caret"
               value={selectedProjectId ?? ""}
               onChange={(e) => setSelectedProjectId(e.target.value || null)}
             >
-              {projects.length === 0 && <option value="" className="bg-slate-900">{t("shell.noProject")}</option>}
+              {projects.length === 0 && <option value="" className="bg-transparent">{t("shell.noProject")}</option>}
               {projects.map((p) => (
                 <option key={p.id} value={p.id} className="bg-slate-900 font-sans">{p.name}</option>
               ))}
