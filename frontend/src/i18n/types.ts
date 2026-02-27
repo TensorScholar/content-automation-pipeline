@@ -230,6 +230,7 @@ export type MessageKey =
   | "studio.reference"
   | "studio.socialEmpty"
   | "studio.schemaEmpty"
+  | "studio.maxTopics"
   | "studio.pointOfView"
   | "studio.extraInstructions"
   /* ── Tasks ── */

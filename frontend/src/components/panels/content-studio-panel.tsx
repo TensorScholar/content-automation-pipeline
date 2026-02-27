@@ -259,14 +259,14 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
           {/* Apple Segmented Tab Control Header (Fixed) */}
           <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-200/50 bg-white/40 shrink-0 z-10 backdrop-blur-xl">
 
-            <div className="inline-flex bg-slate-200/50 p-1 rounded-full backdrop-blur-md">
+            <div className="inline-flex bg-slate-200/50 p-1 rounded-full backdrop-blur-md w-full sm:w-auto">
               {tabEntries.map((entry) => (
                 <button
                   type="button"
                   key={entry.key}
                   onClick={() => setActiveTab(entry.key)}
                   className={clsx(
-                    "px-6 py-2 rounded-full text-[13px] font-bold transition-all duration-300 whitespace-nowrap",
+                    "px-6 py-2 rounded-full text-[13px] font-bold transition-all duration-300 whitespace-nowrap flex-1 sm:flex-none",
                     activeTab === entry.key
                       ? "bg-white text-slate-900 shadow-sm"
                       : "bg-transparent text-slate-500 hover:text-slate-700"
@@ -277,7 +277,6 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
               ))}
             </div>
 
-            <h1 className="text-[14px] font-black text-slate-400 tracking-widest uppercase truncate hidden sm:block">{safe_t("studio.title", "CONTENT STUDIO")}</h1>
           </div>
 
           <div className="flex-1 overflow-y-auto w-full">
@@ -291,12 +290,12 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     {/* BOX 1: Core Identity */}
                     <div className="col-span-12 lg:col-span-6 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col gap-4">
                       <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "Core Identity")}</h2>
-                      
+
                       <div className="flex flex-col gap-0">
                         <label className={LabelClass}>{safe_t("studio.articleTopic", "Article Topic")} <span className="text-red-500">*</span></label>
                         <input required className={InputClass} value={topic} onChange={e => setTopic(e.target.value)} />
                       </div>
-                      
+
                       <div className="flex flex-col md:flex-row gap-4">
                         <div className="flex-1 flex flex-col gap-0">
                           <label className={LabelClass}>{safe_t("studio.primaryKeyword", "Primary Keyword")} <span className="text-red-500">*</span></label>
@@ -316,7 +315,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     {/* BOX 2: Tonal DNA */}
                     <div className="col-span-12 lg:col-span-6 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col gap-4">
                       <h2 className={HeaderClass}>{safe_t("studio.tonalDna", "Tonal DNA")}</h2>
-                      
+
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col md:flex-row gap-4">
                           <div className="flex-1 flex flex-col gap-0 relative">
@@ -330,7 +329,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                               </div>
                             )}
                           </div>
-                          
+
                           <div className="flex-1 flex flex-col gap-0 relative">
                             <label className={LabelClass}>{safe_t("studio.audience", "Target Audience")}</label>
                             <select className={InputClass} value={audience} onChange={e => setAudience(e.target.value)}>
@@ -358,7 +357,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                               </div>
                             )}
                           </div>
-                          
+
                           <div className="flex-1 flex flex-col gap-0 relative">
                             <label className={LabelClass}>{safe_t("studio.pointOfView", "Point of View")}</label>
                             <select className={InputClass} value={pov} onChange={e => setPov(e.target.value)}>
@@ -390,7 +389,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     {/* BOX 4: Parameters & Action */}
                     <div className="col-span-12 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col gap-6">
                       <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "Parameters & Limits")}</h2>
-                      
+
                       <div className="flex flex-col md:flex-row gap-8">
                         {/* Sliders Area */}
                         <div className="flex-1 flex flex-col gap-6">
@@ -440,8 +439,8 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                   <div className="col-span-12 lg:col-span-8 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col">
                     <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "Core Identity")}</h2>
                     <div className="flex flex-col gap-0 flex-1">
-                      <label className={LabelClass}>{safe_t("studio.bulkTopics", "Topics (One per line)")}</label>
-                      <textarea required className={clsx(InputClass, "resize-none flex-1 min-h-[300px]")} value={bulkTopics} onChange={e => setBulkTopics(e.target.value)} />
+                      <label className={LabelClass}>{safe_t("studio.batchTopics", "Topics (One per line)")}</label>
+                      <textarea required className={clsx(InputClass, "resize-none flex-1 min-h-[300px]")} placeholder={safe_t("studio.batchTopicsPlaceholder", "Topic 1\nTopic 2\nTopic 3")} value={bulkTopics} onChange={e => setBulkTopics(e.target.value)} />
                       <p className="text-[12px] font-bold text-slate-400 mt-2">{safe_t("studio.maxTopics", "Max 20 topics allowed.")}</p>
                     </div>
                   </div>
@@ -450,15 +449,15 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     <div>
                       <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "Parameters")}</h2>
                       <div className="flex flex-col gap-0 mt-4">
-                        <label className={LabelClass}>{safe_t("studio.sharedKeyword", "Shared Keyword")}</label>
+                        <label className={LabelClass}>{safe_t("studio.batchSharedKeyword", "Shared Keyword")}</label>
                         <input className={InputClass} value={bulkKeyword} onChange={e => setBulkKeyword(e.target.value)} />
                       </div>
                     </div>
-                    
+
                     <div className="mt-8">
                       <button type="submit" disabled={!selectedProjectId || bulkSubmitting} className="w-full bg-slate-900 text-white font-bold text-[14px] py-4 rounded-xl shadow-[0_8px_30px_rgba(15,23,42,0.3)] hover:bg-black transition-all duration-300 transform hover:-translate-y-1 flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none">
                         {bulkSubmitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
-                        {safe_t("studio.submitBatch", "Submit Batch Pipeline")}
+                        {safe_t("studio.batchSubmit", "Submit Batch Pipeline")}
                       </button>
                     </div>
                   </div>
@@ -470,7 +469,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
               <div className="p-6 lg:p-8 max-w-5xl mx-auto w-full">
                 <div className="flex flex-col items-center justify-center min-h-[300px] bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm p-8 text-center">
                   <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                   </div>
                   <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.socialTab", "Social Media Repurpose")}</h3>
                   <p className="text-[14px] font-medium text-slate-500 max-w-sm">{socialTaskId ? "Processing social hooks..." : safe_t("studio.socialEmpty", "Social outputs and threads will appear here automatically upon article generation completion.")}</p>
@@ -482,7 +481,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
               <div className="p-6 lg:p-8 max-w-5xl mx-auto w-full">
                 <div className="flex flex-col items-center justify-center min-h-[300px] bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm p-8 text-center">
                   <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                    <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
                   </div>
                   <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.schemaTab", "SEO & Schema Metadata")}</h3>
                   <p className="text-[14px] font-medium text-slate-500 max-w-sm">{safe_t("studio.schemaEmpty", "Auto JSON-LD metadata and FAQ rich snippets will be injected into this pipeline.")}</p>
