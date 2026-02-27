@@ -231,33 +231,43 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
     { key: "schema", label: safe_t("studio.tabSchema", "Schema Injection") },
   ];
 
-  const TextareaClass = "w-full rounded-xl bg-slate-50 shadow-inner border-0 p-3.5 text-[13px] text-slate-900 outline-none transition-all duration-200 focus:bg-white focus:ring-2 focus:ring-emerald-600/20 resize-none";
+  const InputClass = clsx(
+    "w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-xl px-4 py-3 transition-all text-[14px] outline-none",
+    locale === 'fa' || locale === 'ar' ? "font-normal" : ""
+  );
+
+  const LabelClass = clsx(
+    "text-[12px] font-bold text-slate-700 max-w-max leading-none mb-1.5",
+    locale === 'fa' || locale === 'ar' ? "font-medium" : ""
+  );
+
+  const HeaderClass = "text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2 border-b border-slate-100 pb-2";
 
   return (
-    <section className="animate-fade-in relative flex items-start justify-center p-4 md:p-8 min-h-[calc(100vh-64px)] overflow-hidden w-full bg-[#FBFBFD]">
+    <section className="animate-fade-in relative flex justify-center w-full min-h-[calc(100vh-64px)] bg-[#F2F2F7]">
 
-      {/* ── Dynamic Layout Wrapper: Shift to grid only if Tasks are visible ── */}
+      {/* ── Dynamic Layout Wrapper ── */}
       <div className={clsx(
-        "w-full h-[calc(100vh-120px)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] grid gap-6 overflow-hidden",
-        taskStatus || batchStatus ? "grid-cols-1 xl:grid-cols-[1fr_360px] max-w-7xl" : "grid-cols-1 max-w-[1400px] mx-auto"
+        "w-full h-[calc(100vh-48px)] my-6 mx-6 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] grid gap-6",
+        taskStatus || batchStatus ? "grid-cols-1 xl:grid-cols-[1fr_360px] max-w-7xl" : "grid-cols-1 max-w-[1400px]"
       )}>
 
-        {/* ── Elite Spatial Material ── */}
-        <article className="flex relative flex-col bg-slate-50/60 backdrop-blur-2xl border border-white/40 shadow-xl overflow-hidden min-w-0 w-full h-full rounded-[2.5rem] p-6 lg:p-8">
+        {/* ── Apple Spatial Material Canvas ── */}
+        <article className="flex relative flex-col bg-white/60 backdrop-blur-3xl border border-white/60 shadow-[0_20px_40px_rgba(0,0,0,0.04)] overflow-hidden w-full h-full rounded-[3rem] p-8">
 
           {/* Apple Segmented Tab Control Header */}
-          <div className="flex items-center justify-between pb-6 gap-6">
+          <div className="flex items-center justify-between pb-2 shrink-0 border-b border-slate-200/50 mb-4 px-2">
 
-            <div className="inline-flex rounded-full bg-slate-200/50 p-1.5 shadow-inner">
+            <div className="inline-flex bg-slate-200/50 p-1.5 rounded-full backdrop-blur-md">
               {tabEntries.map((entry) => (
                 <button
                   type="button"
                   key={entry.key}
                   onClick={() => setActiveTab(entry.key)}
                   className={clsx(
-                    "text-[13px] font-bold px-6 py-2 rounded-full transition-all duration-300 ease-out whitespace-nowrap",
+                    "px-6 py-2 rounded-full text-sm font-semibold transition-all duration-300 whitespace-nowrap",
                     activeTab === entry.key
-                      ? "bg-white text-emerald-900 shadow-sm"
+                      ? "bg-white text-slate-900 shadow-md"
                       : "bg-transparent text-slate-500 hover:text-slate-700"
                   )}
                 >
@@ -271,136 +281,140 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
           <div className="flex-1 overflow-hidden relative">
             {activeTab === "generate" && (
-              <form onSubmit={onSubmitGenerate} className="h-full relative pb-16">
+              <form onSubmit={onSubmitGenerate} className="h-full flex flex-col">
 
                 {/* ── BENTO GRID ── */}
-                <div className="grid grid-cols-12 gap-5 h-full overflow-y-auto no-scrollbar pb-8">
+                <div className="grid grid-cols-12 gap-6 flex-grow overflow-y-auto no-scrollbar pb-6 px-2">
 
-                  {/* LEFT COLUMN: Core Identity & Context */}
-                  <div className="col-span-12 lg:col-span-7 bg-white/80 border border-slate-100 shadow-sm rounded-3xl p-6 flex flex-col gap-6">
+                  {/* BOX 1: Core Identity */}
+                  <div className="col-span-12 lg:col-span-7 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl p-6 flex flex-col gap-4">
+                    <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "CORE IDENTITY")}</h2>
                     
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">{safe_t("studio.coreIdentity", "CORE IDENTITY")}</h2>
-                    
-                    <div className="grid gap-4">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.articleTopic", "Article Topic")} <span className="text-red-500">*</span></label>
-                        <input required className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={topic} onChange={e => setTopic(e.target.value)} />
-                      </div>
-                      <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 flex flex-col gap-1.5">
-                          <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.primaryKeyword", "Primary Keyword")} <span className="text-red-500">*</span></label>
-                          <input required className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={keyword} onChange={e => setKeyword(e.target.value)} />
-                        </div>
-                        <div className="flex-1 flex flex-col gap-1.5">
-                          <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.language", "Language")}</label>
-                          <select className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={language} onChange={e => setLanguage(e.target.value as any)}>
-                            <option value="fa">Persian (RTL)</option>
-                            <option value="ar">Arabic (RTL)</option>
-                            <option value="en">English (LTR)</option>
-                          </select>
-                        </div>
-                      </div>
+                    <div className="flex flex-col gap-0">
+                      <label className={LabelClass}>{safe_t("studio.articleTopic", "Article Topic")} <span className="text-red-500">*</span></label>
+                      <input required className={InputClass} value={topic} onChange={e => setTopic(e.target.value)} />
                     </div>
-
-                    <div className="flex-1 min-h-[1rem]"></div>
                     
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">{safe_t("studio.context", "CONTEXT")}</h2>
-                    <div className="flex flex-col gap-4">
-                      <input placeholder="https://" className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] font-mono outline-none focus:ring-2 focus:ring-emerald-600/20" value={competitorUrl} onChange={e => setCompetitorUrl(e.target.value)} dir="ltr" />
-                      <textarea placeholder="- Focus on XYZ..." className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] h-20 resize-none outline-none focus:ring-2 focus:ring-emerald-600/20" value={extraInstructions} onChange={e => setExtraInstructions(e.target.value)} />
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <div className="flex-1 flex flex-col gap-0">
+                        <label className={LabelClass}>{safe_t("studio.primaryKeyword", "Primary Keyword")} <span className="text-red-500">*</span></label>
+                        <input required className={InputClass} value={keyword} onChange={e => setKeyword(e.target.value)} />
+                      </div>
+                      <div className="flex-1 flex flex-col gap-0">
+                        <label className={LabelClass}>{safe_t("studio.language", "Language")}</label>
+                        <select className={InputClass} value={language} onChange={e => setLanguage(e.target.value as any)}>
+                          <option value="fa">Persian (RTL)</option>
+                          <option value="ar">Arabic (RTL)</option>
+                          <option value="en">English (LTR)</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
 
-                  {/* RIGHT COLUMN: Tonal DNA & Parameters */}
-                  <div className="col-span-12 lg:col-span-5 bg-white/80 border border-slate-100 shadow-sm rounded-3xl p-6 flex flex-col gap-6">
+                  {/* BOX 2: Tonal DNA */}
+                  <div className="col-span-12 lg:col-span-5 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl p-6 flex flex-col gap-4">
+                    <h2 className={HeaderClass}>{safe_t("studio.tonalDna", "TONAL DNA")}</h2>
                     
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">{safe_t("studio.tonalDna", "TONAL DNA")}</h2>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.tone", "Brand Tone")}</label>
-                        <select className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={tone} onChange={e => setTone(e.target.value)}>
-                          {translateOptions(TONE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.structure", "Structure")}</label>
-                        <select className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={structure} onChange={e => setStructure(e.target.value)}>
+                    <div className="flex flex-col gap-0">
+                      <label className={LabelClass}>{safe_t("studio.tone", "Brand Tone")}</label>
+                      <select className={InputClass} value={tone} onChange={e => setTone(e.target.value)}>
+                        {translateOptions(TONE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <div className="flex-1 flex flex-col gap-0">
+                        <label className={LabelClass}>{safe_t("studio.structure", "Structure")}</label>
+                        <select className={InputClass} value={structure} onChange={e => setStructure(e.target.value)}>
                           {translateOptions(STRUCTURE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.pointOfView", "POV")}</label>
-                        <select className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={pov} onChange={e => setPov(e.target.value)}>
+                      <div className="flex-1 flex flex-col gap-0">
+                        <label className={LabelClass}>{safe_t("studio.pointOfView", "POV")}</label>
+                        <select className={InputClass} value={pov} onChange={e => setPov(e.target.value)}>
                           {translateOptions(POV_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.audience", "Target")}</label>
-                        <select className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={audience} onChange={e => setAudience(e.target.value)}>
-                          {translateOptions(AUDIENCE_OPTIONS).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 min-h-[1rem]"></div>
-
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">{safe_t("studio.parametersLimits", "PARAMETERS")}</h2>
-                    <div className="flex flex-col gap-5">
-                      <div className="flex gap-4">
-                        <div className="flex-1 flex flex-col gap-1.5">
-                          <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.wordCountMin", "Min Words")}</label>
-                          <input type="number" className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={wordCountMin} onChange={e => setWordCountMin(e.target.value)} dir="ltr" />
-                        </div>
-                        <div className="flex-1 flex flex-col gap-1.5">
-                          <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.wordCountMax", "Max Words")}</label>
-                          <input type="number" className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={wordCountMax} onChange={e => setWordCountMax(e.target.value)} dir="ltr" />
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between pb-1">
-                          <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.creativity", "Creativity")}</label>
-                          <span className="text-[11px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">{temperature.toFixed(1)}</span>
-                        </div>
-                        <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} className="w-full h-1.5 mt-2 rounded-full appearance-none bg-slate-200 accent-emerald-600 outline-none" dir="ltr" />
                       </div>
                     </div>
                   </div>
 
-                </div>
+                  {/* BOX 3: Additional Context */}
+                  <div className="col-span-12 lg:col-span-8 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl p-6 flex flex-col gap-4">
+                    <h2 className={HeaderClass}>{safe_t("studio.context", "CONTEXT")}</h2>
+                    <div className="flex flex-col gap-0">
+                      <label className={LabelClass}>{safe_t("studio.competitor", "Competitor URL")}</label>
+                      <input placeholder="https://" className={clsx(InputClass, "font-mono text-[13px]")} value={competitorUrl} onChange={e => setCompetitorUrl(e.target.value)} dir="ltr" />
+                    </div>
+                    <div className="flex flex-col gap-0">
+                      <label className={LabelClass}>{safe_t("studio.extraInstructions", "Extra Instructions")}</label>
+                      <textarea rows={2} placeholder="- Focus on XYZ..." className={clsx(InputClass, "resize-none h-[74px]")} value={extraInstructions} onChange={e => setExtraInstructions(e.target.value)} />
+                    </div>
+                  </div>
 
-                {/* ── Fixed Bottom-Inline-End Primary CTA ── */}
-                <div className="absolute bottom-2 inline-end-2 z-10 w-full sm:w-auto">
-                  <button
-                    type="submit"
-                    disabled={!selectedProjectId || submitting}
-                    className="w-full sm:w-64 bg-emerald-700 text-white font-bold text-[14px] py-4 rounded-2xl shadow-[0_8px_30px_rgba(4,71,49,0.3)] hover:bg-emerald-800 transition-all duration-300 transform hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none flex items-center justify-center gap-2"
-                  >
-                    {submitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
-                    {safe_t("studio.generate", "Generate Article")}
-                  </button>
+                  {/* BOX 4: Action & Parameters */}
+                  <div className="col-span-12 lg:col-span-4 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl p-6 flex flex-col justify-between">
+                    <div>
+                      <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "PARAMETERS")}</h2>
+                      <div className="flex flex-col gap-4">
+                        <div className="flex gap-4">
+                          <div className="flex-1 flex flex-col gap-0">
+                            <label className={LabelClass}>{safe_t("studio.wordCountMin", "Min Words")}</label>
+                            <input type="number" className={InputClass} value={wordCountMin} onChange={e => setWordCountMin(e.target.value)} dir="ltr" />
+                          </div>
+                          <div className="flex-1 flex flex-col gap-0">
+                            <label className={LabelClass}>{safe_t("studio.wordCountMax", "Max Words")}</label>
+                            <input type="number" className={InputClass} value={wordCountMax} onChange={e => setWordCountMax(e.target.value)} dir="ltr" />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5 pt-2">
+                          <div className="flex items-center justify-between pb-1">
+                            <label className={LabelClass}>{safe_t("studio.creativity", "Creativity")}</label>
+                            <span className="text-[11px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">{temperature.toFixed(1)}</span>
+                          </div>
+                          <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} className="w-full h-1.5 mt-1 rounded-full appearance-none bg-slate-200 accent-emerald-600 outline-none" dir="ltr" />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-6">
+                      <button
+                        type="submit"
+                        disabled={!selectedProjectId || submitting}
+                        className="w-full bg-gradient-to-r from-emerald-800 to-emerald-950 text-white font-bold py-4 rounded-2xl shadow-[0_8px_20px_rgba(4,71,49,0.3)] hover:-translate-y-1 hover:shadow-[0_12px_25px_rgba(4,71,49,0.4)] active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none"
+                      >
+                        {submitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
+                        {safe_t("studio.generate", "Generate Article")}
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
 
               </form>
             )}
 
             {activeTab === "bulk" && (
-              <div className="p-4 space-y-6 h-full overflow-y-auto pb-24">
-                <form onSubmit={onSubmitBatch} className="space-y-6 grid grid-cols-12 gap-6">
-                  <div className="col-span-12 xl:col-span-8 bg-white/80 border border-slate-100 shadow-sm rounded-3xl p-6">
-                    <div className="flex flex-col gap-2 h-full">
-                      <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.bulkTopics", "Topics (One per line)")}</label>
-                      <textarea required className={clsx(TextareaClass, "flex-1 min-h-[300px]")} value={bulkTopics} onChange={e => setBulkTopics(e.target.value)} />
-                      <p className="text-[11px] font-bold text-slate-400 max-w-max leading-none">{safe_t("studio.maxTopics", "Max 20 topics allowed.")}</p>
+              <div className="h-full flex flex-col pb-8">
+                <form onSubmit={onSubmitBatch} className="grid grid-cols-12 gap-6 flex-grow overflow-y-auto no-scrollbar px-2">
+                  <div className="col-span-12 lg:col-span-8 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl p-6 flex flex-col">
+                    <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "CORE IDENTITY")}</h2>
+                    <div className="flex flex-col gap-0 flex-1">
+                      <label className={LabelClass}>{safe_t("studio.bulkTopics", "Topics (One per line)")}</label>
+                      <textarea required className={clsx(InputClass, "resize-none flex-1 min-h-[200px]")} value={bulkTopics} onChange={e => setBulkTopics(e.target.value)} />
+                      <p className="text-[11px] font-bold text-slate-400 mt-2">{safe_t("studio.maxTopics", "Max 20 topics allowed.")}</p>
                     </div>
                   </div>
 
-                  <div className="col-span-12 xl:col-span-4 bg-white/80 border border-slate-100 shadow-sm rounded-3xl p-6 flex flex-col gap-6">
-                    <div className="flex flex-col gap-2">
-                      <label className="text-[12px] font-bold text-slate-700 max-w-max leading-none">{safe_t("studio.sharedKeyword", "Shared Global Keyword")}</label>
-                      <input className="w-full bg-slate-50 shadow-inner border-0 rounded-xl p-3.5 text-[13px] outline-none focus:ring-2 focus:ring-emerald-600/20" value={bulkKeyword} onChange={e => setBulkKeyword(e.target.value)} />
+                  <div className="col-span-12 lg:col-span-4 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl p-6 flex flex-col justify-between">
+                    <div>
+                      <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "PARAMETERS")}</h2>
+                      <div className="flex flex-col gap-0 mt-2">
+                        <label className={LabelClass}>{safe_t("studio.sharedKeyword", "Shared Keyword")}</label>
+                        <input className={InputClass} value={bulkKeyword} onChange={e => setBulkKeyword(e.target.value)} />
+                      </div>
                     </div>
                     
-                    <div className="mt-auto">
+                    <div className="mt-8">
                       <button type="submit" disabled={!selectedProjectId || bulkSubmitting} className="w-full bg-slate-900 text-white font-bold text-[14px] py-4 rounded-2xl shadow-[0_8px_30px_rgba(15,23,42,0.3)] hover:bg-black transition-all duration-300 transform hover:-translate-y-1 flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none">
                         {bulkSubmitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
                         {safe_t("studio.submitBatch", "Submit Batch Pipeline")}
@@ -412,16 +426,16 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
             )}
 
             {activeTab === "social" && (
-              <div className="p-6 bg-white/80 rounded-3xl shadow-sm border border-slate-100 h-full">
-                <h3 className="text-[16px] font-bold text-slate-900 tracking-tight mb-2">{safe_t("studio.socialTab", "Social Output")}</h3>
-                <p className="text-[13px] font-medium text-slate-500">{socialTaskId ? "Processing hooks..." : "Data will appear here upon article execution completion."}</p>
+              <div className="p-8 mt-6 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl">
+                <h3 className="text-[18px] font-bold text-slate-900 tracking-tight mb-2">{safe_t("studio.socialTab", "Social Output")}</h3>
+                <p className="text-[14px] font-medium text-slate-500">{socialTaskId ? "Processing hooks..." : "Data will appear here upon article execution completion."}</p>
               </div>
             )}
 
             {activeTab === "schema" && (
-              <div className="p-6 bg-white/80 rounded-3xl shadow-sm border border-slate-100 h-full">
-                <h3 className="text-[16px] font-bold text-slate-900 tracking-tight mb-2">{safe_t("studio.schemaTab", "Schema & Metadata")}</h3>
-                <p className="text-[13px] font-medium text-slate-500">Auto JSON-LD metadata and FAQ rich snippets injection.</p>
+              <div className="p-8 mt-6 bg-white/80 border border-slate-200/50 shadow-sm rounded-3xl">
+                <h3 className="text-[18px] font-bold text-slate-900 tracking-tight mb-2">{safe_t("studio.schemaTab", "Schema & Metadata")}</h3>
+                <p className="text-[14px] font-medium text-slate-500">Auto JSON-LD metadata and FAQ rich snippets injection.</p>
               </div>
             )}
           </div>

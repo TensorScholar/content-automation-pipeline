@@ -100,7 +100,7 @@ export function AppShell({ token, user }: AppShellProps) {
   const sidebarW = collapsed ? 104 : 312; // 280px width + 32px lateral margin (m-8)
 
   return (
-    <div className="min-h-screen bg-[#FBFBFD]" dir={direction}>
+    <div className="min-h-screen bg-[#F2F2F7]" dir={direction}>
 
       {/* ── Mobile overlay ── */}
       {mobileOpen && (
@@ -264,7 +264,7 @@ export function AppShell({ token, user }: AppShellProps) {
         </div>
 
         {/* ── Panel Content ── */}
-        <main className="flex-1 px-4 py-8 lg:px-12 lg:py-8 pt-10">
+        <main className={clsx("flex-1", page !== "studio" && "px-4 py-8 lg:px-12 lg:py-8 pt-10")}>
           <ErrorBoundary>
             {page === "dashboard" && <DashboardPanel token={token} projects={projects} onNavigate={navigate as unknown as (page: string) => void} />}
             {page === "projects" && (
