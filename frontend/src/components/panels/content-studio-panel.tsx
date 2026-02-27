@@ -233,7 +233,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   ];
 
   const InputClass = clsx(
-    "w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-xl px-4 py-3 transition-all text-[14px] outline-none",
+    "w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 rounded-xl px-4 py-2.5 min-h-[42px] transition-all text-[14px] outline-none",
     locale === 'fa' || locale === 'ar' ? "font-normal" : ""
   );
 
@@ -304,9 +304,9 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                         <div className="flex-1 flex flex-col gap-0">
                           <label className={LabelClass}>{safe_t("studio.language", "Language")}</label>
                           <select className={InputClass} value={language} onChange={e => setLanguage(e.target.value as any)}>
-                            <option value="fa">Persian (RTL)</option>
-                            <option value="ar">Arabic (RTL)</option>
-                            <option value="en">English (LTR)</option>
+                            <option value="fa">{safe_t("lang.fa", "فارسی")}</option>
+                            <option value="ar">{safe_t("lang.ar", "العربية")}</option>
+                            <option value="en">{safe_t("lang.en", "English")}</option>
                           </select>
                         </div>
                       </div>
@@ -390,10 +390,10 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     <div className="col-span-12 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col gap-6">
                       <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "Parameters & Limits")}</h2>
 
-                      <div className="flex flex-col md:flex-row gap-8">
+                      <div className="flex flex-col gap-8">
                         {/* Sliders Area */}
-                        <div className="flex-1 flex flex-col gap-6">
-                          <div className="flex gap-4">
+                        <div className="flex flex-col gap-6">
+                          <div className="flex gap-4 max-w-lg">
                             <div className="flex-1 flex flex-col gap-0">
                               <label className={LabelClass}>{safe_t("studio.wordCountMin", "Min Words")}</label>
                               <input type="number" className={InputClass} value={wordCountMin} onChange={e => setWordCountMin(e.target.value)} dir="ltr" />
@@ -404,28 +404,28 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                             </div>
                           </div>
 
-                          <div className="flex flex-col gap-1 w-full max-w-sm">
+                          <div className="flex flex-col gap-1 w-full max-w-lg">
                             <label className={LabelClass}>{safe_t("studio.creativity", "Creativity")}</label>
                             <div className="flex items-center gap-4 mt-2">
                               <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} className="flex-1 h-2 rounded-full appearance-none bg-slate-200 accent-emerald-600 outline-none" dir="ltr" />
                               <span className="text-[14px] font-black text-emerald-800 bg-emerald-100 px-3 py-1 rounded-lg shrink-0 w-12 text-center">{temperature.toFixed(1)}</span>
                             </div>
+                            <p className="text-[12px] text-slate-500 mt-1 font-medium">0.1 - 0.4: {safe_t("studio.creativityConservative", "Conservative")} | 0.5 - 0.7: {safe_t("studio.creativityBalanced", "Balanced")} | 0.8 - 1.0: {safe_t("studio.creativityCreative", "Creative")}</p>
                           </div>
                         </div>
 
                         {/* Button Action Area */}
-                        <div className="flex-none w-full md:w-64 flex flex-col justify-end">
+                        <div className="flex w-full justify-end mt-2 pt-6 border-t border-slate-100">
                           <button
                             type="submit"
                             disabled={!selectedProjectId || submitting}
-                            className="w-full bg-emerald-800 text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(4,71,49,0.3)] hover:-translate-y-1 hover:shadow-[0_12px_25px_rgba(4,71,49,0.4)] active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none"
+                            className="w-full md:w-auto px-10 bg-emerald-800 text-white font-bold py-3.5 rounded-xl shadow-[0_8px_20px_rgba(4,71,49,0.3)] hover:-translate-y-1 hover:shadow-[0_12px_25px_rgba(4,71,49,0.4)] active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none"
                           >
                             {submitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
                             {safe_t("studio.generate", "Generate Article")}
                           </button>
                         </div>
                       </div>
-
                     </div>
                   </div>
                 </div>
@@ -435,31 +435,39 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
             {activeTab === "bulk" && (
               <div className="h-full flex flex-col pb-8 p-6 lg:p-8">
-                <form onSubmit={onSubmitBatch} className="grid grid-cols-12 gap-6 max-w-5xl mx-auto w-full">
-                  <div className="col-span-12 lg:col-span-8 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col">
-                    <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "Core Identity")}</h2>
-                    <div className="flex flex-col gap-0 flex-1">
-                      <label className={LabelClass}>{safe_t("studio.batchTopics", "Topics (One per line)")}</label>
-                      <textarea required className={clsx(InputClass, "resize-none flex-1 min-h-[300px]")} placeholder={safe_t("studio.batchTopicsPlaceholder", "Topic 1\nTopic 2\nTopic 3")} value={bulkTopics} onChange={e => setBulkTopics(e.target.value)} />
-                      <p className="text-[12px] font-bold text-slate-400 mt-2">{safe_t("studio.maxTopics", "Max 20 topics allowed.")}</p>
-                    </div>
-                  </div>
-
-                  <div className="col-span-12 lg:col-span-4 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col justify-between">
-                    <div>
-                      <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "Parameters")}</h2>
-                      <div className="flex flex-col gap-0 mt-4">
+                <form onSubmit={onSubmitBatch} className="flex flex-col gap-6 max-w-4xl mx-auto w-full h-full">
+                  <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col gap-4">
+                    <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "Parameters")}</h2>
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <div className="flex-1 flex flex-col gap-0">
+                        <label className={LabelClass}>{safe_t("studio.batchLanguage", "Language")}</label>
+                        <select className={InputClass} value={bulkLanguage} onChange={e => setBulkLanguage(e.target.value as any)}>
+                          <option value="fa">{safe_t("lang.fa", "فارسی")}</option>
+                          <option value="ar">{safe_t("lang.ar", "العربية")}</option>
+                          <option value="en">{safe_t("lang.en", "English")}</option>
+                        </select>
+                      </div>
+                      <div className="flex-1 flex flex-col gap-0">
                         <label className={LabelClass}>{safe_t("studio.batchSharedKeyword", "Shared Keyword")}</label>
                         <input className={InputClass} value={bulkKeyword} onChange={e => setBulkKeyword(e.target.value)} />
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mt-8">
-                      <button type="submit" disabled={!selectedProjectId || bulkSubmitting} className="w-full bg-slate-900 text-white font-bold text-[14px] py-4 rounded-xl shadow-[0_8px_30px_rgba(15,23,42,0.3)] hover:bg-black transition-all duration-300 transform hover:-translate-y-1 flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none">
-                        {bulkSubmitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
-                        {safe_t("studio.batchSubmit", "Submit Batch Pipeline")}
-                      </button>
+                  <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col flex-1">
+                    <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "Core Identity")}</h2>
+                    <div className="flex flex-col gap-0 flex-1 h-full min-h-[300px]">
+                      <label className={LabelClass}>{safe_t("studio.batchTopics", "Topics (One per line)")}</label>
+                      <textarea required className={clsx(InputClass, "resize-none h-full py-4")} placeholder={safe_t("studio.batchTopicsPlaceholder", "Topic 1\nTopic 2\nTopic 3")} value={bulkTopics} onChange={e => setBulkTopics(e.target.value)} />
+                      <p className="text-[12px] font-bold text-slate-400 mt-2">{safe_t("studio.maxTopics", "Max 20 topics allowed.")}</p>
                     </div>
+                  </div>
+
+                  <div className="flex w-full justify-end mt-2 pb-8">
+                    <button type="submit" disabled={!selectedProjectId || bulkSubmitting} className="w-full md:w-auto px-10 bg-emerald-800 text-white font-bold py-3.5 rounded-xl shadow-[0_8px_20px_rgba(4,71,49,0.3)] hover:-translate-y-1 hover:shadow-[0_12px_25px_rgba(4,71,49,0.4)] active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none">
+                      {bulkSubmitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
+                      {safe_t("studio.batchSubmit", "Submit Batch Pipeline")}
+                    </button>
                   </div>
                 </form>
               </div>
@@ -471,8 +479,8 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                   <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                     <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                   </div>
-                  <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.socialTab", "Social Media Repurpose")}</h3>
-                  <p className="text-[14px] font-medium text-slate-500 max-w-sm">{socialTaskId ? "Processing social hooks..." : safe_t("studio.socialEmpty", "Social outputs and threads will appear here automatically upon article generation completion.")}</p>
+                  <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.tabSocial", "Social Media Management")}</h3>
+                  <p className="text-[14px] font-medium text-slate-500 max-w-sm leading-relaxed">{socialTaskId ? "Processing social hooks..." : safe_t("studio.socialEmpty", "Extracted social media content will be ready for publication here after final article processing.")}</p>
                 </div>
               </div>
             )}
@@ -483,8 +491,8 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                   <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                     <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
                   </div>
-                  <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.schemaTab", "SEO & Schema Metadata")}</h3>
-                  <p className="text-[14px] font-medium text-slate-500 max-w-sm">{safe_t("studio.schemaEmpty", "Auto JSON-LD metadata and FAQ rich snippets will be injected into this pipeline.")}</p>
+                  <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.tabSchema", "SEO Optimization")}</h3>
+                  <p className="text-[14px] font-medium text-slate-500 max-w-sm leading-relaxed">{safe_t("studio.schemaEmpty", "SEO micro-transactions (FAQ) and structured metadata (JSON-LD) will be injected here for optimal indexing post-generation.")}</p>
                 </div>
               </div>
             )}
