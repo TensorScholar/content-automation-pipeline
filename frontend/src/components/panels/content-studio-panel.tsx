@@ -228,7 +228,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
     { key: "generate", label: safe_t("studio.tabGenerate", "Single Article") },
     { key: "bulk", label: safe_t("studio.tabBatch", "Bulk Generation") },
     { key: "social", label: safe_t("studio.tabSocial", "Social Output") },
-    { key: "schema", label: safe_t("studio.tabSchema", "Schema Injection") },
+    { key: "schema", label: safe_t("studio.tabSchema", "SEO & Schema") },
   ];
 
   const InputClass = clsx(
@@ -253,7 +253,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
       )}>
 
         {/* ── LAYER 2: THE FIXED CANVAS (The "Page") ── */}
-        <article className="flex flex-col h-[calc(100vh-48px)] my-6 mx-6 bg-slate-100/50 backdrop-blur-md border border-slate-200/60 shadow-[0_4px_20px_rgba(0,0,0,0.03)] rounded-[2.5rem] overflow-hidden w-full relative">
+        <article className="flex flex-col h-[calc(100vh-48px)] my-6 mx-6 bg-slate-50/80 backdrop-blur-xl border border-slate-200/60 shadow-[0_4px_20px_rgba(0,0,0,0.03)] rounded-[2.5rem] overflow-hidden w-full relative">
 
           {/* Apple Segmented Tab Control Header (Fixed) */}
           <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-200/50 bg-white/40 shrink-0 z-10 backdrop-blur-xl">
@@ -351,7 +351,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     <div className="col-span-12 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50 flex flex-col gap-4">
                       <h2 className={HeaderClass}>{safe_t("studio.context", "Additional Context")}</h2>
                       <div className="flex flex-col gap-0">
-                        <label className={LabelClass}>{safe_t("studio.competitor", "Competitor URL")}</label>
+                        <label className={LabelClass}>{safe_t("studio.reference", "Reference URL (Analysis)")}</label>
                         <input placeholder="https://" className={clsx(InputClass, "font-mono text-[13px]")} value={competitorUrl} onChange={e => setCompetitorUrl(e.target.value)} dir="ltr" />
                       </div>
                       <div className="flex flex-col gap-0">
@@ -378,12 +378,12 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                             </div>
                           </div>
 
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center justify-between pb-1">
-                              <label className={LabelClass}>{safe_t("studio.creativity", "Creativity")}</label>
-                              <span className="text-[12px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">{temperature.toFixed(1)}</span>
+                          <div className="flex flex-col gap-1 w-full max-w-sm">
+                            <label className={LabelClass}>{safe_t("studio.creativity", "Creativity")}</label>
+                            <div className="flex items-center gap-4 mt-2">
+                              <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} className="flex-1 h-2 rounded-full appearance-none bg-slate-200 accent-emerald-600 outline-none" dir="ltr" />
+                              <span className="text-[14px] font-black text-emerald-800 bg-emerald-100 px-3 py-1 rounded-lg shrink-0 w-12 text-center">{temperature.toFixed(1)}</span>
                             </div>
-                            <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} className="w-full h-2 rounded-full appearance-none bg-slate-200 accent-emerald-600 outline-none" dir="ltr" />
                           </div>
                         </div>
 
@@ -441,18 +441,24 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
             {activeTab === "social" && (
               <div className="p-6 lg:p-8 max-w-5xl mx-auto w-full">
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
-                  <h3 className={HeaderClass}>{safe_t("studio.socialTab", "Social Output")}</h3>
-                  <p className="text-[14px] font-medium text-slate-500">{socialTaskId ? "Processing hooks..." : "Data will appear here upon article execution completion."}</p>
+                <div className="flex flex-col items-center justify-center min-h-[300px] bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm p-8 text-center">
+                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                  </div>
+                  <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.socialTab", "Social Media Repurpose")}</h3>
+                  <p className="text-[14px] font-medium text-slate-500 max-w-sm">{socialTaskId ? "Processing social hooks..." : safe_t("studio.socialEmpty", "Social outputs and threads will appear here automatically upon article generation completion.")}</p>
                 </div>
               </div>
             )}
 
             {activeTab === "schema" && (
               <div className="p-6 lg:p-8 max-w-5xl mx-auto w-full">
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/50">
-                  <h3 className={HeaderClass}>{safe_t("studio.schemaTab", "Schema & Metadata")}</h3>
-                  <p className="text-[14px] font-medium text-slate-500">Auto JSON-LD metadata and FAQ rich snippets injection.</p>
+                <div className="flex flex-col items-center justify-center min-h-[300px] bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm p-8 text-center">
+                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                  </div>
+                  <h3 className="text-[16px] font-bold text-slate-800 mb-2">{safe_t("studio.schemaTab", "SEO & Schema Metadata")}</h3>
+                  <p className="text-[14px] font-medium text-slate-500 max-w-sm">{safe_t("studio.schemaEmpty", "Auto JSON-LD metadata and FAQ rich snippets will be injected into this pipeline.")}</p>
                 </div>
               </div>
             )}

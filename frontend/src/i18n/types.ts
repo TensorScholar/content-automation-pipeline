@@ -226,6 +226,9 @@ export type MessageKey =
   | "studio.tonalDna"
   | "studio.parametersLimits"
   | "studio.context"
+  | "studio.reference"
+  | "studio.socialEmpty"
+  | "studio.schemaEmpty"
   /* ── Tasks ── */
   | "tasks.title"
   | "tasks.searchPlaceholder"
