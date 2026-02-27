@@ -255,44 +255,34 @@ export function LoginCard() {
 
           <HeroMeshGradient />
 
-          <div key={`hero-${locale}`} className="relative z-10 flex h-full flex-col p-12 animate-fade-in">
-            {/* Brand — ALWAYS Latin */}
-            <p className="text-[12px] font-bold uppercase tracking-[0.18em]" style={{ color: "rgba(255,255,255,0.72)" }}>
-              SMARLUX CONTENT OS
-            </p>
+          <div key={`hero-${locale}`} className="relative z-10 flex h-full flex-col p-12 lg:px-16 animate-fade-in">
 
             <div className="flex flex-1 items-center justify-center">
               {/* Increased breathing room gap */}
-              <div className="flex flex-col items-center text-center gap-8 max-w-md w-full">
+              <div className="flex flex-col items-start gap-6 max-w-lg w-full">
 
-                <div className="flex items-center justify-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
-                  <span className="block h-[3px] w-10 rounded-full bg-gradient-to-r from-teal-400 to-teal-400/20" />
-                  <span className="text-[13px] font-bold uppercase tracking-[0.2em] text-teal-400/90">
-                    AI-Powered Platform
+                <div className="flex items-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
+                  <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+                  <span className="text-xs font-bold tracking-widest text-emerald-400/80 uppercase">
+                    AI-POWERED PLATFORM
                   </span>
-                  <span className="block h-[3px] w-10 rounded-full bg-gradient-to-l from-teal-400 to-teal-400/20" />
                 </div>
 
-                {/* Breathing Room: Use leading-snug instead of leading-[1.2] */}
+                {/* Typography Confidence: text-4xl/5xl */}
                 <h1
-                  className="text-[32px] md:text-[36px] font-extrabold leading-snug tracking-wide text-white animate-fade-in w-full text-balance"
-                  style={{
-                    textShadow: "0 2px 24px rgba(94,234,212,0.3), 0 0 60px rgba(94,234,212,0.12)",
-                    opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards'
-                  }}
+                  className="text-4xl md:text-5xl font-extrabold text-white tracking-tight leading-tight animate-fade-in w-full text-balance text-start"
+                  style={{ opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards' }}
                 >
                   {t("auth.heroHeadline")}
                 </h1>
 
-                {/* Breathing Room: Increased padding inside the glass card */}
-                <div
-                  className="inline-block rounded-[20px] px-8 py-5 animate-fade-in bg-white/5 backdrop-blur-md border border-white/10"
+                {/* Decoupled from Glassmorphic Card */}
+                <p
+                  className="whitespace-pre-line text-lg text-emerald-100/70 font-medium max-w-md mt-2 leading-relaxed text-start animate-fade-in"
                   style={{ opacity: 0, animationDelay: "250ms", animationFillMode: 'forwards' }}
                 >
-                  <p className="whitespace-pre-line text-[16px] leading-relaxed text-teal-50 font-medium">
-                    {cleanTagline}
-                  </p>
-                </div>
+                  {cleanTagline}
+                </p>
               </div>
             </div>
 
@@ -312,23 +302,29 @@ export function LoginCard() {
         </section>
 
         {/* ═══ MOBILE OVERRIDES ═══ */}
-        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-6 text-white md:block lg:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
+        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
           <div className="absolute -bottom-16 -inset-inline-end-16 w-[130%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <HeroMeshGradient />
-          <div key={`tb-hero-${locale}`} className="relative z-10 space-y-2 animate-fade-in">
-            <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-white/70">SMARLUX CONTENT OS</p>
-            <p className="text-[18px] font-medium text-white/90">{cleanTagline}</p>
+          <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+              <span className="text-[11px] font-bold tracking-widest text-emerald-400/80 uppercase">AI-POWERED PLATFORM</span>
+            </div>
+            <p className="text-[22px] font-bold text-white/90 leading-snug">{cleanTagline}</p>
           </div>
         </section>
 
-        <section className="relative overflow-hidden border-b border-white/10 px-5 py-4 text-white md:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
+        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
           <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
             <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <div key={`mb-hero-${locale}`} className="relative z-10 flex items-center justify-between animate-fade-in">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/80">SMARLUX CONTENT OS</p>
+            <div className="flex items-center gap-2">
+              <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+              <span className="text-[10px] font-bold tracking-widest text-emerald-400/80 uppercase">PLATFORM</span>
+            </div>
             <span className="inline-flex items-center gap-2 text-[12px] text-white/80 font-medium">
               <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-emerald-500" : "bg-red-500")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />{systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
             </span>
@@ -433,8 +429,8 @@ export function LoginCard() {
                 </div>
               </div>
 
-              {/* ── Recovery & Utility Row (Apple SaaS Tier) ── */}
-              <div className="animate-fade-in flex items-center justify-between mt-1" style={{ animationDelay: "190ms", animationFillMode: 'forwards', opacity: 0 }}>
+              {/* ── Recovery & Utility Row (Absolute Minimalism) ── */}
+              <div className="animate-fade-in flex items-center justify-start mt-1" style={{ animationDelay: "190ms", animationFillMode: 'forwards', opacity: 0 }}>
                 {/* Remember me logical property lock (gap-2 forces inline-start text) */}
                 <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[13px] font-medium text-slate-600 group">
                   <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="peer sr-only" />
@@ -443,11 +439,6 @@ export function LoginCard() {
                   </span>
                   <span>{t("auth.rememberMe")}</span>
                 </label>
-
-                {/* New Forgot Password Link */}
-                <button type="button" className="text-[13px] font-semibold text-teal-600 hover:text-teal-700 hover:underline hover:underline-offset-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:rounded-sm">
-                  {safe_t("auth.forgotPassword", "Forgot password?")}
-                </button>
               </div>
 
               {/* ── Submit CTA ── */}
