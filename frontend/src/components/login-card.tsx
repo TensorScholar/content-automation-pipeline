@@ -246,8 +246,13 @@ export function LoginCard() {
 
         {/* ═══ HERO PANEL (Takes exactly 50% width on Desktop) ═══ */}
         <section
-          className="hero-gradient relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col"
+          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]"
         >
+          {/* Ghost Watermark Logo */}
+          <div className="absolute -bottom-32 -inset-inline-end-32 w-[130%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+            <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+          </div>
+
           <HeroMeshGradient />
 
           <div key={`hero-${locale}`} className="relative z-10 flex h-full flex-col p-12 animate-fade-in">
@@ -307,7 +312,10 @@ export function LoginCard() {
         </section>
 
         {/* ═══ MOBILE OVERRIDES ═══ */}
-        <section className="hero-gradient relative hidden overflow-hidden border-b border-white/10 px-8 py-6 text-white md:block lg:hidden">
+        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-6 text-white md:block lg:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
+          <div className="absolute -bottom-16 -inset-inline-end-16 w-[130%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+            <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+          </div>
           <HeroMeshGradient />
           <div key={`tb-hero-${locale}`} className="relative z-10 space-y-2 animate-fade-in">
             <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-white/70">SMARLUX CONTENT OS</p>
@@ -315,7 +323,10 @@ export function LoginCard() {
           </div>
         </section>
 
-        <section className="hero-gradient relative overflow-hidden border-b border-white/10 px-5 py-4 text-white md:hidden">
+        <section className="relative overflow-hidden border-b border-white/10 px-5 py-4 text-white md:hidden bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#011a14]">
+          <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] z-0 opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+            <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+          </div>
           <div key={`mb-hero-${locale}`} className="relative z-10 flex items-center justify-between animate-fade-in">
             <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/80">SMARLUX CONTENT OS</p>
             <span className="inline-flex items-center gap-2 text-[12px] text-white/80 font-medium">
@@ -334,6 +345,7 @@ export function LoginCard() {
 
           <div className="w-full max-w-sm mx-auto flex flex-col pt-8 lg:pt-0">
             <div key={`form-title-${locale}`} className="animate-fade-in mb-8">
+              <img src="/logo.png" alt="Smarlux" className="h-12 w-auto mb-6 object-contain" style={{ imageRendering: "auto" }} />
               <h3 className="text-[28px] font-bold text-slate-900 tracking-tight">{t("auth.title")}</h3>
               <p className="mt-2 text-[15px] font-medium text-slate-500">{t("auth.subtitle")}</p>
             </div>

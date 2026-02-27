@@ -130,11 +130,8 @@ export function AppShell({ token, user }: AppShellProps) {
         )}>
           {!collapsed && (
             <div className="flex items-center gap-3 min-w-0">
-              <div className="h-8 w-8 shrink-0 rounded-lg bg-brand flex items-center justify-center">
-                <span className="text-body-sm font-bold text-white">
-                  {(user.full_name ?? user.email).charAt(0).toUpperCase()}
-                </span>
-              </div>
+              {/* Primary Brand Logo */}
+              <img src="/logo.png" alt="Smarlux" className="h-8 w-8 shrink-0 object-contain" style={{ imageRendering: "auto" }} />
               <div className="min-w-0">
                 <p className="text-body-sm font-bold text-ink truncate">{user.full_name ?? user.email}</p>
                 <p className="text-[11px] text-ink-tertiary truncate">{user.email}</p>
@@ -142,11 +139,7 @@ export function AppShell({ token, user }: AppShellProps) {
             </div>
           )}
           {collapsed && (
-            <div className="h-8 w-8 rounded-lg bg-brand flex items-center justify-center">
-              <span className="text-body-sm font-bold text-white">
-                {(user.full_name ?? user.email).charAt(0).toUpperCase()}
-              </span>
-            </div>
+            <img src="/logo.png" alt="Smarlux" className="h-8 w-8 shrink-0 object-contain" style={{ imageRendering: "auto" }} />
           )}
         </div>
 
