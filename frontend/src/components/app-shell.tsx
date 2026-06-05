@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import clsx from "clsx";
 import { apiRequest } from "@/lib/api";
 import { User, Project } from "@/types/models";
@@ -8,7 +9,6 @@ import { useAuth } from "@/providers/auth-provider";
 import { useI18n } from "@/i18n/provider";
 import { LanguageToggle } from "./language-toggle";
 import { ErrorBoundary } from "./ui/error-boundary";
-import { useHasRole } from "./ui/role-guard";
 import { DashboardPanel } from "./panels/dashboard-panel";
 import { ProjectsPanel } from "./panels/projects-panel";
 import { ContentStudioPanel } from "./panels/content-studio-panel";
@@ -42,6 +42,36 @@ function IconGlobe({ className }: { className?: string }) {
   );
 }
 
+function ThemeSwitcher() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  const currentTheme = mounted ? theme ?? "system" : "system";
+
+  return (
+    <div className="macos-segmented relative z-40 flex h-9 items-center gap-0.5 rounded-[10px] p-0.5">
+      {(["system", "dark", "light"] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => setTheme(mode)}
+          className={clsx(
+            "min-h-[32px] rounded-[8px] px-3 text-[13px] font-medium tracking-normal transition-[background-color,color,box-shadow,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none",
+            currentTheme === mode
+              ? "bg-white text-slate-950 shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/10 dark:text-white"
+              : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900 dark:text-gray-400 dark:hover:bg-white/[0.05] dark:hover:text-gray-100"
+          )}
+          aria-pressed={currentTheme === mode}
+        >
+          {mode === "system" ? "System" : mode === "dark" ? "Dark" : "Light"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function AppShell({ token, user }: AppShellProps) {
   const { logout, isAdmin } = useAuth();
   const { t, direction } = useI18n();
@@ -66,29 +96,50 @@ export function AppShell({ token, user }: AppShellProps) {
     return base.filter((item) => !item.adminOnly || isAdmin);
   }, [isAdmin, t]);
 
-  const refreshProjects = async () => {
+  useEffect(() => {
+    if (!isAdmin && (page === "users" || page === "monitoring")) {
+      setPage("dashboard");
+    }
+  }, [isAdmin, page]);
+
+  const refreshProjects = useCallback(async (signal?: AbortSignal) => {
     setProjectsLoading(true);
     try {
-      const payload = await apiRequest<Project[]>("/projects", { token });
+      const payload = await apiRequest<Project[]>("/projects", { token, signal });
+      if (signal?.aborted) return;
       setProjects(payload);
       if (payload.length === 0) {
         setSelectedProjectId(null);
-      } else if (!payload.some((p) => p.id === selectedProjectId)) {
-        setSelectedProjectId(payload[0].id);
+      } else {
+        setSelectedProjectId((currentProjectId) =>
+          payload.some((p) => p.id === currentProjectId) ? currentProjectId : payload[0].id
+        );
       }
     } catch {
+      if (signal?.aborted) return;
       setProjects([]);
       setSelectedProjectId(null);
     } finally {
+      if (signal?.aborted) return;
       setProjectsLoading(false);
     }
-  };
+  }, [token]);
 
-  useEffect(() => { void refreshProjects(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const controller = new AbortController();
+    void refreshProjects(controller.signal);
+    return () => controller.abort();
+  }, [refreshProjects]);
 
   // Fetch health for version in sidebar
   useEffect(() => {
-    apiRequest<{ version?: string }>("/system/health", { token }).then(setHealth).catch(() => { });
+    const controller = new AbortController();
+    apiRequest<{ version?: string }>("/system/health", { token, signal: controller.signal })
+      .then((payload) => {
+        if (!controller.signal.aborted) setHealth(payload);
+      })
+      .catch(() => { });
+    return () => controller.abort();
   }, [token]);
 
   const navigate = (next: AppPage) => { setPage(next); setMobileOpen(false); };
@@ -97,10 +148,13 @@ export function AppShell({ token, user }: AppShellProps) {
     ? "translateX(0)"
     : direction === "rtl" ? "translateX(100%)" : "translateX(-100%)";
 
-  const sidebarW = collapsed ? 104 : 312; // 280px width + 32px lateral margin (m-8)
-
   return (
-    <div className="min-h-screen bg-[#F2F2F7]" dir={direction}>
+    <div className="macos-content-scope macos-app-bg flex h-dvh min-h-0 w-full overflow-hidden pt-10 text-sm tracking-normal text-ink" dir={direction}>
+      <div
+        data-tauri-drag-region
+        aria-hidden="true"
+        className="macos-titlebar fixed inset-x-0 top-0 z-[80] h-10"
+      />
 
       {/* ── Mobile overlay ── */}
       {mobileOpen && (
@@ -110,36 +164,34 @@ export function AppShell({ token, user }: AppShellProps) {
         />
       )}
 
-      {/* ═══ SIDEBAR — 9D LIQUID EMERALD GLASS ═══ */}
+      {/* Sidebar */}
       <aside
         className={clsx(
-          "fixed start-6 top-1/2 -translate-y-1/2 z-modal flex flex-col h-[calc(100vh-48px)]",
-          "rounded-[3.5rem] border-t border-l border-white/20 border-b border-r border-black/40",
-          "shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8),0_20px_40px_-10px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.2)]",
-          "transition-all duration-700 overflow-hidden",
-          collapsed ? "w-[72px]" : "w-[280px]",
-          "lg:translate-x-0 bg-gradient-to-b from-[#0a2920]/95 via-[#041611]/98 to-[#010806] backdrop-blur-[50px]",
+          "fixed start-3 top-12 bottom-3 z-modal flex flex-col",
+          "lg:relative lg:start-auto lg:top-auto lg:bottom-auto lg:m-3 lg:me-0 lg:mt-2 lg:h-[calc(100dvh-60px)] lg:shrink-0",
+          "macos-sidebar rounded-[18px] border",
+          "transition-all duration-300 overflow-hidden",
+          collapsed ? "w-[64px]" : "w-[248px]",
+          "lg:translate-x-0",
         )}
         style={{
           transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
           transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
         }}
       >
-        {/* ── Removed the underlying radial bloop causing text-overlap shadow ── */}
-
-        {/* Sidebar Header — brand + collapse toggle */}
+        {/* Sidebar Header */}
         <div className={clsx(
-          "flex shrink-0 items-center px-8 py-8 relative",
+          "relative flex shrink-0 items-center border-b border-black/5 px-4 py-3 dark:border-white/10",
           "justify-center flex-col", // Always center the contents
         )}>
           {!collapsed && (
             <div className="flex items-center gap-3">
               {/* Refined Typographic Logo — Centered */}
-              <span className="text-white text-3xl font-black tracking-tighter truncate">Smarlux</span>
+              <span className="truncate text-[20px] font-semibold tracking-tight text-gray-950 dark:text-gray-100">Smarlux</span>
             </div>
           )}
           {collapsed && (
-            <span className="text-white text-3xl font-black tracking-tighter pt-0.5">S</span>
+            <span className="pt-0.5 text-[18px] font-semibold tracking-tight text-gray-950 dark:text-gray-100">S</span>
           )}
 
           {/* Toggle Button Clean Integration (Absolutely Positioned when open, centered below when closed) */}
@@ -147,8 +199,8 @@ export function AppShell({ token, user }: AppShellProps) {
             type="button"
             onClick={() => setCollapsed(!collapsed)}
             className={clsx(
-              "hidden lg:flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 hover:text-white transition-all duration-500",
-              collapsed ? "absolute inset-x-0 mx-auto mt-20" : "absolute right-4 top-1/2 -translate-y-1/2"
+              "hidden h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-black/5 hover:text-gray-950 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white lg:flex",
+              collapsed ? "absolute inset-x-0 mx-auto mt-16" : "absolute end-3 top-1/2 -translate-y-1/2"
             )}
             aria-label="Toggle sidebar"
           >
@@ -156,8 +208,8 @@ export function AppShell({ token, user }: AppShellProps) {
           </button>
         </div>
 
-        {/* Nav — Mathematical Axis alignment with VisionOS Spring interactions */}
-        <nav className="flex-1 overflow-y-auto pt-2 space-y-0">
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto p-2">
           {navItems.map((item) => {
             const Icon = PAGE_ICONS[item.key];
             const active = page === item.key;
@@ -168,31 +220,31 @@ export function AppShell({ token, user }: AppShellProps) {
                 title={collapsed ? item.label : undefined}
                 onClick={() => navigate(item.key)}
                 className={clsx(
-                  "relative flex items-center gap-4 px-6 py-4 mx-4 mb-2 rounded-[24px] transition-all duration-700 text-start w-[calc(100%-32px)] group",
+                  "group relative mb-1 flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-start transition-colors duration-150",
                   active
-                    ? "bg-white/10 text-white font-semibold shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-md"
-                    : "text-emerald-50/80 hover:bg-white/5 hover:text-white/95", // Brighter base text
-                  collapsed && "justify-center px-0 mx-4 w-auto"
+                    ? "bg-black/[0.08] text-gray-950 font-medium dark:bg-white/10 dark:text-gray-100"
+                    : "text-gray-600 hover:bg-black/5 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white",
+                  collapsed && "justify-center px-0"
                 )}
                 style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
               >
-                <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <Icon className={clsx("h-6 w-6 transition-transform duration-700 group-hover:scale-110", active ? "text-emerald-300 drop-shadow-[0_0_12px_rgba(52,211,153,0.8)]" : "text-emerald-300/90")} />
+                <div className="flex h-4 w-4 shrink-0 items-center justify-center">
+                  <Icon className={clsx("h-4 w-4 transition-colors duration-150", active ? "text-gray-950 dark:text-gray-100" : "text-gray-500 dark:text-gray-400")} />
                 </div>
                 {!collapsed && (
-                  <span className="text-[15px] translate-y-[0.5px] font-medium">{item.label}</span>
+                  <span className="translate-y-[0.5px] text-[13px] font-medium">{item.label}</span>
                 )}
               </button>
             );
           })}
         </nav>
 
-        {/* Dynamic Footer Section (Card-in-Card style) */}
-        <div className="mt-auto px-0 pb-6 flex flex-col gap-2">
+        {/* Footer */}
+        <div className="mt-auto flex flex-col gap-2 border-t border-black/5 px-0 pb-3 pt-3 dark:border-white/10">
 
-          {/* Project Selector — High Contrast Active Project Control */}
-          <div className={clsx("w-auto bg-white/10 rounded-2xl p-3 mx-5 mb-5 border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.3)] relative backdrop-blur-md hover:bg-white/15 transition-colors cursor-pointer", collapsed && "hidden")}>
-            <div className="text-[10px] uppercase tracking-widest text-[#5EEAD4] font-bold mb-1 px-1 pointer-events-none drop-shadow-sm">
+          {/* Project Selector */}
+          <div className={clsx("relative mx-3 mb-2 w-auto cursor-pointer rounded-[14px] border border-black/5 bg-white p-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.75),0_10px_22px_-20px_rgb(0_0_0/0.55)] transition-colors hover:bg-white dark:border-white/10 dark:bg-surface dark:shadow-none dark:hover:bg-surface-alt", collapsed && "hidden")}>
+            <div className="pointer-events-none mb-1 px-1 text-[10px] font-medium uppercase tracking-normal text-gray-500 dark:text-gray-400">
               {t("shell.activeProject")}
             </div>
             <div className="relative flex justify-between items-center w-full px-1">
@@ -202,30 +254,30 @@ export function AppShell({ token, user }: AppShellProps) {
                 value={selectedProjectId ?? ""}
                 onChange={(e) => setSelectedProjectId(e.target.value || null)}
               >
-                {projects.length === 0 && <option value="" className="bg-slate-900">{t("shell.noProject")}</option>}
+                {projects.length === 0 && <option value="" className="bg-black/80">{t("shell.noProject")}</option>}
                 {projects.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-slate-900 font-sans">{p.name}</option>
+                  <option key={p.id} value={p.id} className="bg-black/80 font-sans">{p.name}</option>
                 ))}
               </select>
-              <span className="text-[14px] font-medium text-white/90 truncate drop-shadow-sm pr-6">
+              <span className="truncate pr-6 text-[12px] font-medium text-gray-950 dark:text-gray-100">
                 {projects.find(p => p.id === selectedProjectId)?.name || t("shell.noProject")}
               </span>
-              <svg className="w-4 h-4 text-emerald-400/80 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+              <svg className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
             </div>
           </div>
 
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-1" />
+          <div className="my-1 h-px w-full bg-black/5 dark:bg-white/10" />
 
           {/* User Profile & Logout - Clean Row */}
-          <div className={clsx("flex items-center justify-between px-6", collapsed ? "flex-col gap-4 px-0" : "gap-3")}>
+          <div className={clsx("flex items-center justify-between px-3", collapsed ? "flex-col gap-3 px-0" : "gap-2")}>
             {!collapsed && (
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="h-9 w-9 shrink-0 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 text-white text-[13px] font-bold uppercase shadow-sm">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-black/5 bg-black/5 text-[11px] font-semibold uppercase text-gray-950 dark:border-white/10 dark:bg-white/10 dark:text-gray-100">
                   {user.email.substring(0, 2)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-semibold text-white truncate drop-shadow-sm">{user.full_name ?? "Manager"}</p>
-                  <p className="text-xs font-semibold text-emerald-100/60 truncate">{user.email}</p>
+                  <p className="truncate text-[12px] font-medium text-gray-950 dark:text-gray-100">{user.full_name ?? "Manager"}</p>
+                  <p className="truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">{user.email}</p>
                 </div>
               </div>
             )}
@@ -236,8 +288,8 @@ export function AppShell({ token, user }: AppShellProps) {
               onClick={() => void logout()}
               className={clsx(
                 "flex items-center justify-center rounded-full transition-all duration-500",
-                "text-emerald-100/40 hover:text-red-400 hover:bg-white/5",
-                collapsed ? "h-10 w-10 mx-auto" : "h-9 w-9 shrink-0"
+                "text-gray-500 hover:text-red-500 hover:bg-black/5 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-white/10",
+                collapsed ? "mx-auto h-8 w-8" : "h-7 w-7 shrink-0"
               )}
             >
               <IconLogout className="h-4 w-4" />
@@ -249,24 +301,22 @@ export function AppShell({ token, user }: AppShellProps) {
       {/* Responsive toggle overlay logic handled natively */}
 
       {/* ═══ MAIN CONTENT AREA (Offset by Sidebar width + Margin Geometry) ═══ */}
-      <div
-        className="flex min-h-screen flex-col transition-all overflow-hidden relative"
-        style={{
-          marginInlineStart: `${sidebarW}px`,
-          transitionDuration: "700ms",
-          transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
-        }}
-      >
-        {/* ── Floating Utilities ─ */}
-        <div className="fixed top-8 end-8 z-50 flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-3 py-1.5 shadow-sm border border-white/50">
-          <IconGlobe className="h-4 w-4 text-ink-tertiary" />
-          <LanguageToggle />
-        </div>
+      <div className="macos-main-material relative m-0 flex min-h-0 flex-1 flex-col overflow-hidden border-s border-black/5 transition-all duration-300 dark:border-white/10 lg:m-3 lg:ms-0 lg:mt-2 lg:rounded-[18px]">
+        {/* ── Header Utilities ─ */}
+        <header className="relative z-50 flex h-12 shrink-0 items-center justify-end border-b border-black/5 bg-white px-3 dark:border-white/10 dark:bg-surface lg:px-4">
+          <div className="flex items-center gap-2">
+            <ThemeSwitcher />
+            <div className="relative z-50 flex h-9 items-center gap-1.5 rounded-[10px] border border-black/5 bg-white px-2 shadow-none dark:border-white/10 dark:bg-white/[0.06]">
+              <IconGlobe className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+              <LanguageToggle />
+            </div>
+          </div>
+        </header>
 
         {/* ── Panel Content ── */}
-        <main className={clsx("flex-1", page !== "studio" && "px-4 py-8 lg:px-12 lg:py-8 pt-10")}>
-          <ErrorBoundary>
-            {page === "dashboard" && <DashboardPanel token={token} projects={projects} onNavigate={navigate as unknown as (page: string) => void} />}
+        <main className={clsx("min-h-0 flex-1 overflow-auto", page !== "studio" && "px-3 pb-4 pt-3 lg:px-4 lg:pb-4 lg:pt-3")}>
+          <ErrorBoundary resetKey={page}>
+            {page === "dashboard" && <DashboardPanel token={token} projects={projects} isAdmin={isAdmin} onNavigate={navigate as unknown as (page: string) => void} />}
             {page === "projects" && (
               <ProjectsPanel
                 token={token}
@@ -278,8 +328,8 @@ export function AppShell({ token, user }: AppShellProps) {
             )}
             {page === "studio" && <ContentStudioPanel token={token} selectedProjectId={selectedProjectId} />}
             {page === "tasks" && <TasksPanel token={token} />}
-            {page === "users" && <UsersPanel token={token} isAdmin={isAdmin} />}
-            {page === "monitoring" && <MonitoringPanel token={token} />}
+            {page === "users" && isAdmin && <UsersPanel token={token} isAdmin={isAdmin} currentUserId={user.id} />}
+            {page === "monitoring" && isAdmin && <MonitoringPanel token={token} />}
           </ErrorBoundary>
         </main>
       </div>

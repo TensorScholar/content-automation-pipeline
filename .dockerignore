@@ -1,0 +1,128 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Logs
+logs/
+*.log
+pip-log.txt
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Redis
+dump.rdb
+
+# Documentation
+docs/_build/
+site/
+
+# Docker
+docker-compose.override.yml
+*.dockerfile
+
+# Data directories (exclude large datasets)
+data/
+*.csv
+*.tsv
+*.json
+!.env.example
+!grafana/dashboards/*.json
+*.jsonl
+*.parquet
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# CI/CD
+.github/
+
+# Node (if any)
+node_modules/
+package-lock.json
+
+# Benchmark results
+benchmark_results/
+*.benchmark
+
+# Alembic
+alembic/versions/*.pyc
+
+# Secrets (extra safety)
+secrets/
+*.pem
+*.key
+*.crt
+.env
+.env.*
+!.env.example
+
+# Cache
+.cache/
+.ruff_cache/
+
+# ML Models (downloaded at runtime)
+models/
+*.pkl
+*.joblib
+*.h5
+
+# Test output
+test-results/
+screenshots/
+
+# Development scripts (optional)
+scripts/dev/
+scripts/local/
+
+# README and docs (include in image for reference)
+!README.md
+!DEPLOYMENT.md

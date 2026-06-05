@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { ApiError, apiRequest } from "@/lib/api";
 import { User } from "@/types/models";
@@ -8,9 +8,7 @@ import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { InputField } from "@/components/ui/input-field";
 import { useToast } from "@/components/ui/toast";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { SkeletonRows } from "@/components/ui/skeleton-loader";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -22,9 +20,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 interface UsersPanelProps {
   token: string;
   isAdmin: boolean;
+  currentUserId: string;
 }
 
-export function UsersPanel({ token, isAdmin }: UsersPanelProps) {
+export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
   const { t } = useI18n();
   const { showToast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
@@ -35,18 +34,35 @@ export function UsersPanel({ token, isAdmin }: UsersPanelProps) {
   const [newPassword, setNewPassword] = useState("");
   const [newIsAdmin, setNewIsAdmin] = useState(false);
 
-  useEffect(() => {
-    void loadUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async (signal?: AbortSignal) => {
+    if (!isAdmin) {
+      setUsers([]);
+      setLoading(false);
+      return;
+    }
     try {
-      const list = await apiRequest<User[]>("/auth/users", { token });
+      const list = await apiRequest<User[]>("/auth/users", { token, signal });
+      if (signal?.aborted) return;
       setUsers(Array.isArray(list) ? list : []);
-    } catch { setUsers([]); }
-    finally { setLoading(false); }
-  };
+    } catch {
+      if (signal?.aborted) return;
+      setUsers([]);
+    } finally {
+      if (signal?.aborted) return;
+      setLoading(false);
+    }
+  }, [isAdmin, token]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setUsers([]);
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    void loadUsers(controller.signal);
+    return () => controller.abort();
+  }, [isAdmin, loadUsers]);
 
   const counts = useMemo(() => {
     const total = users.length;
@@ -56,6 +72,7 @@ export function UsersPanel({ token, isAdmin }: UsersPanelProps) {
 
   const onCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!isAdmin) return;
     setCreating(true);
     try {
       await apiRequest("/auth/users", {
@@ -71,6 +88,7 @@ export function UsersPanel({ token, isAdmin }: UsersPanelProps) {
   };
 
   const toggleActive = async (user: User) => {
+    if (!isAdmin || user.id === currentUserId) return;
     const action = user.is_active === false ? "activate" : "deactivate";
     try {
       await apiRequest(`/auth/users/${user.id}/${action}`, { method: "POST", token });
@@ -92,73 +110,75 @@ export function UsersPanel({ token, isAdmin }: UsersPanelProps) {
   }
 
   return (
-    <section className="animate-fade-in relative flex flex-col space-y-6 bg-[#F5F5F7] min-h-[calc(100vh-80px)] p-4 md:p-8">
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-2">
+    <section className="macos-content-scope animate-fade-in relative flex min-h-[calc(100vh-96px)] flex-col space-y-4 bg-transparent p-3 md:p-4">
+      <div className="flex flex-col gap-4 pb-1 md:flex-row md:items-start md:justify-between">
         <div className="flex-1">
-          <h2 className="text-[28px] font-bold text-slate-900 tracking-tight">{t("users.title")}</h2>
+          <h2 className="text-[24px] font-semibold leading-tight tracking-normal text-ink">{t("users.title")}</h2>
         </div>
-        <div className="flex flex-wrap items-center gap-2 mt-2 md:mt-0 bg-white/60 backdrop-blur-md border border-gray-200/60 p-2 rounded-2xl shadow-sm">
-          <div className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-600 text-[13px] font-medium shadow-sm">{t("users.total")}: <span className="font-bold text-slate-900 ms-1">{counts.total}</span></div>
-          <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-[13px] font-medium shadow-sm">{t("users.active")}: <span className="font-bold text-emerald-900 ms-1">{counts.active}</span></div>
+        <div className="smx-panel-subtle flex flex-wrap items-center gap-1.5 p-1.5">
+          <div className="rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-semibold text-ink-secondary dark:bg-white/10 dark:text-gray-200">{t("users.total")}: <span className="ms-1 font-bold tabular-nums text-ink">{counts.total}</span></div>
+          <div className="rounded-full bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">{t("users.active")}: <span className="ms-1 font-bold tabular-nums">{counts.active}</span></div>
           {counts.inactive > 0 && (
-            <div className="px-3 py-1.5 rounded-xl bg-red-50 border border-red-100 text-red-700 text-[13px] font-medium shadow-sm">{t("users.inactive")}: <span className="font-bold text-red-900 ms-1">{counts.inactive}</span></div>
+            <div className="rounded-full bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">{t("users.inactive")}: <span className="ms-1 font-bold tabular-nums">{counts.inactive}</span></div>
           )}
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[340px_1fr] flex-1 min-h-0 items-start">
+      <div className="grid min-h-0 flex-1 items-start gap-4 xl:grid-cols-[1fr_minmax(300px,360px)]">
         {/* ── Add User Form ── */}
-        <article className="bg-white rounded-3xl border border-slate-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] p-6 shrink-0">
-          <h3 className="mb-6 text-[18px] font-bold text-slate-900">{t("users.addUser")}</h3>
+        <article className="smx-panel order-2 shrink-0 p-5 xl:order-2">
+          <div className="mb-5">
+            <h3 className="text-[16px] font-semibold text-ink">{t("users.addUser")}</h3>
+          </div>
           <form className="space-y-4" onSubmit={onCreate}>
             <InputField label={t("common.email")} type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
             <InputField label={t("users.fullName")} required value={newFullName} onChange={(e) => setNewFullName(e.target.value)} />
             <InputField label={t("users.password")} type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
 
-            <div className="pt-2 pb-4 border-b border-slate-100">
+            <div className="border-b border-black/5 pb-4 pt-2 dark:border-white/10">
               <ToggleSwitch checked={newIsAdmin} onChange={setNewIsAdmin} label={t("users.grantAdmin")} />
             </div>
 
-            <Button type="submit" loading={creating} fullWidth className="rounded-2xl h-11 shadow-sm bg-teal-600 hover:bg-teal-700 text-[14px] font-semibold">
+            <Button type="submit" loading={creating} fullWidth className="h-10 rounded-[12px] text-sm font-semibold">
               {t("users.createUser")}
             </Button>
           </form>
         </article>
 
         {/* ── Users Table ── */}
-        <div className="bg-white rounded-3xl border border-slate-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col min-h-0">
-          <div className="flex-1 overflow-auto rounded-3xl">
+        <div className="smx-panel order-1 flex min-h-0 flex-col overflow-hidden xl:order-1">
+          <div className="flex-1 overflow-auto">
             <table className="w-full text-start border-collapse">
-              <thead className="bg-[#f8fafc] sticky top-0 z-10 border-b border-slate-200/80 backdrop-blur-xl">
-                <tr className="text-[12px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="px-6 py-5 text-start font-bold">{t("common.email")}</th>
-                  <th className="px-6 py-5 text-start font-bold">{t("users.fullName")}</th>
-                  <th className="px-6 py-5 text-start font-bold">{t("common.role")}</th>
-                  <th className="px-6 py-5 text-start font-bold">{t("users.statusLabel")}</th>
-                  <th className="px-6 py-5 text-start font-bold">{t("users.createdAt")}</th>
-                  <th className="px-6 py-5 text-end font-bold sr-only w-16">{t("users.action")}</th>
+              <thead className="sticky top-0 z-10 border-b border-black/5 bg-black/[0.02] dark:border-white/10 dark:bg-white/[0.03]">
+                <tr className="text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-tertiary">
+                  <th className="px-5 py-3.5 text-start font-semibold">{t("common.email")}</th>
+                  <th className="px-5 py-3.5 text-start font-semibold">{t("users.fullName")}</th>
+                  <th className="px-5 py-3.5 text-start font-semibold">{t("common.role")}</th>
+                  <th className="px-5 py-3.5 text-start font-semibold">{t("users.statusLabel")}</th>
+                  <th className="px-5 py-3.5 text-start font-semibold">{t("users.createdAt")}</th>
+                  <th className="px-6 py-3.5 text-end font-semibold sr-only w-16">{t("users.action")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-black/5 dark:divide-white/10">
                 {loading ? (
                   [1, 2, 3, 4, 5].map((i) => (
                     <tr key={i} className="animate-pulse">
-                      <td className="px-6 py-4"><div className="h-4 bg-slate-100 rounded-md w-3/4"></div></td>
-                      <td className="px-6 py-4"><div className="h-4 bg-slate-50 rounded-md w-1/2"></div></td>
-                      <td className="px-6 py-4"><div className="h-6 bg-slate-100 rounded-md w-16"></div></td>
-                      <td className="px-6 py-4"><div className="h-4 bg-slate-50 rounded-md w-20"></div></td>
-                      <td className="px-6 py-4"><div className="h-4 bg-slate-100 rounded-md w-24"></div></td>
-                      <td className="px-6 py-4 text-end"><div className="h-9 w-9 bg-slate-100 rounded-xl ms-auto"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-3/4 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-1/2 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
+                      <td className="px-5 py-4"><div className="h-6 w-16 rounded-full bg-slate-100 dark:bg-white/10"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-20 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-24 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
+                      <td className="px-5 py-4 text-end"><div className="ms-auto h-9 w-9 rounded-full bg-slate-100 dark:bg-white/10"></div></td>
                     </tr>
                   ))
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-16 text-center">
+                    <td colSpan={6} className="px-6 py-14 text-center">
                       <div className="flex flex-col items-center justify-center opacity-80">
-                        <svg className="w-16 h-16 text-slate-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="mb-4 h-16 w-16 text-slate-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                         </svg>
-                        <span className="text-[15px] font-medium text-slate-500">{t("common.noData") || "No users found"}</span>
+                        <span className="text-[14px] font-medium text-ink-tertiary">{t("common.noData") || "No users found"}</span>
                       </div>
                     </td>
                   </tr>
@@ -166,30 +186,33 @@ export function UsersPanel({ token, isAdmin }: UsersPanelProps) {
                   users.map((user) => {
                     const isActive = user.is_active !== false;
                     const roleLabel = user.is_superuser ? t("role.manager") : (user.role ?? "user");
+                    const isSelf = user.id === currentUserId;
                     return (
-                      <tr key={user.id} className="transition-colors duration-200 hover:bg-slate-50/50">
-                        {/* Remove dir="ltr" to fix visual bug. Put email text strictly at start without html dir override */}
-                        <td className="px-6 py-4 text-[14px] font-medium text-slate-900 text-start">{user.email}</td>
-                        <td className="px-6 py-4 text-[14px] text-slate-600">{user.full_name || "—"}</td>
-                        <td className="px-6 py-4">
-                          <span className={clsx("inline-flex items-center px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider", roleLabel === t("role.manager") ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-600")}>
+                      <tr key={user.id} className="transition-colors duration-200 hover:bg-black/[0.025] dark:hover:bg-white/[0.04]">
+                        <td className="px-5 py-4 text-start text-[13px] font-semibold text-ink">{user.email}</td>
+                        <td className="px-5 py-4 text-[13px] font-medium text-ink-secondary">{user.full_name || "—"}</td>
+                        <td className="px-5 py-4">
+                          <span className={clsx("inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.03em]", roleLabel === t("role.manager") ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-200" : "bg-black/[0.04] text-ink-secondary dark:bg-white/[0.07] dark:text-gray-300")}>
                             {roleLabel}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={clsx("inline-flex items-center gap-1.5 text-[13px] font-medium", isActive ? "text-emerald-600" : "text-slate-400")}>
-                            <span className={clsx("w-2 h-2 rounded-full", isActive ? "bg-emerald-500" : "bg-slate-300")} />
+                        <td className="px-5 py-4">
+                          <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold", isActive ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300")}>
+                            <span className={clsx("w-2 h-2 rounded-full", isActive ? "bg-emerald-500" : "bg-slate-300 dark:bg-white/35")} />
                             {isActive ? t("users.active") : t("users.inactive")}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-[13px] text-slate-500">{formatDate(user.created_at)}</td>
-                        <td className="px-6 py-4 text-end">
+                        <td className="px-5 py-4 text-[12px] font-medium tabular-nums text-ink-tertiary">{formatDate(user.created_at)}</td>
+                        <td className="px-5 py-4 text-end">
                           <button
                             onClick={() => void toggleActive(user)}
-                            title={isActive ? t("users.deactivate") : t("users.activate")}
+                            disabled={isSelf}
+                            title={isSelf ? t("users.cannotRemoveSelf") : isActive ? t("users.deactivate") : t("users.activate")}
                             className={clsx(
-                              "p-2 rounded-xl transition-colors shadow-sm border",
-                              isActive ? "bg-white text-red-500 border-red-100 hover:bg-red-50 hover:border-red-200 cursor-pointer" : "bg-white text-emerald-500 border-emerald-100 hover:bg-emerald-50 hover:border-emerald-200 cursor-pointer"
+                              "rounded-full border p-2 transition-all duration-200",
+                              isSelf
+                                ? "cursor-not-allowed border-black/5 bg-black/[0.02] text-ink-tertiary opacity-40 dark:border-white/10 dark:bg-white/[0.05]"
+                                : isActive ? "cursor-pointer border-black/5 bg-black/[0.02] text-rose-500 hover:bg-rose-500/10 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-rose-500/15" : "cursor-pointer border-black/5 bg-black/[0.02] text-emerald-500 hover:bg-emerald-500/10 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-emerald-500/15"
                             )}
                           >
                             {isActive ? (

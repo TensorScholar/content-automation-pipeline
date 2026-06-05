@@ -12,9 +12,9 @@ export interface EmptyStateProps {
 export function EmptyState({ illustration, title, subtitle, action, className }: EmptyStateProps) {
     return (
         <div className={clsx("flex flex-col items-center justify-center py-12 text-center animate-fade-in", className)} style={{ animationDelay: "100ms" }}>
-            {illustration && <div className="mb-6">{illustration}</div>}
-            <h3 className="text-heading-sm text-ink">{title}</h3>
-            {subtitle && <p className="mt-2 max-w-sm text-body-md text-ink-secondary">{subtitle}</p>}
+            {illustration && <div className="mb-5 rounded-xl border border-black/6 bg-black/[0.02] p-3 dark:border-white/10 dark:bg-white/[0.05]">{illustration}</div>}
+            <h3 className="text-[17px] font-semibold text-ink">{title}</h3>
+            {subtitle && <p className="mt-2 max-w-sm text-[13px] leading-5 text-ink-secondary">{subtitle}</p>}
             {action && <div className="mt-6">{action}</div>}
         </div>
     );

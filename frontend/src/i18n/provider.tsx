@@ -168,7 +168,8 @@ export function __devVerifyLocaleSwitch(): void {
   checks.push({ name: "FA: dir=rtl", pass: document.documentElement.dir === "rtl" });
   checks.push({ name: "FA: lang=fa", pass: document.documentElement.lang === "fa" });
 
-  for (const c of checks) {
-    console.log(`[i18n verify] ${c.pass ? "✅ PASS" : "❌ FAIL"}: ${c.name}`);
+  const failedChecks = checks.filter((check) => !check.pass);
+  if (failedChecks.length > 0) {
+    throw new Error(`i18n locale verification failed: ${failedChecks.map((check) => check.name).join(", ")}`);
   }
 }

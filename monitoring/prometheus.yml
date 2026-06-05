@@ -1,0 +1,137 @@
+# Prometheus Configuration for Content Automation Pipeline
+# Collects metrics from FastAPI application and exports for visualization in Grafana
+
+global:
+  scrape_interval: 15s # Scrape targets every 15 seconds
+  evaluation_interval: 15s # Evaluate rules every 15 seconds
+  external_labels:
+    monitor: "content-automation"
+    environment: "production"
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# ============================================================================
+# Scrape Configurations
+# ============================================================================
+
+scrape_configs:
+  # ========================================================================
+  # Prometheus Self-Monitoring
+  # ========================================================================
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+    metrics_path: "/metrics"
+    scrape_interval: 30s
+
+  # ========================================================================
+  # FastAPI Application Metrics
+  # ========================================================================
+  - job_name: "content-automation-api"
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: "api"
+          environment: "production"
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+    # Metric relabeling (optional)
+    metric_relabel_configs:
+      # Rename metrics for consistency
+      - source_labels: [__name__]
+        regex: "starlette_requests_total"
+        target_label: "http_requests_total"
+        replacement: "api_requests_total"
+
+      # Keep only important metrics (optional - for performance)
+      # - source_labels: [__name__]
+      #   regex: 'api_requests_total|http_request_duration_seconds|api_errors_total'
+      #   action: keep
+
+  # ========================================================================
+  # Celery Flower Metrics (Task Queue Monitoring)
+  # ========================================================================
+  - job_name: "celery-flower"
+    static_configs:
+      - targets: ["flower:5555"]
+        labels:
+          service: "celery"
+          environment: "production"
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # ========================================================================
+  # Node Exporter (System Metrics)
+  # Provides host-level CPU, memory, disk, and network metrics
+  # ========================================================================
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: "node"
+          environment: "production"
+    metrics_path: "/metrics"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # ========================================================================
+  # PostgreSQL Exporter (Database Metrics)
+  # Provides connection counts, replication lag, table/index stats, etc.
+  # ========================================================================
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: "postgres"
+          environment: "production"
+    metrics_path: "/metrics"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # ========================================================================
+  # Redis Exporter (Cache Metrics)
+  # Provides memory usage, connected clients, hit/miss rates, etc.
+  # ========================================================================
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: "redis"
+          environment: "production"
+    metrics_path: "/metrics"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+# ============================================================================
+# Recording Rules (optional - for performance)
+# ============================================================================
+
+rule_files:
+  - "/etc/prometheus/alert_rules.yml"
+  # - 'recording_rules.yml'
+
+# ============================================================================
+# Notes
+# ============================================================================
+
+# All three infrastructure exporters (node, postgres, redis) are now enabled.
+#
+# Docker Compose:
+#   The exporters are defined in docker/docker-compose.monitoring.yml.
+#   Launch with:
+#     docker compose -f docker-compose.prod.yml -f docker/docker-compose.monitoring.yml up -d
+#
+# Kubernetes:
+#   The exporters are defined as separate deployments in k8s/:
+#     - k8s/postgres-exporter-deployment.yaml
+#     - k8s/redis-exporter-deployment.yaml
+#     - k8s/node-exporter-daemonset.yaml
+#   Apply with:
+#     kustomize build k8s/ | kubectl apply -f -

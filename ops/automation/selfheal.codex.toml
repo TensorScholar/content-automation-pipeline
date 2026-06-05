@@ -1,0 +1,27 @@
+version = 1
+timezone = "Asia/Tehran"
+
+[defaults]
+cwd = "/Users/mohammadatashi/Desktop/Smarlux/content-automation-pipeline"
+status = "ACTIVE"
+
+[[jobs]]
+id = "smarlux-selfheal-cycle"
+name = "Smarlux Celery Self-Heal Cycle"
+schedule = "* * * * *"
+timeout_seconds = 55
+command = "python3 /Users/mohammadatashi/.codex/skills/celery-stuck-task-healer/scripts/run_cycle.py --mode guarded-auto --stale-seconds 45 --mttr-sla-seconds 120 --report-dir /tmp/smarlux-selfheal"
+
+[[jobs]]
+id = "smarlux-selfheal-audit"
+name = "Smarlux Self-Heal Audit Report"
+schedule = "*/5 * * * *"
+timeout_seconds = 40
+command = "python3 /Users/mohammadatashi/.codex/skills/celery-stuck-task-healer/scripts/report_incident.py --input-dir /tmp/smarlux-selfheal --output /tmp/smarlux-selfheal/summary-latest.md"
+
+[[jobs]]
+id = "smarlux-chaos-mttr-gate"
+name = "Smarlux Chaos MTTR Gate"
+schedule = "0 */6 * * *"
+timeout_seconds = 1200
+command = "pytest -q /Users/mohammadatashi/Desktop/Smarlux/content-automation-pipeline/tests/chaos/test_stuck_task_recovery.py -m chaos --disable-warnings --maxfail=1"

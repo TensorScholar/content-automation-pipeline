@@ -1,0 +1,373 @@
+# ============================================================================
+# Production Docker Compose Configuration
+# Optimized for reliability, performance, and security
+# ============================================================================
+
+version: "3.9"
+
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL Database
+  # --------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg16
+    container_name: content-automation-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: content_automation
+      POSTGRES_USER: content_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # Localhost only for security
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U content_user -d content_automation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - content-automation-network
+
+  # --------------------------------------------------------------------------
+  # Redis Cache
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: content-automation-redis-prod
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    # Port not exposed externally - access via Docker network only
+    # Uncomment for local debugging: ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - content-automation-network
+
+  # --------------------------------------------------------------------------
+  # API Server (Production with Gunicorn)
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: content-automation-pipeline:${IMAGE_TAG:-latest}
+    # Note: container_name removed to support replicas
+    restart: unless-stopped
+    command: ["api"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database configuration (async driver for Python app)
+      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
+
+      # Redis configuration
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+
+      # LLM API keys (set in .env file)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+      # Application configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: production
+
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+
+      # Performance tuning - Adjusted for 2 API replicas
+      WORKERS: 4
+      MAX_CONNECTIONS: ${MAX_CONNECTIONS:-100}
+      DB_POOL_SIZE: 5 # 2 replicas * 5 = 10 total connections
+      DB_MAX_OVERFLOW: 5 # Allow burst to 10 per replica
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - content-automation-network
+    deploy:
+      mode: replicated
+      replicas: 2
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 2G
+      update_config:
+        parallelism: 1
+        delay: 10s
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+  # --------------------------------------------------------------------------
+  # Next.js Frontend
+  # --------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    image: content-automation-frontend:${IMAGE_TAG:-latest}
+    container_name: content-automation-frontend-prod
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_PROXY_TARGET: http://api:8000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: production
+    ports:
+      - "${FRONTEND_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - content-automation-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # --------------------------------------------------------------------------
+  # Celery Worker (Primary - for content generation tasks)
+  # --------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: content-automation-pipeline:${IMAGE_TAG:-latest}
+    # Note: container_name removed to support replicas
+    restart: unless-stopped
+    command: ["worker"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "celery",
+          "-A",
+          "orchestration.celery_app.app",
+          "inspect",
+          "ping",
+          "-d",
+          "celery@$$HOSTNAME",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: production
+      CELERY_CONCURRENCY: "4"
+      CELERY_LOG_LEVEL: info
+      DB_POOL_SIZE: 3 # 3 replicas * 3 = 9 total connections
+      DB_MAX_OVERFLOW: 2 # Allow burst to 5 per replica
+    networks:
+      - content-automation-network
+    deploy:
+      mode: replicated
+      replicas: 3 # Recommended for production load
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 2G
+      update_config:
+        parallelism: 1
+        delay: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+  # --------------------------------------------------------------------------
+  # Celery Beat (Scheduler)
+  # --------------------------------------------------------------------------
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: content-automation-pipeline:${IMAGE_TAG:-latest}
+    container_name: content-automation-celery-beat-prod
+    restart: unless-stopped
+    command: ["beat"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: production
+      CELERY_LOG_LEVEL: info
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - content-automation-network
+
+  # --------------------------------------------------------------------------
+  # Flower (Celery Monitoring)
+  # --------------------------------------------------------------------------
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: content-automation-pipeline:${IMAGE_TAG:-latest}
+    container_name: content-automation-flower-prod
+    restart: unless-stopped
+    # SECURITY: No default credentials - deployment will fail if not set
+    command: >
+      celery -A orchestration.celery_app.app flower --basic_auth=${FLOWER_USER:?FLOWER_USER required}:${FLOWER_PASSWORD:?FLOWER_PASSWORD required} --port=5555
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      ENVIRONMENT: production
+      FLOWER_USER: ${FLOWER_USER:?Required}
+      FLOWER_PASSWORD: ${FLOWER_PASSWORD:?Required}
+    ports:
+      - "127.0.0.1:5555:5555" # Bind to localhost only for security
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - content-automation-network
+
+  # --------------------------------------------------------------------------
+  # Nginx (Reverse Proxy with TLS Termination)
+  # --------------------------------------------------------------------------
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: content-automation-nginx-prod
+    restart: unless-stopped
+    depends_on:
+      - api
+      - frontend
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # SSL certificates (use Let's Encrypt or custom certificates)
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      # Certbot webroot for ACME challenge
+      - certbot_webroot:/var/www/certbot:ro
+      # Nginx logs
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - content-automation-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+  # --------------------------------------------------------------------------
+  # Certbot (Let's Encrypt SSL Certificate Manager)
+  # --------------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot:v3.1.0
+    container_name: content-automation-certbot
+    volumes:
+      - ./nginx/ssl:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - content-automation-network
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  content-automation-network:
+    driver: bridge
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  certbot_webroot:
+    driver: local

@@ -12,11 +12,9 @@ export interface MetricCardProps {
 }
 
 /**
- * MetricCard — Clean SaaS metric display.
- * - 32px bold number for data-ink ratio
- * - Label in muted secondary text
- * - Status dot at inline-end
- * - Soft shadow + border-gray-100
+ * MetricCard — macOS grouped metric row.
+ * - Compact native typography
+ * - Ultra-thin separators and no drop shadow
  * - Full RTL support via logical properties
  */
 export function MetricCard({ label, value, statusDot, onClick, loading, className, children }: MetricCardProps) {
@@ -25,23 +23,31 @@ export function MetricCard({ label, value, statusDot, onClick, loading, classNam
         <Tag
             onClick={onClick}
             className={clsx(
-                "relative rounded-2xl bg-white border border-gray-100 p-5 text-start",
-                "shadow-sm transition-all duration-200",
-                onClick && "cursor-pointer hover:shadow-md hover:border-gray-200",
+                "group macos-grouped-surface relative w-full border px-4 py-3 text-start",
+                "transition-colors duration-200 hover:bg-white/70 dark:hover:bg-white/[0.07]",
+                onClick && "cursor-pointer",
                 className,
             )}
         >
-            <div className="flex items-start justify-between">
-                <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-gray-500 mb-1">{label}</p>
+            <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                    <p className="truncate text-[12px] font-medium tracking-normal text-ink-secondary">{label}</p>
                     {loading ? (
-                        <div className="h-9 w-20 rounded-lg bg-gray-100 animate-pulse" />
+                        <div className="h-5 w-12 animate-pulse rounded-md bg-slate-100" />
                     ) : (
-                        <p className="text-[32px] font-bold leading-none tracking-tight text-gray-900">{value}</p>
+                        <p className="text-[18px] font-semibold leading-tight tracking-normal text-ink tabular-nums">{value}</p>
                     )}
                 </div>
-                {statusDot && (
-                    <span className={clsx("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", statusDot)} aria-hidden />
+                {statusDot ? (
+                    <span className={clsx("h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.08)]", statusDot)} aria-hidden />
+                ) : onClick ? (
+                    <div className="rounded-md border border-black/5 bg-black/5 p-1.5 text-ink-tertiary transition-colors group-hover:text-ink dark:border-white/10 dark:bg-white/10">
+                        <svg className="w-3.5 h-3.5 rtl:-scale-x-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </div>
+                ) : (
+                    <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full bg-ink-tertiary/35" />
                 )}
             </div>
             {children}

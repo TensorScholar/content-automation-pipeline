@@ -66,9 +66,18 @@ function ToastItem({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numbe
 export function ToastProvider({ children }: { children: React.ReactNode }) {
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+    const removalTimersRef = useRef<Map<number, number>>(new Map());
 
     useEffect(() => {
         setPortalRoot(document.getElementById("toast-root") ?? document.body);
+    }, []);
+
+    useEffect(() => {
+        const removalTimers = removalTimersRef.current;
+        return () => {
+            removalTimers.forEach((timer) => window.clearTimeout(timer));
+            removalTimers.clear();
+        };
     }, []);
 
     const showToast = useCallback((variant: ToastVariant, message: string) => {
@@ -78,7 +87,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
     const dismiss = useCallback((id: number) => {
         setToasts(prev => prev.map(t => t.id === id ? { ...t, exiting: true } : t));
-        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 200);
+        const existingTimer = removalTimersRef.current.get(id);
+        if (existingTimer) window.clearTimeout(existingTimer);
+        const timer = window.setTimeout(() => {
+            removalTimersRef.current.delete(id);
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 200);
+        removalTimersRef.current.set(id, timer);
     }, []);
 
     return (

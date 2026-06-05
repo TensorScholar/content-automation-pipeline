@@ -34,11 +34,12 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = "28re
         };
         document.addEventListener("keydown", handler);
         // Focus first focusable
-        setTimeout(() => {
+        const focusTimer = window.setTimeout(() => {
             const first = dialogRef.current?.querySelector<HTMLElement>("button, input, [tabindex]");
             first?.focus();
         }, 50);
         return () => {
+            window.clearTimeout(focusTimer);
             document.removeEventListener("keydown", handler);
             previousFocus.current?.focus();
         };
@@ -51,13 +52,13 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = "28re
             <div className="absolute inset-0 bg-ink/40 backdrop-blur-[4px] animate-fade-in" onClick={onClose} />
             <div
                 ref={dialogRef}
-                className="relative w-full animate-scale-in rounded-lg border border-border bg-surface shadow-xl"
+                className="relative w-full animate-scale-in rounded-xl border border-black/8 bg-surface shadow-[0_24px_48px_-28px_rgb(0_0_0/0.55)] dark:border-white/10"
                 style={{ maxWidth }}
             >
                 {title && (
-                    <div className="flex items-center justify-between border-b border-border px-6 py-4">
-                        <h2 className="text-heading-md text-ink">{title}</h2>
-                        <button onClick={onClose} className="rounded p-1 text-ink-tertiary hover:text-ink transition-colors" aria-label="Close">
+                    <div className="flex items-center justify-between border-b border-black/6 px-6 py-4 dark:border-white/10">
+                        <h2 className="text-[16px] font-semibold text-ink">{title}</h2>
+                        <button onClick={onClose} className="rounded-md p-1 text-ink-tertiary hover:bg-black/[0.05] hover:text-ink transition-colors dark:hover:bg-white/[0.08]" aria-label="Close">
                             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                             </svg>
@@ -65,7 +66,7 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = "28re
                     </div>
                 )}
                 <div className="px-6 py-4">{children}</div>
-                {footer && <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">{footer}</div>}
+                {footer && <div className="flex items-center justify-end gap-3 border-t border-black/6 px-6 py-4 dark:border-white/10">{footer}</div>}
             </div>
         </div>
     );

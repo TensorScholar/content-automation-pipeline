@@ -3,10 +3,11 @@ import type { Config } from "tailwindcss";
 /* ═══════════════════════════════════════════════════════════════════
    SMARLUX CONTENT OS — Design Token System (Tailwind)
    Spec: Smarlux_UI_Master_Redesign_Prompt.md
-   Deep Teal brand · 4px grid · Plus Jakarta Sans + Vazirmatn
+   Deep Teal brand · macOS system typography · 4px grid
    ═══════════════════════════════════════════════════════════════════ */
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
@@ -68,24 +69,44 @@ const config: Config = {
           DEFAULT: "rgb(var(--color-info) / <alpha-value>)",
           subtle: "rgb(var(--color-info-subtle) / <alpha-value>)",
         },
+        /* macOS glassmorphism pivot tokens */
+        macos: {
+          app: "rgb(var(--macos-app-bg) / <alpha-value>)",
+          glass: "rgb(var(--macos-glass-bg) / <alpha-value>)",
+          "glass-border": "rgb(var(--macos-glass-border) / <alpha-value>)",
+          "segment-bg": "rgb(var(--macos-segment-bg) / <alpha-value>)",
+          "shadow-ring": "rgb(var(--macos-shadow-ring) / <alpha-value>)",
+          light: {
+            app: "#f5f5f7",
+            glass: "rgb(255 255 255 / 0.7)",
+            border: "rgb(0 0 0 / 0.05)",
+            segment: "rgb(0 0 0 / 0.05)",
+          },
+          dark: {
+            app: "#151515",
+            glass: "rgb(30 30 30 / 0.8)",
+            border: "rgb(255 255 255 / 0.1)",
+            segment: "rgb(255 255 255 / 0.1)",
+          },
+        },
       },
 
       /* ─── Typography ───────────────────────────────────────── */
       fontFamily: {
-        sans: ["var(--font-latin)", "Plus Jakarta Sans", "system-ui", "sans-serif"],
-        persian: ["var(--font-persian)", "Vazirmatn", "Tahoma", "sans-serif"],
-        mono: ["var(--font-mono)", "JetBrains Mono", "monospace"],
+        sans: ["var(--font-family-system)"],
+        persian: ["var(--font-family-farsi)"],
+        mono: ["\"SF Mono\"", "ui-monospace", "Menlo", "Consolas", "monospace"],
       },
       fontSize: {
-        "display-2xl": ["3rem", { lineHeight: "3.5rem", letterSpacing: "-0.02em", fontWeight: "700" }],
-        "display-xl": ["2.25rem", { lineHeight: "2.75rem", letterSpacing: "-0.02em", fontWeight: "700" }],
-        "display-lg": ["1.875rem", { lineHeight: "2.375rem", letterSpacing: "-0.01em", fontWeight: "600" }],
-        "heading-lg": ["1.5rem", { lineHeight: "2rem", letterSpacing: "-0.01em", fontWeight: "600" }],
-        "heading-md": ["1.25rem", { lineHeight: "1.75rem", letterSpacing: "-0.005em", fontWeight: "600" }],
-        "heading-sm": ["1rem", { lineHeight: "1.5rem", letterSpacing: "0em", fontWeight: "600" }],
-        "body-lg": ["1rem", { lineHeight: "1.625rem", fontWeight: "400" }],
-        "body-md": ["0.875rem", { lineHeight: "1.375rem", fontWeight: "400" }],
-        "body-sm": ["0.75rem", { lineHeight: "1.125rem", fontWeight: "400" }],
+        "display-2xl": ["var(--text-2xl-size)", { lineHeight: "var(--text-2xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "700" }],
+        "display-xl": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
+        "display-lg": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
+        "heading-lg": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
+        "heading-md": ["var(--text-lg-size)", { lineHeight: "var(--text-lg-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "500" }],
+        "heading-sm": ["var(--text-base-size)", { lineHeight: "var(--text-base-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "500" }],
+        "body-lg": ["var(--text-lg-size)", { lineHeight: "var(--text-lg-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "500" }],
+        "body-md": ["var(--text-base-size)", { lineHeight: "var(--text-base-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "400" }],
+        "body-sm": ["var(--text-xs-size)", { lineHeight: "var(--text-xs-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "400" }],
       },
 
       /* ─── 4px Base Grid Spacing ────────────────────────────── */
@@ -107,28 +128,28 @@ const config: Config = {
 
       /* ─── Border Radius (Spec) ─────────────────────────────── */
       borderRadius: {
-        sm: "8px",
-        md: "12px",
-        lg: "16px",
-        xl: "20px",
+        sm: "4px",
+        md: "8px",
+        lg: "10px",
+        xl: "12px",
         full: "9999px",
       },
 
       /* ─── Elevation Shadows (Spec) ─────────────────────────── */
       boxShadow: {
-        sm: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-        md: "0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05)",
-        lg: "0 14px 40px -4px rgba(0,0,0,0.08), 0 4px 12px -2px rgba(0,0,0,0.04)",
-        xl: "0 24px 56px -6px rgba(0,0,0,0.12), 0 8px 20px -4px rgba(0,0,0,0.06)",
+        sm: "0 1px 2px rgba(0,0,0,0.05)",
+        md: "0 4px 6px rgba(0,0,0,0.1)",
+        lg: "0 10px 25px rgba(0,0,0,0.1)",
+        xl: "0 10px 25px rgba(0,0,0,0.1)",
         "login-card": "0 20px 60px rgba(0,0,0,0.12)",
-        "focus-ring": "0 0 0 3px rgba(14,110,110,0.12)",
+        "focus-ring": "0 0 0 2px rgb(255 255 255), 0 0 0 4px rgba(15,148,136,0.95)",
         "focus-ring-error": "0 0 0 3px rgba(220,38,38,0.10)",
         "focus-ring-success": "0 0 0 3px rgba(22,163,74,0.10)",
         "toast": "0 8px 24px rgba(0,0,0,0.12)",
         /* Legacy aliases */
-        "elevation-1": "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-        "elevation-2": "0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05)",
-        "elevation-3": "0 14px 40px -4px rgba(0,0,0,0.08), 0 4px 12px -2px rgba(0,0,0,0.04)",
+        "elevation-1": "0 1px 2px rgba(0,0,0,0.05)",
+        "elevation-2": "0 4px 6px rgba(0,0,0,0.1)",
+        "elevation-3": "0 10px 25px rgba(0,0,0,0.1)",
         "elevation-4": "0 24px 56px -6px rgba(0,0,0,0.12), 0 8px 20px -4px rgba(0,0,0,0.06)",
         glass: "0 8px 32px rgba(0,0,0,0.06)",
       },
@@ -146,16 +167,16 @@ const config: Config = {
 
       /* ─── Motion Tokens (Spec) ─────────────────────────────── */
       transitionDuration: {
-        fast: "100ms",
-        base: "150ms",
-        normal: "200ms",
-        slow: "300ms",
+        fast: "150ms",
+        base: "250ms",
+        normal: "250ms",
+        slow: "350ms",
         slower: "500ms",
       },
       transitionTimingFunction: {
-        apple: "cubic-bezier(0.25, 0.1, 0.25, 1)",
-        spring: "cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-        smooth: "ease-in-out",
+        apple: "cubic-bezier(0.16, 1, 0.3, 1)",
+        spring: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        smooth: "cubic-bezier(0.16, 1, 0.3, 1)",
       },
 
       /* ─── Layout ───────────────────────────────────────────── */

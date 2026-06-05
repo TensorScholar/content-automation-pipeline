@@ -6,6 +6,7 @@ interface ErrorBoundaryProps {
     children: ReactNode;
     fallbackTitle?: string;
     fallbackMessage?: string;
+    resetKey?: string | number;
 }
 
 interface ErrorBoundaryState {
@@ -25,6 +26,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     componentDidCatch(error: Error, info: ErrorInfo) {
         console.error("[ErrorBoundary] Caught rendering error:", error, info.componentStack);
+    }
+
+    componentDidUpdate(previousProps: ErrorBoundaryProps) {
+        if (this.state.hasError && previousProps.resetKey !== this.props.resetKey) {
+            this.setState({ hasError: false, error: null });
+        }
     }
 
     handleRetry = () => {

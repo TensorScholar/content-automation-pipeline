@@ -65,8 +65,8 @@ export const SelectDropdown = forwardRef<HTMLDivElement, SelectDropdownProps>(fu
     }, [focusIndex, open]);
 
     return (
-        <div ref={containerRef} className="flex flex-col gap-[6px]">
-            <label htmlFor={id} className="text-body-sm font-medium text-ink">
+        <div ref={containerRef} className="flex flex-col gap-1">
+            <label htmlFor={id} className="text-[12px] font-medium tracking-normal text-ink-secondary">
                 {label}
                 {required && <span className="ms-1 text-danger" aria-hidden>*</span>}
             </label>
@@ -77,12 +77,13 @@ export const SelectDropdown = forwardRef<HTMLDivElement, SelectDropdownProps>(fu
                     role="combobox"
                     aria-expanded={open}
                     aria-haspopup="listbox"
+                    aria-controls={open ? `${id}-listbox` : undefined}
                     aria-invalid={hasError}
                     disabled={disabled}
                     onClick={() => !disabled && setOpen(o => !o)}
                     onKeyDown={handleKeyDown}
                     className={clsx(
-                        "smx-input flex h-11 items-center justify-between rounded-sm pe-3 ps-4 text-start",
+                        "smx-input flex h-11 items-center justify-between rounded-md pe-3 ps-3 text-start",
                         hasError && "input-error",
                         disabled && "opacity-60 cursor-not-allowed",
                     )}
@@ -100,8 +101,9 @@ export const SelectDropdown = forwardRef<HTMLDivElement, SelectDropdownProps>(fu
                 {open && (
                     <ul
                         ref={listRef}
+                        id={`${id}-listbox`}
                         role="listbox"
-                        className="absolute z-dropdown mt-1 w-full overflow-auto rounded-sm border border-border bg-surface py-1 shadow-md animate-scale-in"
+                        className="absolute z-dropdown mt-1 w-full overflow-auto rounded-md border border-black/8 bg-white py-1 shadow-[0_10px_24px_-20px_rgb(0_0_0/0.4)] animate-scale-in dark:border-white/10 dark:bg-[#2e2e31]"
                         style={{ maxHeight: 240 }}
                     >
                         {options.map((opt, i) => (
@@ -110,10 +112,10 @@ export const SelectDropdown = forwardRef<HTMLDivElement, SelectDropdownProps>(fu
                                 role="option"
                                 aria-selected={opt.value === value}
                                 className={clsx(
-                                    "flex cursor-pointer items-center px-4 py-2 text-body-md transition-colors duration-fast",
-                                    opt.value === value && "bg-brand/8 text-brand font-medium",
-                                    focusIndex === i && "bg-surface-alt",
-                                    opt.value !== value && focusIndex !== i && "hover:bg-surface-alt",
+                                    "flex cursor-pointer items-center px-3 py-2 text-[13px] text-ink transition-colors duration-fast",
+                                    opt.value === value && "bg-brand/12 text-brand font-medium",
+                                    focusIndex === i && "bg-black/[0.04] dark:bg-white/[0.08]",
+                                    opt.value !== value && focusIndex !== i && "hover:bg-black/[0.03] dark:hover:bg-white/[0.06]",
                                 )}
                                 onClick={() => { onChange?.(opt.value); close(); }}
                             >
@@ -125,11 +127,11 @@ export const SelectDropdown = forwardRef<HTMLDivElement, SelectDropdownProps>(fu
                 )}
             </div>
             {hasError ? (
-                <p className="flex items-center gap-1 text-body-sm text-danger" role="alert">
+                <p className="flex items-center gap-1 text-[11px] text-danger" role="alert">
                     <span aria-hidden>⚠</span> {errorText}
                 </p>
             ) : helperText ? (
-                <p className="text-body-sm text-ink-tertiary">{helperText}</p>
+                <p className="text-[11px] text-ink-tertiary">{helperText}</p>
             ) : null}
         </div>
     );

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: content-automation
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: content-automation-pipeline:1.0.0
+          command: ["./entrypoint.sh", "worker"]
+          env:
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://content_user:$(POSTGRES_PASSWORD)@postgres:5432/content_automation
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: content-automation-secrets
+                  key: postgres-password
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: content-automation-secrets
+                  key: anthropic-api-key
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: content-automation-secrets
+                  key: openai-api-key
+          envFrom:
+            - configMapRef:
+                name: content-automation-config
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - orchestration.celery_app.app
+                - inspect
+                - ping
+                - -d
+                - celery@$(HOSTNAME)
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1

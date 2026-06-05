@@ -1,0 +1,35 @@
+# Grafana Datasources Configuration
+# Automatically configured data sources on Grafana startup
+
+apiVersion: 1
+
+providers:
+  - name: 'Prometheus'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/datasources
+
+# ============================================================================
+# Data Sources
+# ============================================================================
+
+datasources:
+  # Prometheus - Main Metrics Database
+  - name: 'Prometheus'
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    password: ''
+    user: ''
+    database: ''
+    basicAuth: false
+    isDefault: true
+    jsonData:
+      timeInterval: '15s'
+      httpMethod: POST
+    editable: true

@@ -1,0 +1,365 @@
+groups:
+  - name: content-automation-alerts
+    rules:
+      # ========================================================================
+      # ERROR RATE ALERTS
+      # ========================================================================
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(workflow_errors_total[5m])) /
+          sum(rate(workflow_total[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected (> 10%)"
+          description: 'Workflow error rate is {{ $value | printf "%.2f" }}% over the last 5 minutes'
+
+      - alert: APIErrorSpike
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx error rate above 5%"
+          description: 'API is returning {{ $value | printf "%.2f" }}% 5xx errors'
+
+      - alert: APIErrorCritical
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) /
+          sum(rate(http_requests_total[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API 5xx error rate above 10% (critical)"
+          description: 'API is returning {{ $value | printf "%.2f" }}% 5xx errors'
+
+      # ========================================================================
+      # CELERY TASK ALERTS
+      # ========================================================================
+      - alert: CeleryTaskBacklog
+        expr: celery_queue_length > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery task queue backlog"
+          description: "Queue {{ $labels.queue }} has {{ $value }} pending tasks"
+
+      - alert: CeleryTaskBacklogCritical
+        expr: celery_queue_length > 300
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Celery task queue backlog is critical"
+          description: "Queue {{ $labels.queue }} has {{ $value }} pending tasks (critical threshold)"
+
+      - alert: CeleryWorkerDown
+        expr: celery_workers_online == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Celery workers online"
+          description: "All Celery workers appear to be offline"
+
+      - alert: TaskFailureRate
+        expr: |
+          sum(rate(celery_task_failed_total[10m])) /
+          (sum(rate(celery_task_succeeded_total[10m])) + sum(rate(celery_task_failed_total[10m])) + 0.001) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Celery task failure rate (> 10%)"
+          description: 'Task failure rate: {{ $value | printf "%.2f" }}%'
+
+      # ========================================================================
+      # LLM API ALERTS
+      # ========================================================================
+      - alert: LLMHighLatency
+        expr: histogram_quantile(0.95, rate(llm_request_duration_seconds_bucket[5m])) > 30
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM API latency is high"
+          description: '95th percentile LLM latency is {{ $value | printf "%.1f" }}s'
+
+      - alert: LLMHighCost
+        expr: sum(increase(llm_cost_total[1h])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM costs exceeding $10/hour"
+          description: 'Hourly LLM spend: ${{ $value | printf "%.2f" }}'
+
+      # ========================================================================
+      # CACHE ALERTS
+      # ========================================================================
+      - alert: LowCacheHitRate
+        expr: |
+          sum(rate(cache_hits_total[10m])) /
+          (sum(rate(cache_hits_total[10m])) + sum(rate(cache_misses_total[10m])) + 0.001) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache hit rate below 50%"
+          description: 'Cache efficiency is {{ $value | printf "%.2f" }}%'
+
+      # ========================================================================
+      # INFRASTRUCTURE ALERTS
+      # ========================================================================
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been unreachable for > 1 minute"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 2048
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage (> 2GB)"
+          description: '{{ $labels.job }} is using {{ $value | printf "%.0f" }}MB of memory'
+
+  # ========================================================================
+  # POSTGRESQL EXPORTER ALERTS (postgres-exporter)
+  # ========================================================================
+  - name: postgres-alerts
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL server is down"
+          description: "PostgreSQL instance {{ $labels.instance }} has been unreachable for > 1 minute"
+
+      - alert: PostgresTooManyConnections
+        expr: |
+          sum by (instance) (pg_stat_activity_count) /
+          on (instance) pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connections above 80% of max"
+          description: '{{ $labels.instance }} is using {{ $value | printf "%.0f" }}% of available connections'
+
+      - alert: PostgresConnectionsSaturated
+        expr: |
+          sum by (instance) (pg_stat_activity_count) /
+          on (instance) pg_settings_max_connections > 0.95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL connections above 95% — near exhaustion"
+          description: '{{ $labels.instance }} is at {{ $value | printf "%.0f" }}% connection capacity'
+
+      - alert: PostgresDeadlocks
+        expr: increase(pg_stat_database_deadlocks[5m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL deadlocks detected"
+          description: "{{ $value }} deadlocks in the last 5 minutes on {{ $labels.datname }}"
+
+      - alert: PostgresSlowQueries
+        expr: |
+          pg_stat_activity_max_tx_duration{datname="content_automation"} > 300
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL long-running transaction (> 5 min)"
+          description: 'Longest transaction on {{ $labels.datname }} has been running for {{ $value | printf "%.0f" }}s'
+
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL replication lag > 30s"
+          description: 'Replication lag is {{ $value | printf "%.1f" }}s on {{ $labels.instance }}'
+
+      - alert: PostgresDiskSpaceLow
+        expr: |
+          pg_database_size_bytes{datname="content_automation"} > 15 * 1024 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL database size exceeds 15GB (of 20GB PVC)"
+          description: "Database {{ $labels.datname }} is {{ $value | humanize1024 }}B"
+
+  # ========================================================================
+  # REDIS EXPORTER ALERTS (redis-exporter)
+  # ========================================================================
+  - name: redis-alerts
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis server is down"
+          description: "Redis instance {{ $labels.instance }} has been unreachable for > 1 minute"
+
+      - alert: RedisMemoryHigh
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage above 85% of maxmemory"
+          description: '{{ $labels.instance }} is at {{ $value | printf "%.0f" }}% memory capacity'
+
+      - alert: RedisMemoryCritical
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis memory usage above 95% — evictions imminent"
+          description: '{{ $labels.instance }} is at {{ $value | printf "%.0f" }}% memory capacity'
+
+      - alert: RedisHighKeyEviction
+        expr: increase(redis_evicted_keys_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis is evicting keys heavily"
+          description: '{{ $value | printf "%.0f" }} keys evicted in the last 5 minutes on {{ $labels.instance }}'
+
+      - alert: RedisTooManyConnectedClients
+        expr: redis_connected_clients > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis has too many connected clients"
+          description: '{{ $value | printf "%.0f" }} clients connected to {{ $labels.instance }}'
+
+      - alert: RedisRejectedConnections
+        expr: increase(redis_rejected_connections_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is rejecting connections"
+          description: '{{ $value | printf "%.0f" }} connections rejected in the last 5 minutes'
+
+      - alert: RedisLowHitRate
+        expr: |
+          rate(redis_keyspace_hits_total[10m]) /
+          (rate(redis_keyspace_hits_total[10m]) + rate(redis_keyspace_misses_total[10m]) + 0.001) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis cache hit rate below 50%"
+          description: 'Redis hit rate is {{ $value | printf "%.2f" }} on {{ $labels.instance }}'
+
+  # ========================================================================
+  # NODE EXPORTER ALERTS (host-level resources)
+  # ========================================================================
+  - name: node-alerts
+    rules:
+      - alert: HostHighCpuUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU usage above 85%"
+          description: '{{ $labels.instance }} CPU is at {{ $value | printf "%.1f" }}%'
+
+      - alert: HostCpuCritical
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host CPU usage above 95%"
+          description: '{{ $labels.instance }} CPU is at {{ $value | printf "%.1f" }}%'
+
+      - alert: HostHighMemoryUsage
+        expr: |
+          (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory usage above 85%"
+          description: '{{ $labels.instance }} memory is at {{ $value | printf "%.1f" }}%'
+
+      - alert: HostMemoryCritical
+        expr: |
+          (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host memory usage above 95%"
+          description: '{{ $labels.instance }} memory is at {{ $value | printf "%.1f" }}%'
+
+      - alert: HostDiskSpaceLow
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host root disk usage above 85%"
+          description: '{{ $labels.instance }} disk is at {{ $value | printf "%.1f" }}% on {{ $labels.mountpoint }}'
+
+      - alert: HostDiskSpaceCritical
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host root disk usage above 95%"
+          description: '{{ $labels.instance }} disk is at {{ $value | printf "%.1f" }}% on {{ $labels.mountpoint }}'
+
+      - alert: HostNetworkReceiveErrors
+        expr: increase(node_network_receive_errs_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host network receive errors detected"
+          description: '{{ $value | printf "%.0f" }} receive errors on {{ $labels.device }} ({{ $labels.instance }})'
+
+      - alert: HostHighDiskIOLatency
+        expr: |
+          rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk I/O latency is high (> 90% utilization)"
+          description: 'Disk {{ $labels.device }} on {{ $labels.instance }} is at {{ $value | printf "%.2f" }}s I/O time per second'

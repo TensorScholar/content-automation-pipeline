@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState, useRef } from "react";
 import clsx from "clsx";
 import { ApiError, apiRequest } from "@/lib/api";
-import { Project } from "@/types/models";
+import { Project, ProjectReadiness } from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -37,6 +37,75 @@ const VERTICAL_OPTIONS = [
   { value: "finance", fa: "مالی و اقتصادی", ar: "المالية والاقتصاد", en: "Finance and Economy" },
   { value: "marketing", fa: "بازاریابی دیجیتال", ar: "التسويق الرقمي", en: "Digital Marketing" },
 ];
+
+const READINESS_COPY = {
+  en: {
+    tab: "Flight Check",
+    title: "Project Flight Check",
+    subtitle: "Operational readiness for generation and publishing.",
+    loading: "Checking project readiness...",
+    refresh: "Run check",
+    ready: "Ready",
+    warning: "Needs review",
+    blocked: "Blocked",
+    canGenerate: "Generation",
+    canPublish: "Publishing",
+    available: "Available",
+    unavailable: "Unavailable",
+    blockers: "Blocking items",
+    warnings: "Warnings",
+    allChecks: "All checks",
+    actions: "Manager actions",
+    noActions: "No action required.",
+    lastChecked: "Last checked",
+    failed: "Readiness check failed.",
+    openRulebook: "Open content rules",
+  },
+  fa: {
+    tab: "بررسی آماده‌سازی",
+    title: "بررسی آماده‌سازی پروژه",
+    subtitle: "آمادگی عملیاتی برای تولید و انتشار محتوا.",
+    loading: "در حال بررسی آمادگی پروژه...",
+    refresh: "اجرای بررسی",
+    ready: "آماده",
+    warning: "نیازمند بررسی",
+    blocked: "مسدود",
+    canGenerate: "تولید محتوا",
+    canPublish: "انتشار",
+    available: "فعال",
+    unavailable: "غیرفعال",
+    blockers: "موارد مسدودکننده",
+    warnings: "هشدارها",
+    allChecks: "همه بررسی‌ها",
+    actions: "اقدام‌های مدیر",
+    noActions: "اقدامی لازم نیست.",
+    lastChecked: "آخرین بررسی",
+    failed: "بررسی آمادگی ناموفق بود.",
+    openRulebook: "باز کردن قوانین محتوا",
+  },
+  ar: {
+    tab: "فحص الجاهزية",
+    title: "فحص جاهزية المشروع",
+    subtitle: "الجاهزية التشغيلية للإنشاء والنشر.",
+    loading: "جارٍ فحص جاهزية المشروع...",
+    refresh: "تشغيل الفحص",
+    ready: "جاهز",
+    warning: "يحتاج مراجعة",
+    blocked: "محظور",
+    canGenerate: "إنشاء المحتوى",
+    canPublish: "النشر",
+    available: "متاح",
+    unavailable: "غير متاح",
+    blockers: "العناصر المانعة",
+    warnings: "التحذيرات",
+    allChecks: "كل الفحوصات",
+    actions: "إجراءات المدير",
+    noActions: "لا يلزم إجراء.",
+    lastChecked: "آخر فحص",
+    failed: "فشل فحص الجاهزية.",
+    openRulebook: "فتح قواعد المحتوى",
+  },
+};
 
 function extractError(error: unknown): string {
   if (error instanceof ApiError) return error.detail;
@@ -85,8 +154,11 @@ export function ProjectsPanel({
   });
 
   // Editor states
-  const [activeTab, setActiveTab] = useState<"general" | "wordpress" | "rules">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "wordpress" | "rules" | "readiness">("general");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
 
   // Kebab Menu State
   const [kebabOpen, setKebabOpen] = useState(false);
@@ -97,6 +169,7 @@ export function ProjectsPanel({
     () => projects.find((p) => p.id === selectedProjectId) ?? null,
     [projects, selectedProjectId]
   );
+  const readinessCopy = READINESS_COPY[locale];
 
   // If selected project gets deleted, reset selection
   useEffect(() => {
@@ -106,6 +179,57 @@ export function ProjectsPanel({
       onSelectProject(projects[0].id);
     }
   }, [projects, selectedProjectId, onSelectProject]);
+
+  useEffect(() => {
+    if (!selectedProject || selectedProjectId === "__new__") {
+      setReadiness(null);
+      setReadinessError(null);
+      setReadinessLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setReadinessLoading(true);
+    setReadinessError(null);
+
+    apiRequest<ProjectReadiness>(`/projects/${selectedProject.id}/readiness`, {
+      token,
+      signal: controller.signal,
+      timeoutMs: 10000,
+    })
+      .then((payload) => {
+        if (!controller.signal.aborted) setReadiness(payload);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setReadiness(null);
+          setReadinessError(extractError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setReadinessLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [selectedProject, selectedProjectId, token]);
+
+  const refreshReadiness = async () => {
+    if (!selectedProject) return;
+    setReadinessLoading(true);
+    setReadinessError(null);
+    try {
+      const payload = await apiRequest<ProjectReadiness>(`/projects/${selectedProject.id}/readiness`, {
+        token,
+        timeoutMs: 10000,
+      });
+      setReadiness(payload);
+    } catch (error) {
+      setReadiness(null);
+      setReadinessError(extractError(error));
+    } finally {
+      setReadinessLoading(false);
+    }
+  };
 
   const verticalOptions: SelectOption[] = useMemo(() => {
     const base = VERTICAL_OPTIONS.map((v) => ({
@@ -155,15 +279,15 @@ export function ProjectsPanel({
      ═══════════════════════════════════════════════════════════════ */
   if (projects.length === 0) {
     return (
-      <section className="animate-fade-in flex min-h-[calc(100vh-80px)] items-center justify-center p-4">
-        <div className="w-full max-w-lg rounded-3xl border border-slate-200/60 bg-white p-10 shadow-sm relative overflow-hidden">
+      <section className="animate-fade-in flex min-h-[calc(100vh-96px)] items-center justify-center p-4">
+        <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-black/5 bg-white p-8 dark:border-white/10 dark:bg-surface">
           {/* Subtle gradient orb for Apple feel */}
-          <div className="absolute top-0 inset-inline-start-1/2 -ml-32 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2" />
+          <div className="pointer-events-none absolute inset-inline-start-0 top-0 h-1 w-full bg-teal-600/70" />
 
           <div className="text-center mb-8 relative z-10">
             <FolderIllustration />
-            <h2 className="text-[24px] font-bold text-slate-900 tracking-tight mb-2">{t("projects.emptyTitle")}</h2>
-            <p className="text-[14px] text-slate-500">{t("projects.emptySubtitle")}</p>
+            <h2 className="mb-2 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.emptyTitle")}</h2>
+            <p className="text-[14px] text-slate-500 dark:text-gray-400">{t("projects.emptySubtitle")}</p>
           </div>
 
           <form className="space-y-6 relative z-10" onSubmit={onCreate}>
@@ -203,10 +327,10 @@ export function ProjectsPanel({
                 />
               )}
               <div className="flex flex-col gap-[6px]">
-                <label className="text-[13px] font-semibold text-slate-700">{t("projects.description")}</label>
+                <label className="text-[13px] font-semibold text-slate-700 dark:text-gray-200">{t("projects.description")}</label>
                 <textarea
                   placeholder={t("projects.descriptionPlaceholder")}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[14px] text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none transition-all duration-200 resize-none min-h-[100px]"
+                  className="min-h-[100px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100 dark:placeholder:text-gray-400"
                   value={newProject.description}
                   onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                 />
@@ -226,7 +350,7 @@ export function ProjectsPanel({
      STATE B: MASTER-DETAIL (1+ Projects)
      ═══════════════════════════════════════════════════════════════ */
   return (
-    <section className="animate-fade-in flex h-[calc(100vh-80px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="macos-content-scope animate-fade-in flex h-[calc(100vh-96px)] overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
 
       {/* Delete confirmation modal */}
       <Modal
@@ -240,24 +364,24 @@ export function ProjectsPanel({
           </>
         }
       >
-        <p className="text-[14px] text-slate-600 leading-relaxed">{t("projects.confirmDeleteMsg")}</p>
+        <p className="text-[14px] text-slate-600 dark:text-gray-300 leading-relaxed">{t("projects.confirmDeleteMsg")}</p>
       </Modal>
 
       {/* ── LEFT COLUMN (MASTER: macOS style sidebar list) ── */}
-      <aside className="w-[30%] min-w-[300px] border-inline-end border-slate-200 flex flex-col bg-slate-50/50 relative z-10">
-        <header className="flex h-16 shrink-0 items-center justify-between border-block-end border-slate-200 px-6 bg-slate-50/50 backdrop-blur-md">
-          <h2 className="text-[16px] font-bold text-slate-900 tracking-tight">{t("projects.title")}</h2>
+      <aside className="relative z-10 flex w-[30%] min-w-[300px] flex-col border-inline-end border-black/5 bg-[#f1f1f3] dark:border-white/10 dark:bg-surface-alt">
+        <header className="flex h-12 shrink-0 items-center justify-between border-block-end border-black/5 bg-[#f7f7f9] px-4 dark:border-white/10 dark:bg-surface-alt">
+          <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.title")}</h2>
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => void onProjectsRefresh()}
-              className="h-8 w-8 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 transition-all duration-200"
+              className="h-8 w-8 flex items-center justify-center rounded-md text-slate-400 hover:bg-black/5 hover:text-slate-700 dark:text-gray-500 dark:hover:bg-white/10 dark:hover:text-gray-200 transition-all duration-200"
               title={t("common.refresh")}
             >
               <svg className="w-[15px] h-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-            <div className="w-[1px] h-4 bg-slate-200 mx-0.5" />
+            <div className="w-[1px] h-4 bg-black/5 dark:bg-white/10 mx-0.5" />
             <button
               onClick={() => {
                 setNewProject({ name: "", domain: "", vertical: VERTICAL_OPTIONS[0].value, customVertical: "", description: "" });
@@ -282,19 +406,19 @@ export function ProjectsPanel({
               className={clsx(
                 "w-full text-start px-6 py-3 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] relative group focus:outline-none",
                 selectedProjectId === project.id
-                  ? "bg-teal-50/50 shadow-[inset_3px_0_0_0_var(--tw-shadow-color)] shadow-teal-600"
-                  : "bg-transparent hover:bg-slate-900/5 focus:bg-slate-900/5" // Native feel hover
+                  ? "bg-teal-50/50 shadow-[inset_3px_0_0_0_var(--tw-shadow-color)] shadow-teal-600 dark:bg-white/10 dark:shadow-teal-300"
+                  : "bg-transparent hover:bg-slate-900/5 focus:bg-slate-900/5 dark:hover:bg-white/[0.08] dark:focus:bg-white/[0.08]" // Native feel hover
               )}
             >
               <div className="flex items-center justify-between gap-2 mb-0.5">
-                <span className={clsx("truncate text-[14px]", selectedProjectId === project.id ? "font-bold text-teal-900" : "font-medium text-slate-900 group-hover:text-black")}>
+                <span className={clsx("truncate text-[14px]", selectedProjectId === project.id ? "font-bold text-teal-900 dark:text-teal-200" : "font-medium text-slate-900 group-hover:text-black dark:text-gray-200 dark:group-hover:text-white")}>
                   {project.name}
                 </span>
                 {project.wordpress_url && (
-                  <span className={clsx("shrink-0 rounded-[4px] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", selectedProjectId === project.id ? "bg-teal-100 text-teal-700" : "bg-slate-100 text-slate-500")}>WP</span>
+                  <span className={clsx("shrink-0 rounded-[4px] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", selectedProjectId === project.id ? "bg-teal-100 text-teal-700 dark:bg-teal-400/15 dark:text-teal-200" : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-gray-400")}>WP</span>
                 )}
               </div>
-              <span className={clsx("truncate block text-[12px]", selectedProjectId === project.id ? "text-teal-700/80 font-medium" : "text-slate-500")} dir="ltr">
+              <span className={clsx("truncate block text-[12px]", selectedProjectId === project.id ? "text-teal-700/80 font-medium dark:text-teal-200/80" : "text-slate-500 dark:text-gray-400")} dir="ltr">
                 {project.domain || t("projects.noDomain")}
               </span>
             </button>
@@ -303,13 +427,13 @@ export function ProjectsPanel({
       </aside>
 
       {/* ── RIGHT COLUMN (DETAIL) ── */}
-      <main className="flex-1 flex flex-col bg-white overflow-hidden min-w-0">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-surface">
 
         {selectedProjectId === "__new__" ? (
           // Create Mode
-          <div className="flex-1 overflow-y-auto p-8 md:p-12">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8">
             <div className="max-w-xl">
-              <h3 className="text-[20px] font-bold text-slate-900 tracking-tight mb-8">{t("projects.createNew")}</h3>
+              <h3 className="mb-6 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.createNew")}</h3>
               <form className="space-y-6" onSubmit={onCreate}>
                 <div className="space-y-4">
                   <InputField
@@ -347,17 +471,17 @@ export function ProjectsPanel({
                     />
                   )}
                   <div className="flex flex-col gap-[6px]">
-                    <label className="text-[13px] font-semibold text-slate-700">{t("projects.description")}</label>
+                    <label className="text-[13px] font-semibold text-slate-700 dark:text-gray-200">{t("projects.description")}</label>
                     <textarea
                       placeholder={t("projects.descriptionPlaceholder")}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[14px] text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none transition-all duration-200 resize-none min-h-[100px]"
+                      className="min-h-[100px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100 dark:placeholder:text-gray-400"
                       value={newProject.description}
                       onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                     />
                   </div>
                 </div>
 
-                <div className="flex flex-row gap-3 pt-6 border-block-start border-slate-100">
+                <div className="flex flex-row gap-3 pt-6 border-block-start border-black/5 dark:border-white/10">
                   <Button type="button" variant="outlined" onClick={() => onSelectProject(projects[0]?.id || null)} size="lg">
                     {t("common.cancel")}
                   </Button>
@@ -371,11 +495,11 @@ export function ProjectsPanel({
         ) : selectedProject ? (
           // View/Edit Mode
           <>
-            <header className="flex flex-col border-block-end border-slate-200 shrink-0">
-              <div className="px-8 pt-8 pb-4 flex items-start justify-between">
+            <header className="flex flex-col border-block-end border-black/5 dark:border-white/10 shrink-0">
+              <div className="flex items-start justify-between px-6 pb-4 pt-6">
                 <div>
-                  <h2 className="text-[24px] font-bold text-slate-900 tracking-tight leading-none mb-1.5">{selectedProject.name}</h2>
-                  <p className="text-[13px] font-medium text-slate-500" dir="ltr">{selectedProject.domain || ""}</p>
+                  <h2 className="mb-1.5 text-[18px] font-semibold leading-none tracking-tight text-slate-900 dark:text-gray-100">{selectedProject.name}</h2>
+                  <p className="text-[13px] font-medium text-slate-500 dark:text-gray-400" dir="ltr">{selectedProject.domain || ""}</p>
                 </div>
 
                 {/* ── Polished Kebab Kenu ── */}
@@ -384,20 +508,20 @@ export function ProjectsPanel({
                     onClick={() => setKebabOpen(!kebabOpen)}
                     className={clsx(
                       "flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200",
-                      kebabOpen ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                      kebabOpen ? "bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-gray-100" : "text-slate-400 hover:text-slate-700 hover:bg-slate-50 dark:text-gray-500 dark:hover:text-gray-200 dark:hover:bg-white/10"
                     )}
                     aria-label="More options"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
                   </button>
                   {kebabOpen && (
-                    <div className="absolute top-full inset-inline-end-0 mt-1 w-48 bg-white border border-slate-200 shadow-lg rounded-xl py-1 z-50 animate-fade-in origin-top-right">
+                    <div className="absolute top-full inset-inline-end-0 z-50 mt-1 w-48 origin-top-right animate-fade-in rounded-xl border border-black/5 bg-white py-1 dark:border-white/10 dark:bg-surface-alt">
                       <button
                         onClick={() => { setKebabOpen(false); setDeleteConfirmId(selectedProject.id); }}
-                        className="w-full text-start px-4 py-2 text-[13px] font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors duration-fast"
+                        className="w-full text-start px-4 py-2 text-[13px] font-medium text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10 flex items-center gap-2 transition-colors duration-fast"
                       >
                         <svg className="w-[14px] h-[14px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        {t("common.delete")} Project
+                        {t("common.delete")}
                       </button>
                     </div>
                   )}
@@ -405,8 +529,9 @@ export function ProjectsPanel({
               </div>
 
               {/* TABS (Zero layout shift: inactive has transparent border) */}
-              <div className="flex gap-8 px-8 overflow-x-auto no-scrollbar pt-2">
+              <div className="no-scrollbar flex gap-6 overflow-x-auto px-6 pt-2">
                 {[
+                  { id: "readiness", label: readinessCopy.tab },
                   { id: "general", label: t("projects.tabGeneral") },
                   { id: "wordpress", label: t("projects.tabWordpress") },
                   { id: "rules", label: t("projects.tabRules") },
@@ -417,8 +542,8 @@ export function ProjectsPanel({
                     className={clsx(
                       "pb-3 text-[13px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] border-block-end-[2px]",
                       activeTab === tab.id
-                        ? "border-teal-600 text-teal-600"
-                        : "border-transparent text-slate-500 hover:text-slate-800"
+                        ? "border-teal-600 text-teal-600 dark:border-teal-300 dark:text-teal-200"
+                        : "border-transparent text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-gray-100"
                     )}
                   >
                     {tab.label}
@@ -427,7 +552,18 @@ export function ProjectsPanel({
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-8 relative">
+            <div className="relative flex-1 overflow-y-auto p-6">
+              {activeTab === "readiness" && (
+                <ReadinessTab
+                  copy={readinessCopy}
+                  readiness={readiness}
+                  loading={readinessLoading}
+                  error={readinessError}
+                  onRefresh={() => void refreshReadiness()}
+                  onOpenRulebook={() => setActiveTab("rules")}
+                  onOpenWordPress={() => setActiveTab("wordpress")}
+                />
+              )}
               {activeTab === "general" && (
                 <GeneralTab token={token} project={selectedProject} onProjectsRefresh={onProjectsRefresh} />
               )}
@@ -449,6 +585,171 @@ export function ProjectsPanel({
 /* ═══════════════════════════════════════════════════════════════
    TAB COMPONENTS — Form Containment and Spatial Grouping
    ═══════════════════════════════════════════════════════════════ */
+
+function readinessStatusClasses(status: string) {
+  if (status === "ready" || status === "pass") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+  if (status === "blocked" || status === "fail") {
+    return "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300";
+  }
+  return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+}
+
+function readinessDotClasses(status: string) {
+  if (status === "ready" || status === "pass") return "bg-emerald-500";
+  if (status === "blocked" || status === "fail") return "bg-red-500";
+  return "bg-amber-400";
+}
+
+function ReadinessTab({
+  copy,
+  readiness,
+  loading,
+  error,
+  onRefresh,
+  onOpenRulebook,
+  onOpenWordPress,
+}: {
+  copy: typeof READINESS_COPY.en;
+  readiness: ProjectReadiness | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  onOpenRulebook: () => void;
+  onOpenWordPress: () => void;
+}) {
+  const statusLabel =
+    readiness?.status === "ready"
+      ? copy.ready
+      : readiness?.status === "blocked"
+        ? copy.blocked
+        : copy.warning;
+
+  return (
+    <div className="max-w-4xl space-y-4 animate-fade-in">
+      <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
+            <h3 className="mt-1 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">
+              {copy.title}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            {readiness && (
+              <span className={clsx("inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-[12px] font-semibold", readinessStatusClasses(readiness.status))}>
+                <span className={clsx("h-2 w-2 rounded-full", readinessDotClasses(readiness.status))} aria-hidden />
+                {statusLabel}
+              </span>
+            )}
+            <Button variant="outlined" size="sm" loading={loading} onClick={onRefresh}>
+              {copy.refresh}
+            </Button>
+          </div>
+        </div>
+
+        {loading && !readiness && (
+          <div className="mt-5 rounded-lg border border-black/5 bg-slate-50 px-4 py-3 text-[13px] font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
+            {copy.loading}
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-5 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] font-medium text-red-700 dark:text-red-300" role="alert">
+            {copy.failed} {error}
+          </div>
+        )}
+
+        {readiness && (
+          <>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.canGenerate}</p>
+                <p className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-gray-100">
+                  {readiness.can_generate ? copy.available : copy.unavailable}
+                </p>
+              </div>
+              <div className="rounded-xl border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.canPublish}</p>
+                <p className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-gray-100">
+                  {readiness.can_publish ? copy.available : copy.unavailable}
+                </p>
+              </div>
+            </div>
+            <p className="mt-4 text-[12px] text-slate-500 dark:text-gray-400">
+              {copy.lastChecked}: {new Date(readiness.last_checked_at).toLocaleString()}
+            </p>
+          </>
+        )}
+      </section>
+
+      {readiness && (
+        <section className="grid gap-4 xl:grid-cols-[1fr_260px]">
+          <div className="rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
+            <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
+              <h4 className="text-[14px] font-semibold text-slate-900 dark:text-gray-100">{copy.allChecks}</h4>
+            </div>
+            <div className="divide-y divide-black/5 dark:divide-white/10">
+              {readiness.checks.map((check) => (
+                <div key={check.id} className="grid gap-3 px-4 py-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={clsx("h-2 w-2 shrink-0 rounded-full", readinessDotClasses(check.status))} aria-hidden />
+                    <span className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100">{check.label}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">{check.message}</p>
+                    {check.remediation && (
+                      <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-gray-400">{check.remediation}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <aside className="space-y-4">
+            <div className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-surface-alt">
+              <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.blockers}</h4>
+              <p className="mt-2 text-[20px] font-semibold tabular-nums text-slate-900 dark:text-gray-100">
+                {readiness.blocking_items.length}
+              </p>
+            </div>
+            <div className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-surface-alt">
+              <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.warnings}</h4>
+              <p className="mt-2 text-[20px] font-semibold tabular-nums text-slate-900 dark:text-gray-100">
+                {readiness.warnings.length}
+              </p>
+            </div>
+            <div className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-surface-alt">
+              <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.actions}</h4>
+              <div className="mt-3 space-y-2">
+                {readiness.manager_actions.length === 0 ? (
+                  <p className="text-[12px] text-slate-500 dark:text-gray-400">{copy.noActions}</p>
+                ) : (
+                  readiness.manager_actions.map((action) => (
+                    <Button
+                      key={action.id}
+                      variant="outlined"
+                      size="sm"
+                      fullWidth
+                      onClick={() => {
+                        if (action.id === "open_rulebook") onOpenRulebook();
+                        if (action.id === "test_wordpress_connection") onOpenWordPress();
+                      }}
+                    >
+                      {action.id === "open_rulebook" ? copy.openRulebook : action.label}
+                    </Button>
+                  ))
+                )}
+              </div>
+            </div>
+          </aside>
+        </section>
+      )}
+    </div>
+  );
+}
 
 function GeneralTab({ token, project, onProjectsRefresh }: { token: string; project: Project; onProjectsRefresh: () => Promise<void> }) {
   const { t } = useI18n();
@@ -488,9 +789,9 @@ function GeneralTab({ token, project, onProjectsRefresh }: { token: string; proj
           dir="ltr"
         />
         <div className="flex flex-col gap-[6px]">
-          <label className="text-[13px] font-semibold text-slate-700">{t("projects.description")}</label>
+          <label className="text-[13px] font-semibold text-slate-700 dark:text-gray-200">{t("projects.description")}</label>
           <textarea
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[14px] text-slate-900 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-all duration-200 resize-none min-h-[120px]"
+            className="min-h-[120px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100"
             value={draft.description}
             onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
           />
@@ -548,12 +849,12 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
   return (
     <div className="max-w-2xl animate-fade-in">
       <div className="mb-6">
-        <h3 className="text-[15px] font-bold text-slate-900 mb-1">WordPress Integration</h3>
-        <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{t("projects.wpSubtitle")}</p>
+        <h3 className="mb-1 text-[15px] font-bold text-slate-900 dark:text-gray-100">{t("projects.tabWordpress")}</h3>
+        <p className="text-[13px] font-medium text-slate-500 dark:text-gray-400 leading-relaxed">{t("projects.wpSubtitle")}</p>
       </div>
 
       {/* Form Spatial Containment */}
-      <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 md:p-8 space-y-6">
+      <div className="space-y-6 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt md:p-6">
         <InputField
           label={t("projects.wpUrl")}
           helperText={t("projects.wpUrlHelper")}
@@ -578,7 +879,7 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
           />
         </div>
 
-        <div className="flex justify-end gap-3 pt-6 border-block-start border-slate-100">
+        <div className="flex justify-end gap-3 pt-6 border-block-start border-black/5 dark:border-white/10">
           <Button variant="outlined" loading={testing} onClick={() => void testConnection()}>{t("projects.wpTestConnection")}</Button>
           <Button variant="primary" loading={saving} onClick={() => void save()} className="min-w-[120px]">{t("projects.wpSave")}</Button>
         </div>
@@ -588,20 +889,32 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
 }
 
 function RulebookTab({ token, project }: { token: string; project: Project }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [rulebook, setRulebook] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const aiAssistLabel = locale === "fa" ? "دستیار AI" : locale === "ar" ? "مساعد AI" : "AI Assist";
+  const rulebookPlaceholder = locale === "fa"
+    ? "- از لحن رسمی استفاده شود\n- نام رقیب ذکر نشود..."
+    : locale === "ar"
+      ? "- استخدم نبرة رسمية\n- تجنب ذكر أسماء المنافسين..."
+      : "- Use formal tone\n- Avoid competitor names...";
 
   useEffect(() => {
-    let mounted = true;
+    const controller = new AbortController();
     setLoading(true);
-    apiRequest<RulebookResponse>(`/projects/${project.id}/rulebook`, { token })
-      .then(res => { if (mounted) setRulebook(res.content ?? ""); })
-      .catch(() => { if (mounted) setRulebook(""); })
-      .finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
+    apiRequest<RulebookResponse>(`/projects/${project.id}/rulebook`, { token, signal: controller.signal })
+      .then(res => {
+        if (!controller.signal.aborted) setRulebook(res.content ?? "");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setRulebook("");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [project.id, token]);
 
   const save = async () => {
@@ -617,35 +930,35 @@ function RulebookTab({ token, project }: { token: string; project: Project }) {
     <div className="flex flex-col h-full max-w-4xl animate-fade-in relative pb-16">
 
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-[13px] font-medium text-slate-500">{t("projects.rulebookEmpty")}</p>
+        <p className="text-[13px] font-medium text-slate-500 dark:text-gray-400">{t("projects.rulebookEmpty")}</p>
       </div>
 
       {/* AI-Native Smart Container */}
-      <div className="relative flex-1 group rounded-2xl border border-slate-200 bg-slate-50/50 transition-all duration-300 focus-within:ring-2 focus-within:ring-teal-500/20 focus-within:border-teal-500 focus-within:bg-white shadow-sm overflow-hidden flex flex-col min-h-[400px]">
+      <div className="group relative flex min-h-[400px] flex-1 flex-col overflow-hidden rounded-xl border border-black/5 bg-white transition-colors duration-150 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/20 dark:border-white/10 dark:bg-surface-alt dark:focus-within:bg-surface">
 
-        <textarea
-          disabled={loading}
-          className="w-full h-full flex-1 bg-transparent p-6 text-[14px] text-slate-900 leading-relaxed outline-none border-none resize-y disabled:opacity-50"
-          value={rulebook}
-          onChange={(e) => setRulebook(e.target.value)}
-          placeholder="- Use formal tone&#10;- Avoid competitor names..."
-        />
+          <textarea
+            disabled={loading}
+            className="w-full h-full flex-1 bg-transparent p-6 text-[14px] text-slate-900 dark:text-gray-100 leading-relaxed outline-none border-none resize-y disabled:opacity-50"
+            value={rulebook}
+            onChange={(e) => setRulebook(e.target.value)}
+            placeholder={rulebookPlaceholder}
+          />
 
         {/* AI Sparkle Action Button strictly inside the container */}
         <button
-          className="absolute bottom-4 inset-inline-end-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 backdrop-blur-md border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all duration-200 group/ai disabled:opacity-0"
-          title="AI Sparkle (Coming soon)"
+          className="group/ai absolute bottom-4 inset-inline-end-4 flex items-center gap-1.5 rounded-lg border border-black/5 bg-white px-3 py-1.5 transition-colors duration-150 hover:bg-gray-50 disabled:opacity-0 dark:border-white/10 dark:bg-surface dark:hover:bg-surface-alt"
+          title={aiAssistLabel}
           disabled={loading}
         >
           <svg className="w-4 h-4 text-teal-500 group-hover/ai:text-teal-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
-          <span className="text-[11px] font-bold bg-gradient-to-r from-teal-600 to-emerald-500 bg-clip-text text-transparent">AI Assist</span>
+          <span className="text-[11px] font-bold bg-gradient-to-r from-teal-600 to-emerald-500 bg-clip-text text-transparent">{aiAssistLabel}</span>
         </button>
       </div>
 
       {/* Primary Action Button (Spatially separated from the textarea) */}
       <div className="absolute bottom-0 inset-inline-end-0 flex justify-end">
         <Button variant="primary" loading={saving || loading} disabled={loading} onClick={() => void save()} className="min-w-[140px] shadow-sm">
-          {t("common.save")} K-Rules
+          {t("common.save")}
         </Button>
       </div>
 

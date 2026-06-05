@@ -16,7 +16,7 @@ export interface TabBarProps {
 
 export function TabBar({ tabs, activeTab, onChange, className }: TabBarProps) {
     return (
-        <div className={clsx("flex border-b-2 border-border", className)} role="tablist">
+        <div className={clsx("inline-flex rounded-md border border-black/8 bg-black/[0.03] p-1 dark:border-white/10 dark:bg-white/[0.06]", className)} role="tablist">
             {tabs.map((tab) => (
                 <button
                     key={tab.id}
@@ -24,23 +24,20 @@ export function TabBar({ tabs, activeTab, onChange, className }: TabBarProps) {
                     aria-selected={tab.id === activeTab}
                     onClick={() => onChange(tab.id)}
                     className={clsx(
-                        "relative px-4 py-3 text-body-md font-medium transition-colors duration-normal",
+                        "relative rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors duration-normal",
                         tab.id === activeTab
-                            ? "text-brand"
+                            ? "bg-white text-ink shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/[0.12] dark:text-white"
                             : "text-ink-secondary hover:text-ink",
                     )}
                 >
                     {tab.label}
                     {tab.count !== undefined && (
                         <span className={clsx(
-                            "ms-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-body-sm font-medium",
-                            tab.id === activeTab ? "bg-brand text-white" : "bg-surface-alt text-ink-secondary",
+                            "ms-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold",
+                            tab.id === activeTab ? "bg-brand text-white" : "bg-black/[0.06] text-ink-secondary dark:bg-white/[0.1]",
                         )}>
                             {tab.count}
                         </span>
-                    )}
-                    {tab.id === activeTab && (
-                        <span className="absolute inset-x-0 -bottom-[2px] h-[2px] bg-brand" />
                     )}
                 </button>
             ))}

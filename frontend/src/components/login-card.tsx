@@ -7,6 +7,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { useI18n } from "@/i18n/provider";
 import { LanguageToggle } from "./language-toggle";
 import { MessageKey } from "@/i18n/types";
+import Image from "next/image";
 
 /* ═══════════════════════════════════════════════════════════════
    Login Page v3 — Apple/Linear SaaS Form Split
@@ -29,9 +30,11 @@ function isApiLikeError(error: unknown): error is ApiLikeError {
 function getErrorKey(error: unknown): MessageKey {
   if (error instanceof ApiError || isApiLikeError(error)) {
     const status = error instanceof ApiError ? error.status : (error as ApiLikeError).status;
+    if (status === 0) return "auth.networkError";
     if (status === 401) return "auth.wrongCredentials";
     if (status === 403) return "auth.accountDisabled";
     if (status === 429) return "auth.tooManyAttempts";
+    if (status === 503) return "auth.serviceUnavailable";
     if (status >= 500) return "auth.serverError";
   }
   if (error instanceof TypeError) return "auth.networkError";
@@ -41,7 +44,9 @@ function getErrorKey(error: unknown): MessageKey {
 function getErrorSeverity(error: unknown): ErrorSeverity {
   if (error instanceof ApiError || isApiLikeError(error)) {
     const s = error instanceof ApiError ? error.status : (error as ApiLikeError).status;
+    if (s === 0) return "network";
     if (s === 401 || s === 403) return "credentials";
+    if (s === 503) return "network";
     if (s >= 500) return "server";
   }
   if (error instanceof TypeError) return "network";
@@ -59,6 +64,29 @@ const SEVERITY_ICON: Record<ErrorSeverity, string> = {
 
 const FAILED_ATTEMPTS_LIMIT = 5;
 const COOLDOWN_SECONDS = 60;
+
+const LOCKOUT_KEY = "cap.login_lockout_until";
+
+function getLockoutSecondsRemaining(): number {
+  try {
+    const until = window.sessionStorage.getItem(LOCKOUT_KEY);
+    if (!until) return 0;
+    const remaining = Math.ceil((parseInt(until, 10) - Date.now()) / 1000);
+    if (remaining <= 0) {
+      window.sessionStorage.removeItem(LOCKOUT_KEY);
+      return 0;
+    }
+    return remaining;
+  } catch {
+    return 0;
+  }
+}
+
+function setLockout(seconds: number) {
+  try {
+    window.sessionStorage.setItem(LOCKOUT_KEY, String(Date.now() + seconds * 1000));
+  } catch {}
+}
 
 // ── SVG Icons ───────────────────────────────────────────────────
 
@@ -114,14 +142,14 @@ function HeroMeshGradient() {
     <div className="absolute inset-0 overflow-hidden" aria-hidden>
       <div className="absolute inset-0" style={{
         background: `
-          radial-gradient(ellipse 60% 50% at 20% 30%, rgba(14,110,110,0.35) 0%, transparent 70%),
-          radial-gradient(ellipse 50% 60% at 70% 60%, rgba(6,78,78,0.3) 0%, transparent 70%),
-          radial-gradient(ellipse 40% 40% at 50% 80%, rgba(20,140,140,0.25) 0%, transparent 70%)
+          radial-gradient(ellipse 60% 50% at 20% 30%, rgb(var(--color-text-primary) / 0.035) 0%, transparent 70%),
+          radial-gradient(ellipse 50% 60% at 70% 60%, rgb(var(--color-text-secondary) / 0.025) 0%, transparent 70%),
+          radial-gradient(ellipse 40% 40% at 50% 80%, rgb(var(--color-border-primary) / 0.45) 0%, transparent 70%)
         `,
         animation: "hero-mesh-drift 20s ease-in-out infinite alternate",
       }} />
-      <svg viewBox="0 0 520 280" className="absolute inset-0 h-full w-full opacity-[0.08]" fill="none" aria-hidden>
-        <g stroke="white" strokeWidth="0.5">
+      <svg viewBox="0 0 520 280" className="absolute inset-0 h-full w-full text-ink-tertiary opacity-[0.08]" fill="none" aria-hidden>
+        <g stroke="currentColor" strokeWidth="0.5">
           <path d="M48 44h86" /><path d="M184 44h74" /><path d="M304 44h80" />
           <path d="M96 126h84" /><path d="M228 126h82" /><path d="M358 126h92" />
           <path d="M82 208h92" /><path d="M218 208h86" /><path d="M352 208h92" />
@@ -129,7 +157,7 @@ function HeroMeshGradient() {
           <path d="M140 142v50" /><path d="M318 142v50" />
         </g>
         {[{ cx: 48, cy: 44 }, { cx: 142, cy: 44 }, { cx: 192, cy: 44 }, { cx: 268, cy: 44 }, { cx: 324, cy: 44 }, { cx: 398, cy: 44 }, { cx: 48, cy: 126 }, { cx: 96, cy: 126 }, { cx: 192, cy: 126 }, { cx: 324, cy: 126 }, { cx: 458, cy: 126 }, { cx: 82, cy: 208 }, { cx: 218, cy: 208 }, { cx: 318, cy: 208 }, { cx: 458, cy: 208 }].map(n => (
-          <circle key={`${n.cx}-${n.cy}`} cx={n.cx} cy={n.cy} r="2.5" fill="rgba(255,255,255,0.4)" />
+          <circle key={`${n.cx}-${n.cy}`} cx={n.cx} cy={n.cy} r="2.5" fill="currentColor" opacity="0.35" />
         ))}
       </svg>
     </div>
@@ -155,8 +183,9 @@ export function LoginCard() {
   const [errorDismissed, setErrorDismissed] = useState(false);
   const [shakeButton, setShakeButton] = useState(false);
   const [, setFailedAttempts] = useState(0);
-  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [cooldownRemaining, setCooldownRemaining] = useState(() => getLockoutSecondsRemaining());
   const errorTimerRef = useRef<number | null>(null);
+  const shakeTimerRef = useRef<number | null>(null);
 
   // Email validation — ONLY emailInvalid triggers red on email field
   const emailInvalid = emailTouched && email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -197,6 +226,12 @@ export function LoginCard() {
   }, [authError, errorDismissed]);
 
   useEffect(() => {
+    return () => {
+      if (shakeTimerRef.current) window.clearTimeout(shakeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof document === "undefined") return;
     document.title = `${t("auth.title")} — ${t("app.name")}`;
     upsertMeta("description", t("auth.subtitle"));
@@ -218,14 +253,32 @@ export function LoginCard() {
     try {
       await login(email, password, rememberMe);
       setFailedAttempts(0);
+      try { window.sessionStorage.removeItem(LOCKOUT_KEY); } catch {}
       setLoginSuccess(true);
     } catch (error) {
       setAuthError(error);
       setShakeButton(true);
-      window.setTimeout(() => setShakeButton(false), 400);
+      if (shakeTimerRef.current) window.clearTimeout(shakeTimerRef.current);
+      shakeTimerRef.current = window.setTimeout(() => setShakeButton(false), 400);
+      // If backend returned 429, use its Retry-After duration; otherwise count locally
+      const is429 = (error instanceof ApiError && error.status === 429) ||
+                    (isApiLikeError(error) && (error as ApiLikeError).status === 429);
+      if (is429) {
+        const retryAfter = error instanceof ApiError
+          ? (error.retryAfter ?? 60)
+          : 60;
+        setLockout(retryAfter);
+        setCooldownRemaining(retryAfter);
+        setFailedAttempts(0);
+        return;
+      }
       setFailedAttempts(prev => {
         const next = prev + 1;
-        if (next >= FAILED_ATTEMPTS_LIMIT) { setCooldownRemaining(COOLDOWN_SECONDS); return 0; }
+        if (next >= FAILED_ATTEMPTS_LIMIT) {
+          setLockout(COOLDOWN_SECONDS);
+          setCooldownRemaining(COOLDOWN_SECONDS);
+          return 0;
+        }
         return next;
       });
     } finally {
@@ -237,20 +290,20 @@ export function LoginCard() {
   const systemHealthy = !authError || getErrorSeverity(authError) !== "server";
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-4 py-6" style={{ background: "radial-gradient(ellipse at 50% 40%, #F0F7F7 0%, #F0F2F5 70%)" }}>
+    <main className="macos-app-bg mx-auto flex min-h-screen w-full max-w-6xl items-center px-4 py-6">
       <div
         dir={direction} /* 100% Native RTL Layout Mirroring via DOM Engine */
-        className="w-full flex flex-col lg:flex-row overflow-hidden rounded-[24px] border border-black/[0.04] bg-[#FBFBFD]"
+        className="macos-grouped-surface w-full flex flex-col lg:flex-row overflow-hidden rounded-[18px]"
         style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)" }}
       >
 
         {/* ═══ HERO PANEL (Takes exactly 50% width on Desktop) ═══ */}
         <section
-          className="relative hidden min-h-[640px] flex-1 overflow-hidden text-white lg:flex lg:flex-col bg-gradient-to-br from-[#044731] via-[#022c22] to-[#01120c]"
+          className="auth-hero-surface relative hidden min-h-[640px] flex-1 overflow-hidden text-ink lg:flex lg:flex-col"
         >
           {/* Ghost Watermark Logo - Pushed to the corner */}
-          <div className="absolute -bottom-32 -inset-inline-end-32 w-[140%] opacity-[0.03] mix-blend-overlay pointer-events-none z-0" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
-            <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+          <div className="absolute -bottom-32 -end-32 w-[140%] opacity-[0.03] mix-blend-overlay pointer-events-none z-0" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+            <Image src="/logo.png" alt="" width={500} height={500} className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
 
           <HeroMeshGradient />
@@ -262,22 +315,22 @@ export function LoginCard() {
               <div className="flex flex-col items-center text-center gap-6 max-w-lg w-full mb-16">
 
                 <div className="flex items-center justify-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
-                  <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400/20 to-emerald-400" />
-                  <span className="text-xs font-bold tracking-widest text-emerald-300 uppercase">
+                  <span className="block h-[3px] w-8 rounded-full bg-border" />
+                  <span className="text-xs font-bold uppercase tracking-widest text-ink-tertiary">
                     AI-POWERED PLATFORM
                   </span>
-                  <span className="block h-[3px] w-8 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+                  <span className="block h-[3px] w-8 rounded-full bg-border" />
                 </div>
 
                 {/* Typography Confidence: text-3xl/4xl */}
                 <h1
-                  className="text-3xl md:text-4xl font-extrabold text-emerald-50/85 tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
+                  className="text-3xl md:text-4xl font-extrabold text-ink tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
                   style={{ opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards' }}
                 >
                   {t("auth.heroHeadline").split("·").length === 2 ? (
                     <>
                       {t("auth.heroHeadline").split("·")[0].trim()}
-                      <span className="mx-4 text-emerald-400/40 inline-block font-light">&middot;</span>
+                      <span className="mx-4 inline-block font-light text-ink-tertiary">&middot;</span>
                       {t("auth.heroHeadline").split("·")[1].trim()}
                     </>
                   ) : (
@@ -287,7 +340,7 @@ export function LoginCard() {
 
                 {/* Decoupled from Glassmorphic Card */}
                 <p
-                  className="whitespace-pre-line text-lg text-emerald-50/85 font-medium max-w-md mt-2 leading-relaxed text-center animate-fade-in"
+                  className="whitespace-pre-line text-lg text-ink-secondary font-medium max-w-md mt-2 leading-relaxed text-center animate-fade-in"
                   style={{ opacity: 0, animationDelay: "250ms", animationFillMode: 'forwards' }}
                 >
                   {cleanTagline}
@@ -298,50 +351,50 @@ export function LoginCard() {
         </section>
 
         {/* ═══ MOBILE OVERRIDES ═══ */}
-        <section className="relative hidden overflow-hidden border-b border-white/10 px-8 py-8 text-white md:block lg:hidden bg-gradient-to-br from-[#044731] via-[#022c22] to-[#01120c]">
-          <div className="absolute -bottom-16 -inset-inline-end-24 w-[130%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
-            <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+        <section className="auth-hero-surface relative hidden overflow-hidden border-b border-black/5 px-8 py-8 text-ink dark:border-white/10 md:block lg:hidden">
+          <div className="absolute -bottom-16 -end-24 w-[130%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+            <Image src="/logo.png" alt="" width={500} height={500} className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <HeroMeshGradient />
           <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in flex flex-col items-center text-center">
             <div className="flex items-center justify-center gap-3">
-              <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400/20 to-emerald-400" />
-              <span className="text-[11px] font-bold tracking-widest text-emerald-300 uppercase">AI-POWERED PLATFORM</span>
-              <span className="block h-[2px] w-6 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+              <span className="block h-[2px] w-6 rounded-full bg-border" />
+              <span className="text-[11px] font-bold uppercase tracking-widest text-ink-tertiary">AI-POWERED PLATFORM</span>
+              <span className="block h-[2px] w-6 rounded-full bg-border" />
             </div>
-            <p className="text-[22px] font-bold text-white/90 leading-snug">{cleanTagline}</p>
+            <p className="text-[22px] font-bold leading-snug text-ink">{cleanTagline}</p>
           </div>
         </section>
 
-        <section className="relative overflow-hidden border-b border-white/10 px-6 py-5 text-white md:hidden bg-gradient-to-br from-[#044731] via-[#022c22] to-[#01120c]">
-          <div className="absolute -bottom-10 -inset-inline-end-10 w-[150%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
-            <img src="/logo.png" alt="" className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+        <section className="auth-hero-surface relative overflow-hidden border-b border-black/5 px-6 py-5 text-ink dark:border-white/10 md:hidden">
+          <div className="absolute -bottom-10 -end-10 w-[150%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
+            <Image src="/logo.png" alt="" width={500} height={500} className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <div key={`mb-hero-${locale}`} className="relative z-10 flex flex-col items-center justify-center gap-2 animate-fade-in text-center">
             <div className="flex items-center justify-center gap-2">
-              <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400/20 to-emerald-400" />
-              <span className="text-[10px] font-bold tracking-widest text-emerald-300 uppercase">PLATFORM</span>
-              <span className="block h-[2px] w-4 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-400/20" />
+              <span className="block h-[2px] w-4 rounded-full bg-border" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-ink-tertiary">PLATFORM</span>
+              <span className="block h-[2px] w-4 rounded-full bg-border" />
             </div>
-            <span className="inline-flex items-center gap-2 text-[12px] text-white/80 font-medium">
-              <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-emerald-500" : "bg-red-500")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />{systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
+            <span className="inline-flex items-center gap-2 text-[12px] font-medium text-ink-secondary">
+              <span className={clsx("h-2 w-2 rounded-full", systemHealthy ? "bg-ink-tertiary" : "bg-danger")} style={{ animation: "status-pulse 2s ease-in-out infinite" }} aria-hidden />{systemHealthy ? t("auth.systemOnline") : t("auth.systemDegraded")}
             </span>
           </div>
         </section>
 
         {/* ═══ FORM PANEL (Takes 50% width on Desktop, positioned purely by flex DOM logic) ═══ */}
-        <section className="px-8 py-10 sm:px-14 lg:w-1/2 flex flex-col justify-center relative min-h-[640px]">
+        <section className="relative flex min-h-[640px] flex-col justify-center bg-surface px-8 py-10 text-ink sm:px-14 lg:w-1/2">
 
           {/* Strict logical end-alignment for Language Switcher */}
-          <div className="absolute top-8 inset-inline-end-8 animate-fade-in z-50 flex items-center gap-2 text-slate-500">
+          <div className="absolute top-8 end-8 z-50 flex animate-fade-in items-center gap-2 text-ink-tertiary">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
-            <LanguageToggle />
+            <LanguageToggle variant="macos" />
           </div>
 
           <div className="w-full max-w-sm mx-auto flex flex-col pt-8 lg:pt-0">
             <div key={`form-title-${locale}`} className="animate-fade-in mb-8">
-              <h3 className="text-[28px] font-bold text-slate-900 tracking-tight">{t("auth.title")}</h3>
-              <p className="mt-2 text-[15px] font-medium text-slate-500">{t("auth.subtitle")}</p>
+              <h3 className="text-[28px] font-bold tracking-tight text-ink">{t("auth.title")}</h3>
+              <p className="mt-2 text-[15px] font-medium text-ink-secondary">{t("auth.subtitle")}</p>
             </div>
 
             <form method="POST" autoComplete="on" onSubmit={onSubmit} className="flex flex-col gap-5">
@@ -349,14 +402,14 @@ export function LoginCard() {
               {/* ── Error alert removed from here ── */}
 
               {cooldownRemaining > 0 && (
-                <div className="rounded-xl border-s-[4px] border border-warning bg-warning/5 px-4 py-3">
-                  <p className="text-[13px] font-medium text-warning-700">{cooldownText}</p>
+                <div className="rounded-xl border border-warning/20 border-s-[4px] border-s-warning bg-warning/10 px-4 py-3">
+                  <p className="text-[13px] font-medium text-warning">{cooldownText}</p>
                 </div>
               )}
 
               {/* ── Email Field (Cognitive Structure: Explicit Labels Above) ── */}
               <div className="animate-fade-in flex flex-col items-start gap-1.5 w-full" style={{ animationDelay: "60ms", animationFillMode: 'forwards', opacity: 0 }}>
-                <label htmlFor="login-email" className="text-[13px] font-semibold text-slate-700">{safe_t("auth.email", "Email Address")}</label>
+                <label htmlFor="login-email" className="text-[13px] font-semibold text-ink-secondary">{safe_t("auth.email", "Email Address")}</label>
                 <div className="relative w-full flex items-center">
                   <input
                     id="login-email"
@@ -367,9 +420,9 @@ export function LoginCard() {
                     aria-invalid={emailInvalid}
                     aria-label={t("auth.email")}
                     className={clsx(
-                      "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] text-slate-900 outline-none transition-all duration-200 text-start bg-white",
-                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20",
-                      emailInvalid ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.08)] bg-red-50/30" : "border-slate-200/60"
+                      "auth-input h-[50px] w-full rounded-xl border px-4 text-[15px] outline-none transition-all duration-200 text-start",
+                      "focus:border-brand focus:ring-2 focus:ring-brand/20",
+                      emailInvalid ? "border-danger shadow-[0_0_0_3px_rgb(var(--color-error)/0.08)]" : "border-black/10 dark:border-white/10"
                     )}
                     value={email}
                     onChange={e => setEmail(e.target.value)}
@@ -383,7 +436,7 @@ export function LoginCard() {
 
               {/* ── Password Field (Cognitive Structure) ── */}
               <div className="animate-fade-in flex flex-col items-start gap-1.5 w-full" style={{ animationDelay: "130ms", animationFillMode: 'forwards', opacity: 0 }}>
-                <label htmlFor="login-password" className="text-[13px] font-semibold text-slate-700">{safe_t("auth.password", "Password")}</label>
+                <label htmlFor="login-password" className="text-[13px] font-semibold text-ink-secondary">{safe_t("auth.password", "Password")}</label>
                 <div className="relative w-full flex items-center">
                   <input
                     id="login-password"
@@ -393,17 +446,17 @@ export function LoginCard() {
                     required
                     aria-label={t("auth.password")}
                     className={clsx(
-                      "auth-input h-[50px] w-full rounded-xl border px-4 pe-[48px] text-[15px] text-slate-900 outline-none transition-all duration-200 text-start bg-white",
-                      "focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 border-slate-200/60",
+                      "auth-input h-[50px] w-full rounded-xl border border-black/10 px-4 pe-[48px] text-[15px] outline-none transition-all duration-200 text-start dark:border-white/10",
+                      "focus:border-brand focus:ring-2 focus:ring-brand/20",
                       "[&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden lg:[&::-webkit-contacts-auto-fill-button]:hidden"
                     )}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                   />
-                  {/* BIDI Precise: inset-inline-end guarantees RTL mirror */}
+                  {/* BIDI Precise: end-3 guarantees RTL mirror */}
                   <button
                     type="button"
-                    className="absolute inset-inline-end-3 text-slate-400 hover:text-slate-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white rounded-lg p-1.5 z-10"
+                    className="absolute end-3 z-10 rounded-lg p-1.5 text-ink-tertiary transition-colors duration-200 hover:text-ink focus:bg-surface focus:outline-none focus:ring-2 focus:ring-brand"
                     onClick={() => setShowPassword(o => !o)}
                     aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                   >
@@ -415,9 +468,9 @@ export function LoginCard() {
               {/* ── Recovery & Utility Row (Absolute Minimalism) ── */}
               <div className="animate-fade-in flex items-center justify-start mt-1" style={{ animationDelay: "190ms", animationFillMode: 'forwards', opacity: 0 }}>
                 {/* Remember me logical property lock (strict flex container) */}
-                <label className="flex items-center gap-2 cursor-pointer select-none group w-full text-[13px] font-medium text-slate-600">
+                <label className="group flex w-full cursor-pointer select-none items-center gap-2 text-[13px] font-medium text-ink-secondary">
                   <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="peer sr-only" />
-                  <span className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-md border-[1.5px] border-slate-300 bg-white text-white transition-all duration-200 peer-checked:border-teal-600 peer-checked:bg-teal-600 peer-focus-visible:ring-2 peer-focus-visible:ring-teal-600/30 group-hover:border-teal-500">
+                  <span className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-md border-[1.5px] border-black/10 bg-surface text-white transition-all duration-200 peer-checked:border-ink peer-checked:bg-ink peer-focus-visible:ring-2 peer-focus-visible:ring-brand/30 group-hover:border-ink dark:border-white/10 dark:peer-checked:border-white dark:peer-checked:bg-white dark:peer-checked:text-ink">
                     <CheckIcon />
                   </span>
                   <span>{t("auth.rememberMe")}</span>
@@ -427,11 +480,11 @@ export function LoginCard() {
               {/* ── Error alert (Moved down here and redesigned) ── */}
               {localizedError && errorSeverity && (
                 <div
-                  className="flex items-center gap-2 p-3 rounded-lg bg-red-50/50 border border-red-100/50 my-1 animate-fade-in"
+                  className="my-1 flex animate-fade-in items-center gap-2 rounded-lg border border-danger/20 bg-danger/10 p-3"
                   role="alert"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-red-500 h-4 w-4" aria-hidden><circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" /></svg>
-                  <p className="text-sm font-medium text-red-600">{localizedError}</p>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-danger" aria-hidden><circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" /></svg>
+                  <p className="text-sm font-medium text-danger">{localizedError}</p>
                 </div>
               )}
 
@@ -440,7 +493,7 @@ export function LoginCard() {
                 type="submit"
                 disabled={submitting || cooldownRemaining > 0 || loginSuccess}
                 className={clsx(
-                  "animate-fade-in w-full rounded-xl bg-[#044731] hover:bg-[#033624] px-4 text-[15px] font-medium text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2",
+                  "flex w-full animate-fade-in items-center justify-center gap-2 rounded-xl bg-ink px-4 text-[15px] font-medium text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-ink-secondary active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200",
                   shakeButton && "animate-shake",
                   loginSuccess && "!bg-emerald-500 shadow-emerald-500/20",
                 )}

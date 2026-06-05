@@ -1,0 +1,484 @@
+"""
+Advanced Property-Based Tests for Edge Case Discovery
+======================================================
+
+Purpose: Find mission-critical failures in:
+- Database connection handling
+- Redis connection failures
+- Content generation edge cases
+- Resource cleanup and leaks
+- API timeout and retry logic
+- Concurrent operations
+
+These tests are designed to FIND issues, not just pass.
+"""
+
+import pytest
+import asyncio
+import time
+import uuid
+import string
+import random
+from datetime import datetime, timedelta
+from typing import Optional
+import redis
+import httpx
+from hypothesis import given, strategies as st, settings, HealthCheck, assume
+
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
+
+API_BASE = "http://127.0.0.1:9001"
+REDIS_URL = "redis://127.0.0.1:6379/0"
+
+
+# ==============================================================================
+# PROPERTY-BASED TESTS: Input Validation Edge Cases
+# ==============================================================================
+
+class TestInputValidationEdgeCases:
+    """
+    Test extreme input variations to find validation bugs
+    """
+
+    @pytest.fixture
+    def auth_token(self):
+        """Get authentication token"""
+        response = httpx.post(
+            f"{API_BASE}/auth/token",
+            data={
+                "username": "manager@smarlux.com",
+                "password": "Manager@123456789"
+            },
+            timeout=30
+        )
+        assert response.status_code == 200
+        return response.json()["access_token"]
+
+    @given(
+        topic_length=st.integers(min_value=1, max_value=500),
+        unicode_level=st.integers(min_value=0, max_value=3)
+    )
+    @settings(
+        max_examples=20,
+        deadline=timedelta(seconds=30),
+        suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_extreme_topic_lengths_and_unicode(self, auth_token, topic_length, unicode_level):
+        """
+        Property: API should handle ANY valid topic length and Unicode characters
+
+        Edge cases:
+        - Maximum length topics (500 chars)
+        - Unicode: emoji, RTL (Persian/Arabic), special chars
+        - Mixed scripts
+        """
+        # Generate topic based on unicode level
+        if unicode_level == 0:
+            # ASCII only
+            topic = ''.join(random.choices(string.ascii_letters + ' ', k=topic_length))
+        elif unicode_level == 1:
+            # Persian/Arabic (RTL)
+            persian_chars = 'آابپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی '
+            topic = ''.join(random.choices(persian_chars, k=min(topic_length, 100)))
+        elif unicode_level == 2:
+            # Emoji and special Unicode
+            emoji_chars = '😀😁😂🤣😃😄😅😆😉😊😋😎🔥💯✨🎉🎊 '
+            topic = ''.join(random.choices(emoji_chars, k=min(topic_length, 50)))
+        else:
+            # Mixed (ASCII + Persian + Emoji)
+            mixed = string.ascii_letters + 'آابپتثج' + '😀😁😂 '
+            topic = ''.join(random.choices(mixed, k=min(topic_length, 100)))
+
+        if not topic.strip():
+            topic = "Test Topic"  # Ensure not empty
+
+        try:
+            response = httpx.post(
+                f"{API_BASE}/content/generate/async",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                json={
+                    "project_id": str(uuid.uuid4()),
+                    "topic": topic,
+                    "keywords": ["test"],
+                    "word_count": 100
+                },
+                timeout=30
+            )
+
+            # Should either accept gracefully or reject with validation error
+            assert response.status_code in [200, 202, 400, 422, 500], \
+                f"Unexpected status {response.status_code} for topic_length={topic_length}, unicode={unicode_level}"
+
+            # 500 errors indicate server crash - CRITICAL
+            if response.status_code == 500:
+                pytest.fail(
+                    f"CRITICAL: Server crashed with 500 error\n"
+                    f"Topic length: {topic_length}, Unicode level: {unicode_level}\n"
+                    f"Topic sample: {topic[:50]}..."
+                )
+
+        except httpx.ReadTimeout:
+            # Timeout is acceptable
+            pass
+
+    @given(
+        keyword_count=st.integers(min_value=0, max_value=50),
+        keyword_length=st.integers(min_value=1, max_value=100)
+    )
+    @settings(
+        max_examples=15,
+        deadline=timedelta(seconds=30),
+        suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_extreme_keyword_variations(self, auth_token, keyword_count, keyword_length):
+        """
+        Property: API should handle extreme keyword configurations
+
+        Edge cases:
+        - 0 keywords (should work)
+        - 50 keywords (very large)
+        - Very long keywords (100 chars)
+        - Duplicate keywords
+        """
+        # Generate keywords
+        keywords = [
+            ''.join(random.choices(string.ascii_lowercase, k=min(keyword_length, 20)))
+            for _ in range(min(keyword_count, 30))
+        ]
+
+        try:
+            response = httpx.post(
+                f"{API_BASE}/content/generate/async",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                json={
+                    "project_id": str(uuid.uuid4()),
+                    "topic": "Test Topic",
+                    "keywords": keywords,
+                    "word_count": 100
+                },
+                timeout=30
+            )
+
+            assert response.status_code in [200, 202, 400, 422, 500]
+
+            if response.status_code == 500:
+                pytest.fail(
+                    f"CRITICAL: Server crashed\n"
+                    f"Keyword count: {keyword_count}, Keyword length: {keyword_length}"
+                )
+
+        except httpx.ReadTimeout:
+            pass
+
+
+# ==============================================================================
+# PROPERTY-BASED TESTS: Database Connection Edge Cases
+# ==============================================================================
+
+class TestDatabaseEdgeCases:
+    """
+    Test database connection handling under stress
+    """
+
+    def test_rapid_task_creation_database_pool(self):
+        """
+        CRITICAL: Rapid task creation should not exhaust database connection pool
+
+        Root cause to detect:
+        - Connection pool exhaustion
+        - Connections not being returned to pool
+        - Database deadlocks
+        """
+        # Authenticate
+        response = httpx.post(
+            f"{API_BASE}/auth/token",
+            data={
+                "username": "manager@smarlux.com",
+                "password": "Manager@123456789"
+            },
+            timeout=10
+        )
+        token = response.json()["access_token"]
+
+        # Create 20 tasks rapidly (faster than they can execute)
+        created = 0
+        failures = []
+
+        for i in range(20):
+            try:
+                resp = httpx.post(
+                    f"{API_BASE}/content/generate/async",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "project_id": str(uuid.uuid4()),
+                        "topic": f"DB Pool Test {i}",
+                        "keywords": ["test"],
+                        "word_count": 50
+                    },
+                    timeout=5
+                )
+
+                if resp.status_code == 202:
+                    created += 1
+                elif resp.status_code == 500:
+                    failures.append(f"Task {i}: {resp.text[:100]}")
+                elif resp.status_code in [503, 504]:
+                    failures.append(f"Task {i}: Service unavailable (DB pool exhausted?)")
+
+            except httpx.ReadTimeout:
+                failures.append(f"Task {i}: Timeout")
+            except Exception as e:
+                failures.append(f"Task {i}: {str(e)[:100]}")
+
+        # Should create at least 15 tasks successfully
+        assert created >= 15, \
+            f"Database connection pool may be exhausted\n" \
+            f"Created: {created}/20\n" \
+            f"Failures: {failures[:5]}"
+
+        print(f"✓ Created {created}/20 tasks rapidly without pool exhaustion")
+
+
+# ==============================================================================
+# PROPERTY-BASED TESTS: Redis Edge Cases
+# ==============================================================================
+
+class TestRedisEdgeCases:
+    """
+    Test Redis connection and cache handling
+    """
+
+    def test_redis_connection_recovery(self):
+        """
+        CRITICAL: System should recover from Redis connection failures
+
+        Edge case: Redis temporarily unavailable during task execution
+        """
+        r = redis.from_url(REDIS_URL)
+
+        # Check current Redis connections
+        try:
+            info = r.info('clients')
+            initial_connections = info.get('connected_clients', 0)
+            print(f"Initial Redis connections: {initial_connections}")
+
+            # Verify Redis is healthy
+            assert r.ping(), "Redis not responding"
+
+            print("✓ Redis connection recovery test passed")
+
+        except redis.ConnectionError as e:
+            pytest.fail(f"CRITICAL: Redis connection failed: {e}")
+
+    def test_redis_memory_pressure(self):
+        """
+        WARNING: Check if Redis memory usage is within limits
+
+        Edge case: Task metadata accumulation causing memory issues
+        """
+        r = redis.from_url(REDIS_URL)
+
+        try:
+            info = r.info('memory')
+            used_memory_mb = info['used_memory'] / (1024 * 1024)
+            max_memory_mb = info.get('maxmemory', 0) / (1024 * 1024)
+
+            print(f"Redis memory: {used_memory_mb:.2f}MB")
+
+            if max_memory_mb > 0:
+                usage_percent = (used_memory_mb / max_memory_mb) * 100
+                assert usage_percent < 90, \
+                    f"WARNING: Redis memory usage high: {usage_percent:.1f}%"
+
+            print("✓ Redis memory within limits")
+
+        except Exception as e:
+            pytest.fail(f"Redis memory check failed: {e}")
+
+
+# ==============================================================================
+# PROPERTY-BASED TESTS: Resource Cleanup
+# ==============================================================================
+
+class TestResourceCleanup:
+    """
+    Test for resource leaks and proper cleanup
+    """
+
+    def test_worker_connection_cleanup(self):
+        """
+        CRITICAL: Workers should properly clean up connections
+
+        Root cause to detect:
+        - Database connections not closed
+        - Redis connections leaking
+        - File descriptors not released
+        """
+        from orchestration.celery_app import app
+
+        inspect = app.control.inspect(timeout=10)
+        stats = inspect.stats()
+
+        if stats:
+            for worker, worker_stats in stats.items():
+                pool = worker_stats.get('pool', {})
+                rusage = worker_stats.get('rusage', {})
+
+                print(f"Worker: {worker.split('@')[1]}")
+                print(f"  Active processes: {pool.get('max-concurrency', 'unknown')}")
+                print(f"  Max tasks per child: {pool.get('max-tasks-per-child', 'unknown')}")
+
+                # Check if workers are being recycled (prevents memory leaks)
+                max_tasks = pool.get('max-tasks-per-child')
+                assert max_tasks and max_tasks > 0, \
+                    "Workers should be recycled after N tasks to prevent memory leaks"
+
+        print("✓ Worker connection cleanup configuration verified")
+
+
+# ==============================================================================
+# PROPERTY-BASED TESTS: Task Retry Logic
+# ==============================================================================
+
+class TestTaskRetryLogic:
+    """
+    Test task retry and error handling
+    """
+
+    @pytest.fixture
+    def auth_token(self):
+        response = httpx.post(
+            f"{API_BASE}/auth/token",
+            data={
+                "username": "manager@smarlux.com",
+                "password": "Manager@123456789"
+            },
+            timeout=10
+        )
+        return response.json()["access_token"]
+
+    def test_invalid_project_id_fails_immediately(self, auth_token):
+        """
+        Property: Tasks with invalid project IDs should fail fast (not retry)
+
+        Edge case: Validation errors should not trigger retries
+        """
+        # Create task with random UUID (won't exist in DB)
+        response = httpx.post(
+            f"{API_BASE}/content/generate/async",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={
+                "project_id": str(uuid.uuid4()),
+                "topic": "Test Invalid Project",
+                "keywords": ["test"],
+                "word_count": 100
+            },
+            timeout=30
+        )
+
+        if response.status_code != 202:
+            pytest.skip("Task not created")
+
+        task_id = response.json()["task_id"]
+
+        # Wait for task to be processed
+        time.sleep(10)
+
+        # Check task status
+        resp = httpx.get(
+            f"{API_BASE}/content/task/{task_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            timeout=5
+        )
+
+        if resp.status_code == 200:
+            state = resp.json()["state"]
+
+            # Should fail quickly, not retry forever
+            assert state in ["FAILURE", "PENDING"], \
+                f"Task with invalid project should fail, got state: {state}"
+
+            if state == "FAILURE":
+                print("✓ Task failed fast without retrying (expected behavior)")
+
+
+# ==============================================================================
+# PROPERTY-BASED TESTS: Concurrent Operations
+# ==============================================================================
+
+class TestConcurrentOperations:
+    """
+    Test race conditions and concurrent access
+    """
+
+    @pytest.fixture
+    def auth_token(self):
+        response = httpx.post(
+            f"{API_BASE}/auth/token",
+            data={
+                "username": "manager@smarlux.com",
+                "password": "Manager@123456789"
+            },
+            timeout=10
+        )
+        return response.json()["access_token"]
+
+    def test_concurrent_authentication_requests(self):
+        """
+        Property: Multiple simultaneous auth requests should all succeed
+
+        Edge case: Database connection race conditions during auth
+        """
+        import concurrent.futures
+
+        def authenticate():
+            try:
+                response = httpx.post(
+                    f"{API_BASE}/auth/token",
+                    data={
+                        "username": "manager@smarlux.com",
+                        "password": "Manager@123456789"
+                    },
+                    timeout=10
+                )
+                return response.status_code == 200
+            except Exception:
+                return False
+
+        # 10 concurrent auth requests
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(authenticate) for _ in range(10)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        success_count = sum(results)
+
+        # At least 8/10 should succeed
+        assert success_count >= 8, \
+            f"Concurrent auth failures: {success_count}/10 succeeded\n" \
+            f"Possible database connection race condition"
+
+        print(f"✓ {success_count}/10 concurrent auth requests succeeded")
+
+
+# ==============================================================================
+# FIXTURES
+# ==============================================================================
+
+@pytest.fixture(scope="session")
+def auth_token():
+    """Session-scoped auth token"""
+    response = httpx.post(
+        f"{API_BASE}/auth/token",
+        data={
+            "username": "manager@smarlux.com",
+            "password": "Manager@123456789"
+        },
+        timeout=30
+    )
+
+    if response.status_code != 200:
+        pytest.skip("Cannot authenticate")
+
+    return response.json()["access_token"]

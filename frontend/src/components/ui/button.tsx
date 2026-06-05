@@ -21,19 +21,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 ) {
     const isDisabled = disabled || loading;
 
-    const base = "inline-flex items-center justify-center font-semibold transition-all duration-base ease-in-out active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
+    const base = "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium tracking-normal transition-[background-color,border-color,color,box-shadow,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none";
 
     const variants = {
-        primary: "bg-brand text-white hover:bg-brand-hover shadow-sm",
-        outlined: "border border-border bg-transparent text-ink hover:bg-surface-alt",
-        ghost: "bg-transparent text-ink hover:bg-surface-alt",
-        danger: "bg-danger text-white hover:bg-danger/90 shadow-sm",
+        primary: "border border-transparent bg-brand text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_8px_16px_-14px_rgb(0_0_0/0.55)] hover:-translate-y-px hover:bg-brand-hover hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_12px_22px_-16px_rgb(0_0_0/0.62)] active:translate-y-0 active:bg-brand dark:bg-brand dark:text-white dark:hover:bg-brand-hover",
+        outlined: "border border-border bg-white text-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.75)] hover:-translate-y-px hover:bg-surface-tertiary hover:text-ink dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:shadow-none dark:hover:bg-white/[0.09]",
+        ghost: "border border-transparent bg-transparent text-ink-secondary shadow-none hover:bg-black/[0.04] hover:text-ink dark:text-gray-200 dark:hover:bg-white/[0.07] dark:hover:text-white",
+        danger: "border border-transparent bg-danger text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.16),0_8px_16px_-14px_rgb(0_0_0/0.55)] hover:-translate-y-px hover:bg-danger/90 hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.16),0_12px_22px_-16px_rgb(0_0_0/0.62)]",
     };
 
     const sizes = {
-        sm: "h-8 px-3 text-body-sm rounded-sm gap-1.5",
-        md: "h-10 px-4 text-body-md rounded-sm gap-2",
-        lg: "h-[52px] px-6 text-body-md rounded-[10px] gap-2",
+        sm: "min-h-[32px] rounded-[10px] px-3 text-[13px]",
+        md: "min-h-[36px] rounded-[10px] px-4 text-[14px]",
+        lg: "min-h-[42px] rounded-[12px] px-4 text-[14px]",
     };
 
     return (

@@ -7,16 +7,18 @@ export interface StatusBadgeProps {
     variant: BadgeVariant;
     children: React.ReactNode;
     dot?: boolean;
+    icon?: React.ReactNode;
     className?: string;
+    size?: "sm" | "md";
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-    success: "bg-success-subtle text-success",
-    error: "bg-danger-subtle text-danger",
-    warning: "bg-warning-subtle text-warning",
-    running: "bg-info-subtle text-info",
-    neutral: "bg-surface-alt text-ink-secondary",
-    info: "bg-info-subtle text-info",
+    success: "border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-500/18 dark:text-emerald-200",
+    error: "border border-rose-500/20 bg-rose-500/10 text-rose-700 dark:border-rose-400/25 dark:bg-rose-500/18 dark:text-rose-200",
+    warning: "border border-amber-500/22 bg-amber-500/12 text-amber-700 dark:border-amber-400/28 dark:bg-amber-500/18 dark:text-amber-200",
+    running: "border border-sky-500/22 bg-sky-500/12 text-sky-700 dark:border-sky-400/28 dark:bg-sky-500/18 dark:text-sky-200",
+    neutral: "border border-black/8 bg-black/[0.04] text-ink-secondary dark:border-white/12 dark:bg-white/[0.07] dark:text-gray-200",
+    info: "border border-sky-500/22 bg-sky-500/12 text-sky-700 dark:border-sky-400/28 dark:bg-sky-500/18 dark:text-sky-200",
 };
 
 const dotColors: Record<BadgeVariant, string> = {
@@ -28,17 +30,19 @@ const dotColors: Record<BadgeVariant, string> = {
     info: "bg-info",
 };
 
-export function StatusBadge({ variant, children, dot = true, className }: StatusBadgeProps) {
+export function StatusBadge({ variant, children, dot = true, icon, className, size = "sm" }: StatusBadgeProps) {
     return (
         <span
             className={clsx(
-                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-body-sm font-medium",
+                "inline-flex items-center rounded-md font-medium",
+                size === "sm" ? "gap-1.5 px-2.5 py-1 text-[12px]" : "gap-2 px-3 py-1.5 text-[13px]",
                 variantStyles[variant],
                 className,
             )}
             aria-label={`${variant}: ${typeof children === "string" ? children : ""}`}
         >
-            {dot && <span className={clsx("h-2 w-2 shrink-0 rounded-full", dotColors[variant])} aria-hidden />}
+            {icon ? <span className="shrink-0">{icon}</span> : null}
+            {dot && !icon ? <span className={clsx("h-2 w-2 shrink-0 rounded-full", dotColors[variant])} aria-hidden /> : null}
             {children}
         </span>
     );

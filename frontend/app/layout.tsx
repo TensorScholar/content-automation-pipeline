@@ -1,28 +1,6 @@
 import type { Metadata } from "next";
-import { Vazirmatn, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "@/providers/app-providers";
-
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-latin",
-  display: "swap",
-});
-
-const vazirmatn = Vazirmatn({
-  subsets: ["arabic"],
-  weight: ["400", "500", "700"],
-  variable: "--font-persian",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-mono",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Smarlux Content OS",
@@ -39,12 +17,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <body
-        className={`${plusJakarta.variable} ${vazirmatn.variable} ${jetbrainsMono.variable}`}
-      >
+    <html lang="fa" dir="rtl" className="macos-app-bg" suppressHydrationWarning>
+      <body className="macos-app-bg">
         <div id="toast-root" />
-        <AppProviders>{children}</AppProviders>
+        <div id="app-root" className="macos-app-bg min-h-screen">
+          <AppProviders>{children}</AppProviders>
+        </div>
       </body>
     </html>
   );

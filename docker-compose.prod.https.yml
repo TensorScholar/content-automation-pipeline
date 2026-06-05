@@ -1,0 +1,136 @@
+# ============================================================================
+# Production Docker Compose — HTTPS Overlay
+# ============================================================================
+# This file is meant to be used TOGETHER with docker-compose.prod.yml:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.prod.https.yml up -d
+#
+# It overrides/adds:
+#   - NGINX reverse proxy with TLS termination (ports 80/443)
+#   - Certbot for automatic Let's Encrypt certificate renewal
+#   - Internal-only exposure for API and Frontend (no direct public ports)
+#   - HTTPS-specific environment variables
+#
+# Prerequisites:
+#   1. Set SERVER_NAME in .env to your actual domain
+#   2. Ensure DNS A record points to your server
+#   3. For first-time setup, generate initial certificates:
+#        docker compose -f docker-compose.prod.yml \
+#          -f docker-compose.prod.https.yml \
+#          run --rm certbot certonly --webroot \
+#          --webroot-path=/var/www/certbot \
+#          -d your-domain.com -d api.your-domain.com
+#
+# NOTE on port overrides:
+#   Docker Compose merge adds to (not replaces) port lists. To prevent the
+#   API/Frontend/Flower from being publicly reachable, set these in your .env:
+#
+#     API_PORT=127.0.0.1:8000
+#     FRONTEND_PORT=127.0.0.1:3001
+#
+#   This binds them to localhost only — all public traffic goes through nginx.
+# ============================================================================
+
+version: "3.9"
+
+services:
+  # --------------------------------------------------------------------------
+  # NGINX Reverse Proxy (TLS Termination)
+  # --------------------------------------------------------------------------
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: content-automation-nginx-prod
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    environment:
+      SERVER_NAME: ${SERVER_NAME:?SERVER_NAME is required - set your domain in .env}
+      TZ: UTC
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - certbot_webroot:/var/www/certbot:ro
+      - ./logs/nginx:/var/log/nginx
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - content-automation-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+  # --------------------------------------------------------------------------
+  # Certbot (Let's Encrypt Certificate Manager)
+  # --------------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot:v3.1.0
+    container_name: content-automation-certbot
+    restart: unless-stopped
+    volumes:
+      - ./nginx/ssl:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    # Renew certificates every 12 hours (no-op if not due)
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done;'"
+    networks:
+      - content-automation-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # --------------------------------------------------------------------------
+  # Override: API — bind to localhost only so public traffic goes via nginx
+  # Set API_PORT=127.0.0.1:8000 in .env to restrict direct access
+  # --------------------------------------------------------------------------
+  api:
+    expose:
+      - "8000"
+    environment:
+      FORCE_HTTPS: "true"
+      ALLOWED_HOSTS: ${SERVER_NAME:-localhost}
+      CORS_ORIGINS: "https://${SERVER_NAME:-localhost}"
+
+  # --------------------------------------------------------------------------
+  # Override: Frontend — bind to localhost only
+  # Set FRONTEND_PORT=127.0.0.1:3001 in .env to restrict direct access
+  # --------------------------------------------------------------------------
+  frontend:
+    expose:
+      - "3001"
+
+  # --------------------------------------------------------------------------
+  # Override: Flower — ensure internal-only access
+  # Flower is already bound to 127.0.0.1 in docker-compose.prod.yml
+  # --------------------------------------------------------------------------
+  flower:
+    expose:
+      - "5555"
+
+# ============================================================================
+# Additional Volumes
+# ============================================================================
+volumes:
+  certbot_webroot:
+    driver: local
