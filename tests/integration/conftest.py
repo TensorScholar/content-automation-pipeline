@@ -19,7 +19,9 @@ import pytest
 import pytest_asyncio
 
 # Set test environment before importing app modules
-os.environ["ENVIRONMENT"] = "test"
+# Settings only accepts runtime environments that the application supports.
+# Test isolation is provided by the remaining test-specific variables below.
+os.environ["ENVIRONMENT"] = "development"
 os.environ["PYTEST_CURRENT_TEST"] = "true"
 
 

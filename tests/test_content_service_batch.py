@@ -40,6 +40,11 @@ class FakeTask:
         self.id = task_id
 
 
+class ExistingProjectRepository:
+    async def get_by_id(self, project_id):
+        return types.SimpleNamespace(id=project_id)
+
+
 def make_article_row(article_id=None, project_id=None, **overrides):
     content = " ".join(["workflow"] * 120)
     row = {
@@ -92,6 +97,7 @@ async def test_batch_generation_preserves_instructions_and_priority_routing(monk
         article_repository=FakeArticleRepository(),
         content_agent=object(),
     )
+    service.projects = ExistingProjectRepository()
     project_id = uuid4()
 
     result = await service.batch_generate_content(
@@ -112,6 +118,8 @@ async def test_batch_generation_preserves_instructions_and_priority_routing(monk
         "priority": "high",
         "custom_instructions": "Output language must be Persian.",
         "submitted_by_user_id": "user-123",
+        "model_override": None,
+        "language": "fa",
     }
     assert calls[1]["kwargs"]["topic"] == "Monitoring workflow"
     assert calls[1]["kwargs"]["custom_instructions"] == "Output language must be Persian."

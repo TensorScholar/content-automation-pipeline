@@ -380,7 +380,12 @@ def generate_idempotency_key(task_name: str, *args, **kwargs) -> str:
     return hashlib.sha256(key_string.encode()).hexdigest()
 
 
-async def check_idempotency(redis_client, idempotency_key: str, ttl: int = 3600) -> bool:
+async def check_idempotency(
+    redis_client,
+    idempotency_key: str,
+    task_id: str,
+    ttl: int = 3600,
+) -> bool:
     """
     Check if task has already been executed using Redis atomic operation.
 
@@ -398,8 +403,41 @@ async def check_idempotency(redis_client, idempotency_key: str, ttl: int = 3600)
 
     # SET NX EX: Set if Not eXists with EXpiration
     # Returns 1 if key was set (new task), 0 if key exists (duplicate)
-    result = await redis_client.set(redis_key, "processing", ex=ttl, nx=True)
-    return bool(result)
+    result = await redis_client.set(redis_key, task_id, ex=ttl, nx=True)
+    if result:
+        return True
+
+    # A Celery redelivery of the same task must be allowed to resume. A
+    # different task ID is a true concurrent duplicate and must not spend
+    # provider tokens while the original owner is still processing.
+    current_owner = await redis_client.get(redis_key)
+    return current_owner == task_id
+
+
+def release_failed_task_locks(
+    task_id: str,
+    idempotency_key: Optional[str],
+    submission_idempotency_key: Optional[str],
+) -> None:
+    """Release generation locks after a terminal failure so users can retry."""
+    try:
+        import redis as sync_redis
+
+        client = sync_redis.from_url(os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+        if idempotency_key:
+            worker_key = f"idempotency:{idempotency_key}"
+            raw_owner = client.get(worker_key)
+            if raw_owner:
+                try:
+                    owner = json.loads(raw_owner)
+                except (TypeError, json.JSONDecodeError):
+                    owner = raw_owner.decode() if isinstance(raw_owner, bytes) else str(raw_owner)
+                if owner == task_id:
+                    client.delete(worker_key, f"idempotency:result:{idempotency_key}")
+        if submission_idempotency_key:
+            client.delete(submission_idempotency_key)
+    except Exception as exc:
+        logger.warning(f"Failed to release generation locks | task_id={task_id} | error={exc}")
 
 
 async def mark_task_complete(redis_client, idempotency_key: str, result: Dict, ttl: int = 86400):
@@ -566,26 +604,36 @@ class ContentGenerationBaseTask(Task):
                 error=str(exc),
                 traceback=str(einfo),
             )
+            task_record = task_repo.get_task_by_id(task_id)
+            release_failed_task_locks(
+                task_id,
+                task_record.get("idempotency_key") if task_record else None,
+                kwargs.get("submission_idempotency_key"),
+            )
         except Exception as e:
             logger.warning(f"Failed to persist task failure: {e}")
-
-        # Route to dead letter queue and notify admin if max retries exhausted
-        if self.request.retries >= self.max_retries:
-            logger.critical(
-                f"Task permanently failed after {self.max_retries} retries | "
-                f"task_id={task_id} | routing to DLQ and notifying admin"
+            release_failed_task_locks(
+                task_id,
+                None,
+                kwargs.get("submission_idempotency_key"),
             )
-            route_to_dead_letter_queue(task_id, self.name, args, kwargs, exc)
 
-            # Send admin notification for permanent failures
-            notify_admin(
-                task_id=task_id,
-                task_name=self.name,
-                error=str(exc),
-                error_type=error_type,
-                traceback_str=str(einfo),
-                kwargs=kwargs,
-            )
+        # Celery invokes on_failure only after the task has reached a terminal
+        # failure. This includes deterministic failures that are intentionally
+        # not retried, so every invocation belongs in the DLQ/audit path.
+        logger.critical(
+            f"Task permanently failed | retries={self.request.retries} | "
+            f"task_id={task_id} | routing to DLQ and notifying admin"
+        )
+        route_to_dead_letter_queue(task_id, self.name, args, kwargs, exc)
+        notify_admin(
+            task_id=task_id,
+            task_name=self.name,
+            error=str(exc),
+            error_type=error_type,
+            traceback_str=str(einfo),
+            kwargs=kwargs,
+        )
 
     def on_success(self, retval, task_id, args, kwargs):
         """Handle successful task completion with metrics and persistence."""
@@ -716,6 +764,7 @@ def generate_content_task(
         # and ensure validation logic catches invalid language codes
         language_arg = kwargs.pop("language", None)
         submitted_by_user_id = kwargs.pop("submitted_by_user_id", None)
+        submission_idempotency_key = kwargs.pop("submission_idempotency_key", None)
 
         validated_input = GenerateContentInput(
             project_id=project_id,
@@ -755,6 +804,8 @@ def generate_content_task(
             validated_input.topic,
             validated_input.priority,
             validated_input.custom_instructions,
+            language=validated_input.language,
+            **kwargs,
         )
 
         # --- ASYNC WORKFLOW WRAPPER ---
@@ -773,18 +824,8 @@ def generate_content_task(
                 raise WorkflowError("Redis connection timeout")
 
             try:
-                # Idempotency Check
-                is_new_task = await check_idempotency(redis_client, idempotency_key, ttl=3600)
-
-                if not is_new_task:
-                    logger.info(f"Duplicate task detected | task_id={self.request.id}")
-                    cached = await get_cached_result(redis_client, idempotency_key)
-                    if cached:
-                        logger.info(f"Returning cached result | task_id={self.request.id}")
-                        return cached  # Returns dict
-                    logger.warning(f"Duplicate task without cached result | task_id={self.request.id}")
-
-                # --- PERSIST TASK START (Sync) ---
+                # Persist STARTED before deduplication so cached/duplicate exits
+                # still have a complete audit record for this Celery task ID.
                 try:
                     task_repo = SyncTaskResultRepository()
                     task_repo.create_task_record(
@@ -792,15 +833,45 @@ def generate_content_task(
                         task_name=self.name,
                         args=(validated_input.project_id, validated_input.topic),
                         kwargs={
+                            **kwargs,
                             "priority": validated_input.priority,
                             "custom_instructions": validated_input.custom_instructions,
                             "submitted_by_user_id": submitted_by_user_id,
                             "model_override": kwargs.get("model_override"),
+                            "language": validated_input.language,
+                            "submission_idempotency_key": submission_idempotency_key,
                         },
                         idempotency_key=idempotency_key,
+                        worker_name=getattr(self.request, "hostname", None),
                     )
                 except Exception as e:
                     logger.warning(f"Failed to persist task start: {e}")
+
+                # Idempotency Check
+                is_new_task = await check_idempotency(
+                    redis_client,
+                    idempotency_key,
+                    task_id=self.request.id,
+                    ttl=3600,
+                )
+
+                if not is_new_task:
+                    logger.info(f"Duplicate task detected | task_id={self.request.id}")
+                    cached = await get_cached_result(redis_client, idempotency_key)
+                    if cached:
+                        logger.info(f"Returning cached result | task_id={self.request.id}")
+                        try:
+                            task_repo.update_task_success(self.request.id, cached)
+                        except Exception as exc:
+                            logger.warning(
+                                f"Failed to persist cached duplicate result | "
+                                f"task_id={self.request.id} | error={exc}"
+                            )
+                        return cached  # Returns dict
+                    raise WorkflowError(
+                        "An identical generation is already in progress. "
+                        "Wait for the original task to complete before retrying."
+                    )
 
                 # --- PREPARE CONTEXT (Sync) ---
                 from api.dependencies import get_content_agent

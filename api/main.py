@@ -115,6 +115,44 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class RequestTimeoutMiddleware(BaseHTTPMiddleware):
+    """
+    Enforce request timeout to prevent hanging connections.
+
+    Protects against slow clients, network issues, and runaway queries
+    that could exhaust server resources.
+    """
+
+    def __init__(self, app, timeout_seconds: float = 60.0):
+        super().__init__(app)
+        self.timeout_seconds = timeout_seconds
+
+    async def dispatch(self, request: Request, call_next):
+        try:
+            # Use asyncio.wait_for to enforce timeout
+            response = await asyncio.wait_for(
+                call_next(request),
+                timeout=self.timeout_seconds
+            )
+            return response
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Request timeout after {self.timeout_seconds}s",
+                extra={
+                    "path": request.url.path,
+                    "method": request.method,
+                    "request_id": getattr(request.state, "request_id", "unknown"),
+                }
+            )
+            return JSONResponse(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                content={
+                    "detail": f"Request timeout after {self.timeout_seconds} seconds",
+                    "request_id": getattr(request.state, "request_id", None),
+                }
+            )
+
+
 # ============================================================================
 # FASTAPI APPLICATION INITIALIZATION
 # ============================================================================
@@ -172,12 +210,13 @@ async def lifespan(app: FastAPI):
             validation_errors.append("REDIS_URL is required")
 
         # Check LLM API keys (at least one required)
-        has_anthropic = settings.llm.anthropic_api_key is not None
-        has_openai = settings.llm.openai_api_key is not None
-        has_gemini = settings.llm.gemini_api_key is not None
-        if not has_anthropic and not has_openai and not has_gemini:
+        has_anthropic = bool(settings.llm.anthropic_api_key and settings.llm.anthropic_api_key.strip())
+        has_openai = bool(settings.llm.openai_api_key and settings.llm.openai_api_key.strip())
+        has_gemini = bool(settings.llm.gemini_api_key and settings.llm.gemini_api_key.strip())
+        has_local = bool(settings.llm.local_llm_url and settings.llm.local_llm_url.strip())
+        if not has_anthropic and not has_openai and not has_gemini and not has_local:
             validation_errors.append(
-                "At least one LLM API key is required (GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY)"
+                "At least one LLM provider is required (GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL)"
             )
 
         # Check secret key strength
@@ -351,15 +390,19 @@ async def root_health(request: Request):
         dependencies = {}
 
         # Check database - skip pgvector check for performance
-        # Note: avoid asyncio.wait_for here as it cancels pool checkout mid-flight
-        # and corrupts connection pool state. Pool timeout is configured in settings.
-        # For Neon cloud DB, use a short timeout to avoid blocking the health response.
+        # IMPROVED: Use asyncio.shield to prevent pool corruption on timeout
         try:
             if not db._is_initialized:
                 dependencies["database"] = "degraded: not initialized"
             else:
-                await asyncio.wait_for(db.health_check(skip_vector_check=True), timeout=5.0)
-                dependencies["database"] = "healthy"
+                # Shield health check to prevent connection pool corruption
+                health_task = asyncio.create_task(db.health_check(skip_vector_check=True))
+                try:
+                    await asyncio.wait_for(asyncio.shield(health_task), timeout=3.0)
+                    dependencies["database"] = "healthy"
+                except asyncio.TimeoutError:
+                    dependencies["database"] = "degraded: timeout"
+                    logger.warning("Database health check timed out after 3s")
         except asyncio.TimeoutError:
             dependencies["database"] = "degraded: timeout"
         except Exception as e:
@@ -368,14 +411,16 @@ async def root_health(request: Request):
 
         # Check Redis with timeout
         try:
-            ok = await asyncio.wait_for(redis.ping(), timeout=2.0)
+            # IMPROVED: Shorter timeout and shielded task
+            redis_task = asyncio.create_task(redis.ping())
+            ok = await asyncio.wait_for(asyncio.shield(redis_task), timeout=1.0)
             dependencies["redis"] = "healthy" if ok else "unhealthy"
         except asyncio.TimeoutError:
             dependencies["redis"] = "unhealthy: timeout"
-            logger.warning("Redis ping timed out")
+            logger.warning("Redis health check timeout")
         except Exception as e:
             dependencies["redis"] = f"unhealthy: {e}"
-            logger.warning(f"Redis ping failed: {e}")
+            logger.warning(f"Redis health check failed: {e}")
 
         overall_status = (
             "healthy" if all(_dependency_is_healthy(v) for v in dependencies.values()) else "degraded"
@@ -399,6 +444,7 @@ async def root_health(request: Request):
 # Middleware stack (order matters: last added = first executed)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RequestTimeoutMiddleware, timeout_seconds=60.0)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(

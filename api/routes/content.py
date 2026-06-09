@@ -17,7 +17,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -26,12 +26,19 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 # Import dependency functions from new dependencies module
-from api.dependencies import get_content_service, get_task_result_repository
+from api.dependencies import (
+    get_content_service,
+    get_project_repository,
+    get_redis,
+    get_task_result_repository,
+)
 from core.exceptions import WorkflowError
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
 from infrastructure.llm_options import validate_model_available
+from infrastructure.redis_client import RedisClient
 from knowledge.article_repository import ArticleRepository
+from knowledge.project_repository import ProjectRepository
 from orchestration.content_agent import ContentAgent
 from orchestration.task_persistence import TaskResultRepository, TaskStatus
 from orchestration.task_state import normalize_db_status, reconcile_task_state
@@ -51,11 +58,12 @@ class BatchGenerateRequest(BaseModel):
 
     project_id: UUID
     topics: List[str] = Field(..., min_length=1, max_length=20)  # M-8: aligned with UI BATCH_LIMIT=20
-    priority: str = Field("normal", pattern="^(low|medium|high|critical)$")
+    priority: str = Field("high", pattern="^(low|medium|high|critical)$")
     schedule_after: Optional[datetime] = Field(None, description="Delayed execution")
     # L-3/C-1 fix: shared instructions (language, keyword) passed from bulk queue UI
     custom_instructions: Optional[str] = Field(None, max_length=2000, description="Shared instructions for all topics")
     model_override: Optional[str] = Field(None, max_length=120, description="Optional LLM model override")
+    language: str = Field("fa", pattern="^(en|fa)$", description="Content language")
 
 
 class ContentRevisionRequest(BaseModel):
@@ -188,7 +196,7 @@ def _can_access_task(task: dict | None, user: User) -> bool:
 
 
 def _assert_task_access(task: dict | None, user: User) -> None:
-    if task and not _can_access_task(task, user):
+    if not is_manager_user(user) and (not task or not _can_access_task(task, user)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
 
@@ -255,7 +263,7 @@ class GenerateContentRequest(BaseModel):
     include_toc: Optional[bool] = Field(False)
     include_technical_depth: Optional[bool] = Field(False)
     include_cta: Optional[bool] = Field(False)
-    language: Optional[str] = Field("fa", max_length=10, description="Content language: fa=Persian, en=English")
+    language: str = Field("fa", pattern="^(en|fa)$", description="Content language: fa=Persian, en=English")
 
 
 @router.post(
@@ -267,6 +275,9 @@ class GenerateContentRequest(BaseModel):
 async def generate_content_async(
     request: GenerateContentRequest,
     user: User = Depends(get_current_active_user),
+    task_repo: TaskResultRepository = Depends(get_task_result_repository),
+    redis_client: RedisClient = Depends(get_redis),
+    project_repo: ProjectRepository = Depends(get_project_repository),
 ):
     """
     Generate a single article asynchronously using Celery.
@@ -282,15 +293,22 @@ async def generate_content_async(
     if not valid_model:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=model_error)
 
-    # H-7 fix: Idempotency check at API level to prevent duplicate LLM spend
-    # Uses Redis SETNX with 24h TTL — same (project_id, topic, user) won't re-dispatch
-    import hashlib, redis as _redis, os as _os
+    if not await project_repo.get_by_id(request.project_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    task_id = str(uuid4())
+    idem_key = None
+    idempotency_reserved = False
+
+    # Reserve the submission before broker dispatch. The value is the durable
+    # task ID so operators can correlate Redis, PostgreSQL, and Celery state.
+    import hashlib
     try:
-        _redis_client = _redis.from_url(_os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
         idem_key = "idem:gen:" + hashlib.sha256(
             f"{request.project_id}:{request.topic.strip().lower()}:{user.id}".encode()
         ).hexdigest()
-        if not _redis_client.set(idem_key, "1", nx=True, ex=86400):
+        idempotency_reserved = await redis_client.set(idem_key, task_id, nx=True, ex=86400)
+        if not idempotency_reserved:
             logger.warning(f"Duplicate submission blocked | idem_key={idem_key}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -322,19 +340,50 @@ async def generate_content_async(
         "temperature": request.temperature,
         "model_override": request.model_override,
         "submitted_by_user_id": str(user.id),
+        "submission_idempotency_key": idem_key if idempotency_reserved else None,
     }
 
-    task = generate_content_task.apply_async(
-        args=[
-            str(request.project_id),
-            request.topic,
-            request.priority,
-            request.custom_instructions,
-        ],
-        kwargs=task_kwargs,
-        queue=request.priority,  # Route to appropriate priority queue
-        routing_key=request.priority,
-    )
+    task_args = [
+        str(request.project_id),
+        request.topic,
+        request.priority,
+        request.custom_instructions,
+    ]
+
+    try:
+        await task_repo.create_task_record(
+            task_id=task_id,
+            task_name=generate_content_task.name,
+            args=tuple(task_args),
+            kwargs=task_kwargs,
+            status=TaskStatus.PENDING,
+        )
+    except Exception as exc:
+        if idempotency_reserved and idem_key:
+            await redis_client.delete(idem_key)
+        logger.error(f"Failed to persist queued task | task_id={task_id} | error={exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Task could not be recorded safely. Please retry.",
+        ) from exc
+
+    try:
+        task = generate_content_task.apply_async(
+            task_id=task_id,
+            args=task_args,
+            kwargs=task_kwargs,
+            queue=request.priority,
+            routing_key=request.priority,
+        )
+    except Exception as exc:
+        await task_repo.update_task_failure(task_id, f"Broker dispatch failed: {exc}")
+        if idempotency_reserved and idem_key:
+            await redis_client.delete(idem_key)
+        logger.error(f"Failed to dispatch generation task | task_id={task_id} | error={exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Task queue is unavailable. The request was recorded as failed.",
+        ) from exc
 
     logger.info(
         f"Content generation task dispatched | task_id={task.id} | "
@@ -381,7 +430,11 @@ async def get_task_status(
         if db_task:
             db_state = normalize_db_status(str(db_task.get("status", "")))
     except Exception as e:
-        logger.debug(f"DB state lookup failed: {e}")
+        logger.error(f"DB state lookup failed | task_id={task_id} | error={e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Task status is temporarily unavailable.",
+        ) from e
 
     _assert_task_access(db_task, user)
 
@@ -614,7 +667,10 @@ async def get_task_history(
         return tasks if manager_user else tasks[skip : skip + limit]
     except Exception as e:
         logger.error(f"Failed to fetch task history: {e}")
-        return []
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Task history is temporarily unavailable.",
+        ) from e
 
 
 @router.delete(
@@ -685,6 +741,7 @@ async def batch_generate_content(
     request: BatchGenerateRequest,
     user: User = Depends(get_current_active_user),
     content_service: ContentService = Depends(get_content_service),
+    redis_client: RedisClient = Depends(get_redis),
 ):
     """
     Generate multiple articles in parallel.
@@ -697,13 +754,11 @@ async def batch_generate_content(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=model_error)
 
     # H-3: Per-user rate limiting
-    import redis as _redis, os as _os
     try:
-        _redis_client = _redis.from_url(_os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
         rate_key = f"ratelimit:batch:{user.id}:" + str(int(time.time()) // 60)
-        current = _redis_client.incr(rate_key)
+        current = await redis_client.incr(rate_key)
         if current == 1:
-            _redis_client.expire(rate_key, 90)  # 90s TTL to cover boundary conditions
+            await redis_client.expire(rate_key, 90)
         if current > 3:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -723,6 +778,7 @@ async def batch_generate_content(
         request.custom_instructions,
         str(user.id),
         request.model_override,
+        request.language,
     )
 
 
@@ -731,6 +787,7 @@ async def get_batch_status(
     batch_id: str,
     content_service: ContentService = Depends(get_content_service),
     user: User = Depends(get_current_active_user),
+    task_repo: TaskResultRepository = Depends(get_task_result_repository),
 ):
     """
     Query batch generation progress.
@@ -738,6 +795,21 @@ async def get_batch_status(
     Returns aggregated status of all articles in batch including
     completion percentage, failures, and individual task statuses.
     """
+    if not is_manager_user(user):
+        task_ids = [task_id.strip() for task_id in batch_id.split(",") if task_id.strip()]
+        if not task_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+        for task_id in task_ids:
+            try:
+                task = await task_repo.get_task_by_id(task_id)
+            except Exception as exc:
+                logger.error(f"Failed batch ownership lookup | task_id={task_id} | error={exc}")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Batch status is temporarily unavailable.",
+                ) from exc
+            _assert_task_access(task, user)
+
     return await content_service.get_batch_status(batch_id)
 
 

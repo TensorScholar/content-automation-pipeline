@@ -92,7 +92,8 @@ class RedisConnectionPool:
         if self._circuit_breaker_open:
             current_time = asyncio.get_event_loop().time()
             time_since_failure = current_time - (self._last_failure_time or 0)
-            backoff_time = min(60 * self._backoff_multiplier, self._max_backoff)
+            # IMPROVED: More gradual backoff - start with 5s instead of 60s
+            backoff_time = min(5 * self._backoff_multiplier, self._max_backoff)
 
             if time_since_failure < backoff_time:
                 raise CacheError(
@@ -103,7 +104,8 @@ class RedisConnectionPool:
                 # Attempt to close circuit breaker with exponential backoff
                 logger.info(f"Attempting to close Redis circuit breaker (backoff: {backoff_time}s)")
                 self._circuit_breaker_open = False
-                self._failure_count = 0
+                # Don't reset failure count immediately - give it a chance to prove stability
+                # self._failure_count = 0  # Removed - reset only on successful operation
 
         if self._pool is None:
             await self.initialize()
@@ -112,19 +114,32 @@ class RedisConnectionPool:
         try:
             connection = Redis(connection_pool=self._pool)
             yield connection
-            self._failure_count = 0  # Reset on success
-            self._backoff_multiplier = 1  # Reset backoff on success
+
+            # SUCCESS: Reset circuit breaker state
+            if self._failure_count > 0:
+                logger.info(f"Redis connection successful, resetting circuit breaker")
+            self._failure_count = 0
+            self._backoff_multiplier = 1
+            self._circuit_breaker_open = False
 
         except (ConnectionError, TimeoutError) as e:
             self._failure_count += 1
             self._last_failure_time = asyncio.get_event_loop().time()
 
-            if self._failure_count >= 3:
+            # IMPROVED: Require 5 consecutive failures before opening circuit (was 3)
+            # This prevents temporary network blips from taking down Redis
+            if self._failure_count >= 5:
                 self._circuit_breaker_open = True
-                self._backoff_multiplier = min(self._backoff_multiplier * 2, 16)  # Cap at 16x
+                # IMPROVED: More gradual backoff increase - 1.5x instead of 2x
+                self._backoff_multiplier = min(self._backoff_multiplier * 1.5, 16)
                 logger.error(
                     f"Circuit breaker opened after {self._failure_count} failures. "
                     f"Backoff multiplier: {self._backoff_multiplier}x"
+                )
+            else:
+                logger.warning(
+                    f"Redis connection error ({self._failure_count}/5): {e}. "
+                    f"Will open circuit breaker after {5 - self._failure_count} more failures."
                 )
 
             raise CacheError(f"Redis connection error: {e}")

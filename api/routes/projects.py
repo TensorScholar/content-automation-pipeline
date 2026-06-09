@@ -16,7 +16,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Import dependency functions from new dependencies module
 from api.dependencies import (
@@ -30,7 +30,7 @@ from core.models import InferredPatterns, Project, Rulebook
 from infrastructure.database import DatabaseManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
-from security import User, get_current_active_user
+from security import User, get_current_active_user, get_current_superuser
 from services.content_memory_service import ContentMemoryService
 from services.project_service import ProjectService
 from services.project_readiness_service import ProjectReadinessService
@@ -54,6 +54,42 @@ class UpdateProjectRequest(BaseModel):
     wordpress_username: Optional[str] = None
     wordpress_app_password: Optional[str] = None
     vertical: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Project name cannot be empty")
+        return normalized
+
+    @field_validator("domain")
+    @classmethod
+    def normalize_domain(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if normalized.startswith("https://"):
+            normalized = normalized.removeprefix("https://")
+        elif normalized.startswith("http://"):
+            normalized = normalized.removeprefix("http://")
+        return normalized.rstrip("/") or None
+
+    @field_validator(
+        "telegram_channel",
+        "description",
+        "wordpress_url",
+        "wordpress_username",
+        "wordpress_app_password",
+        "vertical",
+    )
+    @classmethod
+    def normalize_optional_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class RulebookRequest(BaseModel):
@@ -179,7 +215,7 @@ class ProjectContentMemoryResponse(BaseModel):
 async def create_project(
     request: CreateProjectRequest,
     project_service: ProjectService = Depends(get_project_service),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(get_current_superuser),
 ):
     """Create a new project with optional initial rulebook."""
     result = await project_service.create_project_with_rulebook(
@@ -276,7 +312,7 @@ async def update_project(
     project_id: UUID,
     request: UpdateProjectRequest,
     project_service: ProjectService = Depends(get_project_service),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(get_current_superuser),
 ):
     """
     Update project properties.
@@ -284,7 +320,7 @@ async def update_project(
     Implements optimistic concurrency control to prevent conflicts.
     Only non-null fields are updated (partial update semantics).
     """
-    update_data = request.dict(exclude_unset=True)
+    update_data = request.model_dump(exclude_unset=True)
     return await project_service.update_project(project_id, update_data)
 
 
@@ -293,7 +329,7 @@ async def delete_project(
     project_id: UUID,
     cascade: bool = Query(False, description="Delete associated content"),
     project_service: ProjectService = Depends(get_project_service),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(get_current_superuser),
 ):
     """
     Delete project.
@@ -342,7 +378,7 @@ async def create_or_update_rulebook(
     project_id: UUID,
     request: RulebookRequest,
     project_service: ProjectService = Depends(get_project_service),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(get_current_superuser),
 ):
     """
     Create or update project rulebook.
@@ -399,7 +435,7 @@ async def get_rulebook_history(
 async def delete_rulebook(
     project_id: UUID,
     project_service: ProjectService = Depends(get_project_service),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(get_current_superuser),
 ):
     """
     Delete project rulebook (all versions).
@@ -425,7 +461,7 @@ async def trigger_website_analysis(
     project_id: UUID,
     force_refresh: bool = Query(False, description="Force re-analysis"),
     project_service: ProjectService = Depends(get_project_service),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(get_current_superuser),
 ):
     """
     Trigger website analysis to infer content patterns.
@@ -469,7 +505,7 @@ async def get_inferred_patterns(
 async def bulk_create_projects(
     projects_data: List[dict],
     project_service: ProjectService = Depends(get_project_service),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(get_current_superuser),
 ):
     """
     Create multiple projects in single operation.

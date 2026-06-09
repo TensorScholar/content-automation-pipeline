@@ -322,6 +322,7 @@ export function AppShell({ token, user }: AppShellProps) {
                 token={token}
                 projects={projects}
                 selectedProjectId={selectedProjectId}
+                canManageProjects={isAdmin}
                 onSelectProject={setSelectedProjectId}
                 onProjectsRefresh={refreshProjects}
               />

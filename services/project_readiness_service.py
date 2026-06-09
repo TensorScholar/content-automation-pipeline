@@ -403,7 +403,7 @@ class ProjectReadinessService:
 
     async def _check_recent_task_failures(self, project: Project) -> list[ReadinessCheck]:
         try:
-            since = datetime.now(timezone.utc) - timedelta(hours=24)
+            since = (datetime.now(timezone.utc) - timedelta(hours=24)).replace(tzinfo=None)
             from orchestration.task_persistence import TaskStatus, task_results_table
 
             query = (

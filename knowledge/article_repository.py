@@ -25,6 +25,7 @@ from infrastructure.schema import (
     article_revisions_table,
     content_plans_table,
     generated_articles_table,
+    projects_table,
 )
 from optimization.query_cache import cached_query
 
@@ -558,6 +559,30 @@ class ArticleRepository:
                     updated_at=article.updated_at.astimezone(timezone.utc).replace(tzinfo=None) if article.updated_at.tzinfo else article.updated_at,
                 )
                 await session.execute(query)
+                activity_time = self._to_db_naive_utc(article.created_at)
+                counter_update = (
+                    update(projects_table)
+                    .where(projects_table.c.id == article.project_id)
+                    .values(
+                        total_articles_generated=func.coalesce(
+                            projects_table.c.total_articles_generated, 0
+                        )
+                        + 1,
+                        total_tokens_consumed=func.coalesce(
+                            projects_table.c.total_tokens_consumed, 0
+                        )
+                        + article.total_tokens_used,
+                        total_cost_usd=func.coalesce(projects_table.c.total_cost_usd, 0)
+                        + article.total_cost_usd,
+                        last_active=activity_time,
+                        updated_at=activity_time,
+                    )
+                )
+                counter_result = await session.execute(counter_update)
+                if counter_result.rowcount != 1:
+                    raise ValueError(
+                        f"Project {article.project_id} not found while saving generated article"
+                    )
                 await session.commit()
         except Exception as e:
             logger.error(f"Failed to save generated article: {e}")

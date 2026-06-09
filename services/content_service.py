@@ -37,7 +37,7 @@ from execution.distributer import Distributor
 from knowledge.article_repository import ArticleRepository
 from knowledge.project_repository import ProjectRepository
 from orchestration.content_agent import ContentAgent
-from orchestration.task_persistence import TaskResultRepository
+from orchestration.task_persistence import TaskResultRepository, TaskStatus
 from orchestration.task_state import normalize_db_status, reconcile_task_state
 
 if TYPE_CHECKING:
@@ -240,6 +240,7 @@ class ContentService:
         custom_instructions: Optional[str] = None,
         submitted_by_user_id: Optional[str] = None,
         model_override: Optional[str] = None,
+        language: str = "fa",
     ) -> Dict[str, Any]:
         """
         Submit batch content generation with business logic validation.
@@ -262,45 +263,105 @@ class ContentService:
                 detail="schedule_after must be in the future",
             )
 
+        if not await self.projects.get_by_id(project_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+            )
+
         # Import Celery task here to avoid circular imports
         from orchestration.tasks import generate_content_task
 
-        # Schedule generation for each topic via Celery
-        task_records = []
-
+        submissions = []
+        task_name = getattr(
+            generate_content_task,
+            "name",
+            "orchestration.tasks.generate_content_task",
+        )
         for topic in topics:
-            # Dispatch to Celery worker - task handles its own persistence
-            if schedule_after:
-                # Schedule for future execution
-                celery_task = generate_content_task.apply_async(
-                    kwargs={
-                        "project_id": str(project_id),
-                        "topic": topic,
-                        "priority": priority,
-                        "custom_instructions": custom_instructions,
-                        "submitted_by_user_id": submitted_by_user_id,
-                        "model_override": model_override,
-                    },
-                    eta=schedule_after,
-                    queue=priority,
-                    routing_key=priority,
+            task_id = str(uuid4())
+            task_kwargs = {
+                "project_id": str(project_id),
+                "topic": topic,
+                "priority": priority,
+                "custom_instructions": custom_instructions,
+                "submitted_by_user_id": submitted_by_user_id,
+                "model_override": model_override,
+                "language": language,
+            }
+            submissions.append((task_id, topic, task_kwargs))
+
+        persisted_task_ids: list[str] = []
+        if self.task_repo:
+            try:
+                for task_id, topic, task_kwargs in submissions:
+                    await self.task_repo.create_task_record(
+                        task_id=task_id,
+                        task_name=task_name,
+                        args=(str(project_id), topic, priority, custom_instructions),
+                        kwargs=task_kwargs,
+                        status=TaskStatus.PENDING,
+                    )
+                    persisted_task_ids.append(task_id)
+            except Exception as exc:
+                for persisted_task_id in persisted_task_ids:
+                    try:
+                        await self.task_repo.update_task_failure(
+                            persisted_task_id,
+                            f"Batch preparation failed before dispatch: {exc}",
+                        )
+                    except Exception:
+                        pass
+                logger.error(
+                    f"Failed to persist batch before dispatch | project_id={project_id} | error={exc}"
                 )
-            else:
-                # Execute immediately
-                celery_task = generate_content_task.apply_async(
-                    kwargs={
-                        "project_id": str(project_id),
-                        "topic": topic,
-                        "priority": priority,
-                        "custom_instructions": custom_instructions,
-                        "submitted_by_user_id": submitted_by_user_id,
-                        "model_override": model_override,
-                    },
-                    queue=priority,
-                    routing_key=priority,
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Batch could not be recorded safely. No generation tasks were dispatched.",
+                ) from exc
+
+        task_records = []
+        dispatch_failures = []
+        for task_id, topic, task_kwargs in submissions:
+            try:
+                if schedule_after:
+                    celery_task = generate_content_task.apply_async(
+                        task_id=task_id,
+                        kwargs=task_kwargs,
+                        eta=schedule_after,
+                        queue=priority,
+                        routing_key=priority,
+                    )
+                else:
+                    celery_task = generate_content_task.apply_async(
+                        task_id=task_id,
+                        kwargs=task_kwargs,
+                        queue=priority,
+                        routing_key=priority,
+                    )
+                task_records.append(celery_task.id)
+            except Exception as exc:
+                dispatch_failures.append({"task_id": task_id, "topic": topic})
+                if self.task_repo:
+                    try:
+                        await self.task_repo.update_task_failure(
+                            task_id,
+                            f"Broker dispatch failed: {exc}",
+                        )
+                    except Exception as persistence_exc:
+                        logger.error(
+                            f"Failed to record batch dispatch failure | "
+                            f"task_id={task_id} | error={persistence_exc}"
+                        )
+                logger.error(
+                    f"Batch task dispatch failed | task_id={task_id} | topic={topic} | error={exc}"
                 )
 
-            task_records.append(celery_task.id)
+        if not task_records and dispatch_failures:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Task queue is unavailable. All batch items were recorded as failed.",
+            )
 
         logger.info(f"Dispatched batch generation to Celery for {len(topics)} topics | project_id={project_id}")
 
@@ -311,7 +372,8 @@ class ContentService:
             "batch_size": len(topics),
             "topics": topics,
             "task_ids": task_records,
-            "status": "processing",
+            "status": "partial_failure" if dispatch_failures else "processing",
+            "dispatch_failures": dispatch_failures,
             "estimated_completion_seconds": len(topics) * 120  # Rough estimate
         }
 

@@ -34,6 +34,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from config.settings import get_settings
 from core.exceptions import DatabaseConnectionError, DatabaseQueryTimeoutError
 
+# Connection pool monitoring and timeout enforcement
+from contextlib import asynccontextmanager
+import time
+
 # Initialize logger
 logger = logging.getLogger(__name__)
 
@@ -197,6 +201,78 @@ class DatabaseManager:
         def receive_checkin(dbapi_conn, connection_record):
             """Track connection returns to pool."""
             logger.debug(f"Connection returned to pool ({pool_name})")
+
+    async def get_pool_stats(self) -> dict[str, any]:
+        """Get current connection pool statistics for monitoring."""
+        if not self._writer_engine:
+            return {"error": "Engine not initialized"}
+
+        pool = self._writer_engine.pool
+        return {
+            "size": pool.size(),
+            "checked_out": pool.checkedout(),
+            "overflow": pool.overflow(),
+            "checked_in": pool.size() - pool.checkedout(),
+            "total_capacity": pool.size() + self._settings.database.max_overflow,
+        }
+
+    @asynccontextmanager
+    async def session_with_timeout(
+        self,
+        readonly: bool = False,
+        timeout_seconds: float = 30.0
+    ) -> AsyncGenerator[AsyncSession, None]:
+        """
+        Context manager for sessions with enforced timeout.
+
+        Prevents connection pool exhaustion from hanging queries.
+        Automatically rolls back on timeout or error.
+
+        Args:
+            readonly: If True, use read replica (if configured)
+            timeout_seconds: Maximum time to hold connection
+
+        Yields:
+            AsyncSession with timeout enforcement
+        """
+        if not self._is_initialized:
+            raise DatabaseConnectionError("Database not initialized")
+
+        factory = self._reader_session_factory if readonly else self._writer_session_factory
+        if not factory:
+            raise DatabaseConnectionError("Session factory not initialized")
+
+        session = factory()
+        start_time = time.time()
+
+        try:
+            # Set statement timeout at session level
+            await session.execute(text(f"SET LOCAL statement_timeout = '{int(timeout_seconds * 1000)}'"))
+            yield session
+
+            # Check if we exceeded our timeout
+            elapsed = time.time() - start_time
+            if elapsed > timeout_seconds:
+                logger.warning(
+                    f"Session exceeded timeout: {elapsed:.2f}s > {timeout_seconds}s",
+                    extra={"elapsed": elapsed, "timeout": timeout_seconds}
+                )
+
+            await session.commit()
+
+        except asyncio.TimeoutError as e:
+            await session.rollback()
+            logger.error(f"Session timeout after {time.time() - start_time:.2f}s")
+            raise DatabaseQueryTimeoutError(
+                f"Database query timeout after {timeout_seconds}s",
+                timeout=timeout_seconds
+            ) from e
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Session error after {time.time() - start_time:.2f}s: {e}")
+            raise
+        finally:
+            await session.close()
 
     async def health_check(self, skip_vector_check: bool = False) -> bool:
         """
@@ -465,6 +541,12 @@ def get_db_manager() -> DatabaseManager:
     return _db_manager
 
 
+def reset_db_manager() -> None:
+    """Clear the process-local database manager after its engines are disposed."""
+    global _db_manager
+    _db_manager = None
+
+
 async def init_database() -> None:
     """
     Initialize database connection pool.
@@ -529,6 +611,7 @@ __all__ = [
     "Base",
     "DatabaseManager",
     "get_db_manager",
+    "reset_db_manager",
     "init_database",
     "close_database",
     "get_session",

@@ -140,19 +140,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadUserWithRetry]);
 
   const login = useCallback(async (email: string, password: string, remember = true) => {
+    const normalizedEmail = email.trim();
     const formData = new URLSearchParams();
-    formData.set("username", email.trim());
+    formData.set("username", normalizedEmail);
     formData.set("password", password);
 
     const tokenResponse = await apiRequest<LoginResponse>("/auth/token", {
       method: "POST",
-      formData
+      formData,
+      headers: { "X-Login-Identifier": normalizedEmail.toLowerCase() }
     });
     const nextToken = tokenResponse.access_token;
 
-    // FIX: Load user data BEFORE setting token to prevent race condition
-    // where token is truthy but user is still null
     try {
+      // CRITICAL FIX: Load user data BEFORE setting token state
+      // This prevents race conditions where useEffect hooks fire with token=truthy but user=null
       const userData = await loadUserWithRetry(nextToken);
 
       // Verify user data was actually loaded
@@ -160,17 +162,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Failed to load user data");
       }
 
-      // Only persist token and update state after successful user load
+      // Atomically update both user and token state to prevent intermediate states
+      if (mountedRef.current) {
+        setUser(userData);
+        setToken(nextToken);
+      }
+
+      // Persist to storage after state update
       if (remember) {
         window.localStorage.setItem(PERSISTENT_TOKEN_STORAGE_KEY, nextToken);
         window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
       } else {
         window.sessionStorage.setItem(SESSION_TOKEN_STORAGE_KEY, nextToken);
         window.localStorage.removeItem(PERSISTENT_TOKEN_STORAGE_KEY);
-      }
-
-      if (mountedRef.current) {
-        setToken(nextToken);
       }
     } catch (error) {
       // Clean up on failure

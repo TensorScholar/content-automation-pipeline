@@ -202,6 +202,7 @@ class LLMSettings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "LLM_OPENAI_API_KEY"),
     )
     openai_org_id: Optional[str] = Field(default=None, alias="OPENAI_ORG_ID")
+    local_llm_url: Optional[str] = Field(default=None, alias="LOCAL_LLM_URL")
     primary_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_PRIMARY_MODEL")
     secondary_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_SECONDARY_MODEL")
     fallback_model: Optional[str] = Field(default="claude-haiku-4-5-20251001", alias="LLM_FALLBACK_MODEL")
@@ -259,29 +260,43 @@ class LLMSettings(BaseSettings):
         """Auto-detect provider based on available API keys."""
         import os
 
+        def configured(value: Optional[str]) -> bool:
+            return bool(value and value.strip())
+
         # Check which API keys are available
-        has_anthropic = self.anthropic_api_key is not None or os.getenv("ANTHROPIC_API_KEY")
-        has_openai = self.openai_api_key is not None or os.getenv("OPENAI_API_KEY") or os.getenv("LLM_OPENAI_API_KEY")
-        has_gemini = (
-            self.gemini_api_key is not None
-            or os.getenv("GEMINI_API_KEY")
-            or os.getenv("GOOGLE_API_KEY")
-            or os.getenv("LLM_GEMINI_API_KEY")
+        has_anthropic = configured(self.anthropic_api_key) or configured(os.getenv("ANTHROPIC_API_KEY"))
+        has_openai = (
+            configured(self.openai_api_key)
+            or configured(os.getenv("OPENAI_API_KEY"))
+            or configured(os.getenv("LLM_OPENAI_API_KEY"))
         )
+        has_gemini = (
+            configured(self.gemini_api_key)
+            or configured(os.getenv("GEMINI_API_KEY"))
+            or configured(os.getenv("GOOGLE_API_KEY"))
+            or configured(os.getenv("LLM_GEMINI_API_KEY"))
+        )
+        has_local = configured(self.local_llm_url) or configured(os.getenv("LOCAL_LLM_URL"))
 
         # Auto-set provider if not explicitly configured
         if self.provider == "anthropic" and not has_anthropic and has_gemini:
             object.__setattr__(self, 'provider', 'gemini')
         elif self.provider == "anthropic" and not has_anthropic and has_openai:
             object.__setattr__(self, 'provider', 'openai')
+        elif self.provider == "anthropic" and not has_anthropic and has_local:
+            object.__setattr__(self, 'provider', 'local')
         elif self.provider == "gemini" and not has_gemini and has_anthropic:
             object.__setattr__(self, 'provider', 'anthropic')
         elif self.provider == "gemini" and not has_gemini and has_openai:
             object.__setattr__(self, 'provider', 'openai')
+        elif self.provider == "gemini" and not has_gemini and has_local:
+            object.__setattr__(self, 'provider', 'local')
         elif self.provider == "openai" and not has_openai and has_anthropic:
             object.__setattr__(self, 'provider', 'anthropic')
         elif self.provider == "openai" and not has_openai and has_gemini:
             object.__setattr__(self, 'provider', 'gemini')
+        elif self.provider == "openai" and not has_openai and has_local:
+            object.__setattr__(self, 'provider', 'local')
 
         provider = self.provider.lower()
         if not os.getenv("LLM_PRIMARY_MODEL"):
@@ -291,15 +306,17 @@ class LLMSettings(BaseSettings):
                 object.__setattr__(self, "primary_model", self.anthropic_model)
             elif provider == "openai":
                 object.__setattr__(self, "primary_model", os.getenv("LLM_OPENAI_MODEL", "gpt-4o-mini"))
+            elif provider == "local":
+                object.__setattr__(self, "primary_model", os.getenv("LOCAL_LLM_MODEL", "local-qwen-turbo"))
         if not os.getenv("LLM_SECONDARY_MODEL"):
             object.__setattr__(self, "secondary_model", self.primary_model)
         if not os.getenv("LLM_FALLBACK_MODEL"):
             object.__setattr__(self, "fallback_model", self.primary_model)
 
         # Log warning if no provider available
-        if not has_anthropic and not has_openai and not has_gemini:
+        if not has_anthropic and not has_openai and not has_gemini and not has_local:
             import logging
-            logging.warning("No LLM API key found! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+            logging.warning("No LLM provider configured! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL")
 
         if not os.getenv("LLM_KEYWORD_MODEL"):
             object.__setattr__(self, "keyword_model", self.primary_model)

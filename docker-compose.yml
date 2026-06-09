@@ -145,7 +145,7 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-celery
     restart: unless-stopped
-    command: celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4
+    command: celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4 -Q critical,high,medium,default,low
     healthcheck:
       test: [ "CMD", "celery", "-A", "orchestration.celery_app.app", "inspect", "ping", "-d", "celery@$$HOSTNAME" ]
       interval: 30s

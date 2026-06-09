@@ -303,7 +303,7 @@ export function LoginCard() {
         >
           {/* Ghost Watermark Logo - Pushed to the corner */}
           <div className="absolute -bottom-32 -end-32 w-[140%] opacity-[0.03] mix-blend-overlay pointer-events-none z-0" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
-            <Image src="/logo.png" alt="" width={500} height={500} className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+            <Image src="/logo.png" alt="" width={500} height={500} priority className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
 
           <HeroMeshGradient />
@@ -353,7 +353,7 @@ export function LoginCard() {
         {/* ═══ MOBILE OVERRIDES ═══ */}
         <section className="auth-hero-surface relative hidden overflow-hidden border-b border-black/5 px-8 py-8 text-ink dark:border-white/10 md:block lg:hidden">
           <div className="absolute -bottom-16 -end-24 w-[130%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
-            <Image src="/logo.png" alt="" width={500} height={500} className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+            <Image src="/logo.png" alt="" width={500} height={500} priority className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <HeroMeshGradient />
           <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in flex flex-col items-center text-center">
@@ -368,7 +368,7 @@ export function LoginCard() {
 
         <section className="auth-hero-surface relative overflow-hidden border-b border-black/5 px-6 py-5 text-ink dark:border-white/10 md:hidden">
           <div className="absolute -bottom-10 -end-10 w-[150%] opacity-[0.04] mix-blend-overlay pointer-events-none" style={{ transform: direction === "rtl" ? "scaleX(-1)" : "none" }}>
-            <Image src="/logo.png" alt="" width={500} height={500} className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
+            <Image src="/logo.png" alt="" width={500} height={500} priority className="w-full h-auto object-contain" style={{ imageRendering: "auto" }} />
           </div>
           <div key={`mb-hero-${locale}`} className="relative z-10 flex flex-col items-center justify-center gap-2 animate-fade-in text-center">
             <div className="flex items-center justify-center gap-2">

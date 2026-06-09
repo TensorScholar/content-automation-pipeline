@@ -595,6 +595,8 @@ class UnifiedLLMClient:
         if local_url:
             self._local_base_url = local_url.rstrip("/")
             logger.info(f"✓ Local LLM configured | base_url={self._local_base_url}")
+            if not self._active_provider:
+                self._active_provider = "local"
         else:
             logger.warning("⚠ LOCAL_LLM_URL not set - Local models unavailable")
 
@@ -603,9 +605,9 @@ class UnifiedLLMClient:
 
         # Log active provider
         if self._active_provider or openai_key:
-            logger.info(f"✓ LiteLLM ready | providers available")
+            logger.info("✓ LiteLLM ready | providers available")
         else:
-            logger.error("✗ No LLM provider available! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+            logger.error("✗ No LLM provider available! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL")
 
     def _provider_has_credentials(self, provider: ModelProvider) -> bool:
         """Return whether a provider can be attempted in this process."""
@@ -642,29 +644,23 @@ class UnifiedLLMClient:
     def _fallback_candidates(self, model: str) -> list[str]:
         """Build ordered fallback models without adding routing infrastructure.
 
-        Explicit `LLM_FALLBACK_MODEL` wins. If it is not present or is not a
-        usable cross-provider candidate, we use conservative provider defaults.
+        Explicit `LLM_FALLBACK_MODEL` wins. Remaining configured providers and
+        same-provider alternate models are considered in deterministic order.
         """
         try:
-            primary_provider = self._determine_provider(model)
+            self._determine_provider(model)
         except LLMError:
             return []
 
         candidates = [
             os.getenv("LLM_FALLBACK_MODEL"),
-            os.getenv("LLM_OPENAI_FALLBACK_MODEL", "gpt-4o-mini")
-            if primary_provider != ModelProvider.OPENAI
-            else None,
+            os.getenv("LLM_OPENAI_FALLBACK_MODEL") or "gpt-4o-mini",
             os.getenv("LLM_ANTHROPIC_FALLBACK_MODEL")
             or os.getenv("LLM_ANTHROPIC_MODEL")
-            or "claude-haiku-4-5"
-            if primary_provider != ModelProvider.ANTHROPIC
-            else None,
+            or "claude-haiku-4-5",
             os.getenv("LLM_GEMINI_FALLBACK_MODEL")
             or os.getenv("LLM_GEMINI_MODEL")
-            or "gemini-2.5-flash-lite"
-            if primary_provider != ModelProvider.GEMINI
-            else None,
+            or "gemini-2.5-flash-lite",
             os.getenv("LLM_LOCAL_FALLBACK_MODEL"),
         ]
 
@@ -1102,7 +1098,11 @@ class UnifiedLLMClient:
             # Record circuit breaker failure for provider errors
             if circuit_breaker:
                 await circuit_breaker.record_failure()
-            if _allow_fallback and getattr(e, "retryable", False):
+            # Retryability controls repeated calls to the same provider. A
+            # configured fallback is a separate recovery path and is useful
+            # for terminal provider/account failures such as exhausted quota,
+            # invalid credentials, or a model that is unavailable.
+            if _allow_fallback:
                 fallback_response = await self._try_fallbacks(
                     primary_model=model,
                     prompt=prompt,

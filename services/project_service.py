@@ -223,16 +223,26 @@ class ProjectService:
             ProjectNotFoundError: If project doesn't exist
         """
         # Verify project exists
-        project_repo = ProjectRepository(self.database_manager)
-        project = await project_repo.get_by_id(project_id)
+        project = await self.projects.get_by_id(project_id)
         if not project:
             raise ProjectNotFoundError(f"Project not found: {project_id}")
 
         # Apply updates
-        updated_project = await project_repo.update(project_id, update_data)
+        updated_project = await self.projects.update(project_id, update_data)
+        if not updated_project:
+            raise ProjectNotFoundError(f"Project not found: {project_id}")
 
         return {
             "id": str(updated_project.id),
+            "project": {
+                "id": str(updated_project.id),
+                "name": updated_project.name,
+                "domain": updated_project.domain,
+                "description": updated_project.description,
+                "vertical": updated_project.vertical,
+                "wordpress_url": updated_project.wordpress_url,
+                "wordpress_username": updated_project.wordpress_username,
+            },
             "message": "Project updated successfully",
             "updated_fields": list(update_data.keys()),
         }
@@ -249,28 +259,46 @@ class ProjectService:
             ProjectNotFoundError: If project doesn't exist
             HTTPException: If project has content and cascade=False
         """
-        from fastapi import HTTPException
-
         # Verify project exists
-        project_repo = ProjectRepository(self.database_manager)
-        project = await project_repo.get_by_id(project_id)
+        project = await self.projects.get_by_id(project_id)
         if not project:
             raise ProjectNotFoundError(f"Project not found: {project_id}")
 
-        # Check for associated content
-        # Fallback: count via statistics or separate implementation; use 0 if not available
-        article_count = 0
-
-        if article_count > 0 and not cascade:
+        impact = await self.projects.get_deletion_impact(project_id)
+        active_tasks = impact.get("active_tasks", 0)
+        if active_tasks > 0:
             raise HTTPException(
-                status_code=409,  # HTTP_409_CONFLICT
-                detail=f"Project has {article_count} associated articles. Use cascade=true to force delete.",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Project has {active_tasks} active task(s). Wait for them to finish "
+                    "or cancel them before deleting the project."
+                ),
+            )
+
+        dependent_count = sum(
+            impact.get(key, 0)
+            for key in ("articles", "content_plans", "rulebooks", "inferred_patterns")
+        )
+        if dependent_count > 0 and not cascade:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Project has associated content "
+                    f"({impact.get('articles', 0)} articles, "
+                    f"{impact.get('content_plans', 0)} plans, "
+                    f"{impact.get('rulebooks', 0)} rulebooks, "
+                    f"{impact.get('inferred_patterns', 0)} inferred patterns). "
+                    "Confirm permanent deletion to remove all related records."
+                ),
             )
 
         if cascade:
-            await project_repo.hard_delete(project_id)
+            deleted = await self.projects.hard_delete(project_id)
         else:
-            await project_repo.soft_delete(project_id)
+            deleted = await self.projects.soft_delete(project_id)
+
+        if not deleted:
+            raise ProjectNotFoundError(f"Project not found: {project_id}")
 
     async def get_project_analytics(
         self,

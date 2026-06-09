@@ -115,30 +115,38 @@ export function TasksPanel({ token }: TasksPanelProps) {
   useEffect(() => {
     if (!autoRefresh) return;
     const controller = new AbortController();
-    let active = true;
-    let timeout: number | null = null;
+    let mounted = true;
     let isPolling = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const schedule = () => {
-      if (!active || isPolling) return;
-      timeout = window.setTimeout(() => { void poll(); }, 30000);
+      if (!mounted || isPolling || controller.signal.aborted) return;
+      timeoutId = setTimeout(() => { void poll(); }, 30000);
     };
 
     const poll = async () => {
-      if (!active || isPolling) return;
+      if (!mounted || isPolling || controller.signal.aborted) return;
       isPolling = true;
-      await loadTasks(controller.signal);
-      isPolling = false;
-      if (!controller.signal.aborted) schedule();
+      try {
+        await loadTasks(controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Task polling error:", error);
+        }
+      } finally {
+        isPolling = false;
+      }
+      if (mounted && !controller.signal.aborted) {
+        schedule();
+      }
     };
 
     schedule();
     return () => {
-      active = false;
+      mounted = false;
       isPolling = false;
-      if (timeout !== null) {
-        window.clearTimeout(timeout);
-        timeout = null;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
       }
       controller.abort();
     };
@@ -154,26 +162,27 @@ export function TasksPanel({ token }: TasksPanelProps) {
     }
 
     const controller = new AbortController();
-    let active = true;
-    let timeout: number | null = null;
+    let mounted = true;
     let isPolling = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     setStreamActive(true);
 
     const schedule = () => {
-      if (!active || isPolling) return;
-      timeout = window.setTimeout(() => { void poll(); }, 4000);
+      if (!mounted || isPolling || controller.signal.aborted) return;
+      timeoutId = setTimeout(() => { void poll(); }, 4000);
     };
 
     const poll = async () => {
-      if (!active || isPolling) return;
+      if (!mounted || isPolling || controller.signal.aborted) return;
       isPolling = true;
 
       try {
         const payload = await apiRequest<TaskStatusResponse>(`/content/task/${selectedTaskId}`, {
           token,
           signal: controller.signal,
+          timeoutMs: 8000,
         });
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         setLiveStatus(payload);
         if (payload.ready) {
           setStreamActive(false);
@@ -182,9 +191,11 @@ export function TasksPanel({ token }: TasksPanelProps) {
           return;
         }
         isPolling = false;
-        schedule();
+        if (mounted && !controller.signal.aborted) {
+          schedule();
+        }
       } catch (error) {
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         setStreamActive(false);
         isPolling = false;
       }
@@ -193,11 +204,10 @@ export function TasksPanel({ token }: TasksPanelProps) {
     void poll();
 
     return () => {
-      active = false;
+      mounted = false;
       isPolling = false;
-      if (timeout !== null) {
-        window.clearTimeout(timeout);
-        timeout = null;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
       }
       controller.abort();
     };

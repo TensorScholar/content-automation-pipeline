@@ -58,18 +58,21 @@ const READINESS_COPY = {
     ready: "Project is ready for generation.",
     warning: "Project has readiness warnings. Generation is still available.",
     blocked: "Generation is blocked until runtime dependencies are restored.",
+    publishingBlocked: "Publishing is blocked. Generation is still available.",
     checking: "Checking project readiness...",
   },
   fa: {
     ready: "پروژه برای تولید محتوا آماده است.",
     warning: "پروژه هشدار آماده‌سازی دارد، اما تولید محتوا فعال است.",
     blocked: "تا بازیابی وابستگی‌های اجرایی، تولید محتوا مسدود است.",
+    publishingBlocked: "انتشار مسدود است، اما تولید محتوا فعال است.",
     checking: "در حال بررسی آمادگی پروژه...",
   },
   ar: {
     ready: "المشروع جاهز لإنشاء المحتوى.",
     warning: "توجد تحذيرات جاهزية، لكن الإنشاء متاح.",
     blocked: "إنشاء المحتوى محظور حتى استعادة الاعتماديات التشغيلية.",
+    publishingBlocked: "النشر محظور، لكن إنشاء المحتوى متاح.",
     checking: "جارٍ فحص جاهزية المشروع...",
   },
 };
@@ -329,39 +332,42 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
     if (!taskStatus?.task_id || taskStatus.ready) return;
     const controller = new AbortController();
     const taskId = taskStatus.task_id;
-    let active = true;
-    let timeout: number | null = null;
+    let mounted = true;
     let isPolling = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const schedule = () => {
-      if (!active || isPolling) return;
-      timeout = window.setTimeout(() => { void poll(); }, 4000);
+      if (!mounted || isPolling || controller.signal.aborted) return;
+      timeoutId = setTimeout(() => { void poll(); }, 4000);
     };
 
     const poll = async () => {
-      if (!active || isPolling) return;
+      if (!mounted || isPolling || controller.signal.aborted) return;
       isPolling = true;
 
       try {
         const payload = await refreshTask(taskId, token, controller.signal);
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         setTaskStatus(payload);
         isPolling = false;
-        if (!payload.ready) schedule();
+        if (!payload.ready && mounted && !controller.signal.aborted) {
+          schedule();
+        }
       } catch {
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         isPolling = false;
-        schedule();
+        if (mounted && !controller.signal.aborted) {
+          schedule();
+        }
       }
     };
 
     schedule();
     return () => {
-      active = false;
+      mounted = false;
       isPolling = false;
-      if (timeout !== null) {
-        window.clearTimeout(timeout);
-        timeout = null;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
       }
       controller.abort();
     };
@@ -370,39 +376,42 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   useEffect(() => {
     if (!socialTaskId) return;
     const controller = new AbortController();
-    let active = true;
-    let timeout: number | null = null;
+    let mounted = true;
     let isPolling = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const schedule = () => {
-      if (!active || isPolling) return;
-      timeout = window.setTimeout(() => { void poll(); }, 4000);
+      if (!mounted || isPolling || controller.signal.aborted) return;
+      timeoutId = setTimeout(() => { void poll(); }, 4000);
     };
 
     const poll = async () => {
-      if (!active || isPolling) return;
+      if (!mounted || isPolling || controller.signal.aborted) return;
       isPolling = true;
 
       try {
         const payload = await refreshTask(socialTaskId, token, controller.signal);
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         setSocialStatus(payload);
         isPolling = false;
-        if (!payload.ready) schedule();
+        if (!payload.ready && mounted && !controller.signal.aborted) {
+          schedule();
+        }
       } catch {
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         isPolling = false;
-        schedule();
+        if (mounted && !controller.signal.aborted) {
+          schedule();
+        }
       }
     };
 
     void poll();
     return () => {
-      active = false;
+      mounted = false;
       isPolling = false;
-      if (timeout !== null) {
-        window.clearTimeout(timeout);
-        timeout = null;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
       }
       controller.abort();
     };
@@ -462,46 +471,50 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   useEffect(() => {
     if (!batchId) return;
     const controller = new AbortController();
-    let active = true;
-    let timeout: number | null = null;
+    let mounted = true;
     let isPolling = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const schedule = () => {
-      if (!active || isPolling) return;
-      timeout = window.setTimeout(() => { void poll(); }, 5000);
+      if (!mounted || isPolling || controller.signal.aborted) return;
+      timeoutId = setTimeout(() => { void poll(); }, 5000);
     };
 
     const poll = async () => {
-      if (!active || isPolling) return;
+      if (!mounted || isPolling || controller.signal.aborted) return;
       isPolling = true;
 
       try {
         const status = await apiRequest<BatchStatusResponse>(`/content/batch/${batchId}/status`, {
           token,
           signal: controller.signal,
+          timeoutMs: 10000,
         });
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         setBatchStatus(status);
         isPolling = false;
         if (status.status === "completed" || status.status === "failed") {
           setBatchId(null);
           return;
         }
-        schedule();
+        if (mounted && !controller.signal.aborted) {
+          schedule();
+        }
       } catch {
-        if (!active || controller.signal.aborted) return;
+        if (!mounted || controller.signal.aborted) return;
         isPolling = false;
-        schedule();
+        if (mounted && !controller.signal.aborted) {
+          schedule();
+        }
       }
     };
 
     void poll();
     return () => {
-      active = false;
+      mounted = false;
       isPolling = false;
-      if (timeout !== null) {
-        window.clearTimeout(timeout);
-        timeout = null;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
       }
       controller.abort();
     };
@@ -584,6 +597,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
           priority: "high",
           custom_instructions: bulkInstructions || undefined,
           model_override: modelOverride || undefined,
+          language: bulkLanguage,
         }
       });
       setBatchId(payload.batch_id);
@@ -609,18 +623,21 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const HeaderClass = "mb-5 border-b border-black/5 pb-3 text-[13px] font-semibold text-slate-500 dark:border-white/10 dark:text-gray-300";
   const readinessState = readinessLoading
     ? "checking"
-    : readiness?.status === "blocked"
+    : readiness && !readiness.can_generate
       ? "blocked"
-      : readiness?.status === "warning"
+      : readiness && (readiness.status === "warning" || readiness.status === "blocked")
         ? "warning"
         : "ready";
   const generationBlocked = !!readiness && !readiness.can_generate;
+  const publishingBlocked = !!readiness && readiness.can_generate && !readiness.can_publish;
   const readinessMessage =
     readinessState === "checking"
       ? READINESS_COPY[locale].checking
       : readinessState === "blocked"
         ? READINESS_COPY[locale].blocked
-        : readinessState === "warning"
+        : publishingBlocked
+          ? READINESS_COPY[locale].publishingBlocked
+          : readinessState === "warning"
           ? READINESS_COPY[locale].warning
           : READINESS_COPY[locale].ready;
   const readinessDetail = readiness?.blocking_items[0]?.message ?? readiness?.warnings[0]?.message ?? null;

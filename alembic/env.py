@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, engine_from_config, pool
 
 from alembic import context
 from infrastructure.schema import Base
+from orchestration import task_persistence as _task_persistence  # noqa: F401
 
 # Load environment variables from .env file
 load_dotenv()

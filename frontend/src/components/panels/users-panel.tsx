@@ -185,14 +185,15 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
                 ) : (
                   users.map((user) => {
                     const isActive = user.is_active !== false;
-                    const roleLabel = user.is_superuser ? t("role.manager") : (user.role ?? "user");
+                    const isManagerRole = user.is_superuser || user.role === "admin" || user.role === "manager";
+                    const roleLabel = isManagerRole ? t("role.manager") : t("role.user");
                     const isSelf = user.id === currentUserId;
                     return (
                       <tr key={user.id} className="transition-colors duration-200 hover:bg-black/[0.025] dark:hover:bg-white/[0.04]">
                         <td className="px-5 py-4 text-start text-[13px] font-semibold text-ink">{user.email}</td>
                         <td className="px-5 py-4 text-[13px] font-medium text-ink-secondary">{user.full_name || "—"}</td>
                         <td className="px-5 py-4">
-                          <span className={clsx("inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.03em]", roleLabel === t("role.manager") ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-200" : "bg-black/[0.04] text-ink-secondary dark:bg-white/[0.07] dark:text-gray-300")}>
+                          <span className={clsx("inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.03em]", isManagerRole ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-200" : "bg-black/[0.04] text-ink-secondary dark:bg-white/[0.07] dark:text-gray-300")}>
                             {roleLabel}
                           </span>
                         </td>

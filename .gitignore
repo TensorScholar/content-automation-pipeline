@@ -54,6 +54,7 @@ venv.bak/
 
 # Testing
 .pytest_cache/
+.playwright-cli/
 .coverage
 .coverage.*
 htmlcov/
@@ -70,6 +71,7 @@ dmypy.json
 
 # Logs
 logs/
+pids/
 *.log
 pip-log.txt
 pip-delete-this-directory.txt
@@ -118,6 +120,9 @@ docker-compose.override.yml
 # Temporary files
 tmp/
 temp/
+
+# Generated presentation/export artifacts
+presentation-screenshots/
 *.tmp
 *.bak
 *.backup

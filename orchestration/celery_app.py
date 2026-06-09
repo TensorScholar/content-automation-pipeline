@@ -36,6 +36,7 @@ from api.dependencies import get_database
 from config.settings import get_settings
 
 settings = get_settings()
+_worker_loop: asyncio.AbstractEventLoop | None = None
 
 # Create Celery application instance
 app = Celery(
@@ -79,6 +80,7 @@ app.conf.update(
     task_queues=(
         Queue("critical", routing_key="critical", priority=10),
         Queue("high", routing_key="high", priority=7),
+        Queue("medium", routing_key="medium", priority=5),
         Queue("default", routing_key="default", priority=5),
         Queue("low", routing_key="low", priority=3),
         Queue(
@@ -137,6 +139,7 @@ app.conf.update(
 @worker_process_init.connect
 def on_worker_init(**kwargs):
     """Initialize DI container and resources when a Celery worker process starts."""
+    global _worker_loop
     loop = None
     try:
         logger.info(f"Celery worker process initializing... (PID: {os.getpid()})")
@@ -157,6 +160,7 @@ def on_worker_init(**kwargs):
         # Create a new event loop for initialization
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        _worker_loop = loop
 
         # Initialize database
         db = get_database()
@@ -177,6 +181,8 @@ def on_worker_init(**kwargs):
 @worker_process_shutdown.connect
 def on_worker_shutdown(**kwargs):
     """Cleanup resources when a Celery worker process shuts down."""
+    global _worker_loop
+    loop = _worker_loop
     try:
         logger.info(f"Celery worker process shutting down... (PID: {os.getpid()})")
 
@@ -186,21 +192,44 @@ def on_worker_shutdown(**kwargs):
         clear_redis_registry()
         reset_semantic_analyzer()
 
-        # Create a new event loop for cleanup
-        loop = asyncio.new_event_loop()
+        if loop is None or loop.is_closed():
+            loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
         # Close database connections properly
         try:
             db = get_database()
             loop.run_until_complete(db.close())
+            get_database.cache_clear()
+
+            from infrastructure.database import reset_db_manager
+
+            reset_db_manager()
         except Exception as db_error:
             logger.warning(f"Database cleanup error (may already be closed): {db_error}")
 
-        loop.close()
         logger.success(f"Resources cleaned up for worker (PID: {os.getpid()}).")
     except Exception as e:
         logger.error(f"Failed to cleanup resources for worker (PID: {os.getpid()}): {e}")
+    finally:
+        # Always close the event loop to prevent memory leaks
+        if loop and not loop.is_closed():
+            try:
+                # Cancel all running tasks
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+
+                # Run loop one final time to process cancellations
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+
+                # Close the loop
+                loop.close()
+                _worker_loop = None
+                logger.debug(f"Event loop closed for worker (PID: {os.getpid()})")
+            except Exception as loop_error:
+                logger.warning(f"Error closing event loop: {loop_error}")
 
 
 # Autodiscover tasks from Django apps (if using Django integration)

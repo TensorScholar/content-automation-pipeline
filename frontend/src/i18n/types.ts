@@ -337,6 +337,7 @@ export type MessageKey =
   | "role.admin"
   | "role.editor"
   | "role.viewer"
+  | "role.user"
   /* ── Monitoring (Manager Only) ── */
   | "monitoring.title"
   | "monitoring.subtitle"

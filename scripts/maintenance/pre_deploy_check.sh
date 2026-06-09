@@ -61,10 +61,10 @@ check "REDIS_URL set" "[ -n \"$REDIS_URL\" ]" "REDIS_URL is required for caching
 check "REDIS_PASSWORD set" "[ -n \"$REDIS_PASSWORD\" ]" "REDIS_PASSWORD is required for production Redis authentication"
 
 # Check at least one LLM provider
-if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$OPENAI_API_KEY" ]; then
-    echo -e "${GREEN}✓${NC} LLM API key configured"
+if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || [ -n "$GEMINI_API_KEY" ] || [ -n "$GOOGLE_API_KEY" ] || [ -n "$LOCAL_LLM_URL" ]; then
+    echo -e "${GREEN}✓${NC} LLM provider configured"
 else
-    echo -e "${RED}✗${NC} LLM API key: At least one of ANTHROPIC_API_KEY or OPENAI_API_KEY required"
+    echo -e "${RED}✗${NC} LLM provider: set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GOOGLE_API_KEY, or LOCAL_LLM_URL"
     ((ERRORS++))
 fi
 

@@ -148,7 +148,12 @@ def _configured_models_for_provider(provider: str) -> list[str]:
             settings.llm.fallback_model if infer_provider(settings.llm.fallback_model or "") == "openai" else None,
         ]
     else:
-        configured = [os.getenv("LLM_LOCAL_FALLBACK_MODEL")]
+        configured = [
+            settings.llm.primary_model if active_provider == "local" else None,
+            settings.llm.secondary_model if infer_provider(settings.llm.secondary_model or "") == "local" else None,
+            settings.llm.fallback_model if infer_provider(settings.llm.fallback_model or "") == "local" else None,
+            os.getenv("LLM_LOCAL_FALLBACK_MODEL"),
+        ]
 
     catalog = [model for model, _label, _recommended in CATALOG_MODELS.get(provider, [])]
     return _unique([*configured, *catalog])

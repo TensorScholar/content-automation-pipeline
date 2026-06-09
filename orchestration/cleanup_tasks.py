@@ -35,7 +35,9 @@ async def cleanup_old_task_results(days_to_keep: int = 30):
         db = get_database()
         await db.initialize()
 
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+        cutoff_date = (
+            datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+        ).replace(tzinfo=None)
 
         async with db.get_writer_session() as session:
             # Count old tasks

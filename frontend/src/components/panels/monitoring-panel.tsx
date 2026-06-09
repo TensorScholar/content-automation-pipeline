@@ -21,7 +21,8 @@ interface HealthPayload {
 interface PerformancePayload {
   metrics?: {
     daily_costs?: { total_cost_usd?: number; article_count?: number; threshold_usd?: number };
-    db_pool?: { pool_size?: number; checked_out?: number };
+    connection_pool?: { pool_size?: number; checked_out?: number; utilization_percent?: number };
+    db_pool?: { pool_size?: number; checked_out?: number; utilization_percent?: number };
   };
 }
 
@@ -58,7 +59,7 @@ const INCIDENT_COPY = {
   },
   fa: {
     title: "صندوق رخدادها",
-    empty: "رخداد بازی وجود ندارد.",
+    empty: "رخداد باز وجود ندارد.",
     detail: "جزئیات مدیر",
     open: "باز",
     critical: "بحرانی",
@@ -94,7 +95,7 @@ const LLM_COPY = {
     managerDetail: "جزئیات مدیر",
   },
   ar: {
-    title: "وصول مزود الذكاء الاصطناعي",
+    title: "حالة مزود الذكاء الاصطناعي",
     active: "النموذج النشط",
     configured: "مهيأ",
     missing: "المفتاح مفقود",
@@ -156,6 +157,13 @@ function getStatusCopy(rawStatus: string, t: (key: any, vars?: Record<string, st
     return {
       title: t("monitoring.degraded") || "Degraded",
       detail: t("monitoring.timeout") || "Timeout",
+    };
+  }
+
+  if (normalized === "degraded" || normalized.includes("degraded")) {
+    return {
+      title: t("monitoring.degraded") || "Degraded",
+      detail: t("monitoring.lastCheck") || "Last Check",
     };
   }
 
@@ -307,8 +315,9 @@ function LlmProviderAccess({
   options: LlmOptionsResponse | null;
   copy: typeof LLM_COPY.en;
 }) {
-  const providers = options?.providers ?? [];
-  const selectableCount = options?.selectable_models.length ?? 0;
+  const providers = Array.isArray(options?.providers) ? options.providers : [];
+  const selectableModels = Array.isArray(options?.selectable_models) ? options.selectable_models : [];
+  const selectableCount = selectableModels.length;
 
   return (
     <section className="smx-panel overflow-hidden">
@@ -334,26 +343,30 @@ function LlmProviderAccess({
         <p className="px-4 py-6 text-[13px] text-ink-tertiary">{copy.noModels}</p>
       ) : (
         <div className="grid gap-0 divide-y divide-black/5 dark:divide-white/10">
-          {providers.map((provider) => (
-            <article key={provider.provider} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-ink">{provider.label}</p>
-                <p className="mt-1 truncate text-[12px] text-ink-secondary">
-                  {provider.models.map((model) => model.label).join(", ") || provider.provider}
-                </p>
-              </div>
-              <span
-                className={clsx(
-                  "inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold",
-                  provider.configured
-                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                    : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                )}
-              >
-                {provider.configured ? copy.configured : copy.missing}
-              </span>
-            </article>
-          ))}
+          {providers.map((provider) => {
+            const models = Array.isArray(provider.models) ? provider.models : [];
+
+            return (
+              <article key={provider.provider} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-ink">{provider.label}</p>
+                  <p className="mt-1 truncate text-[12px] text-ink-secondary">
+                    {models.map((model) => model.label).join(", ") || provider.provider}
+                  </p>
+                </div>
+                <span
+                  className={clsx(
+                    "inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold",
+                    provider.configured
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  )}
+                >
+                  {provider.configured ? copy.configured : copy.missing}
+                </span>
+              </article>
+            );
+          })}
         </div>
       )}
     </section>
@@ -446,13 +459,18 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
   const costPercent = threshold > 0 ? Math.min(100, (todayCost / threshold) * 100) : 0;
   const avgCostPerArticle = todayArticles > 0 ? todayCost / todayArticles : 0;
 
-  const pool = performance?.metrics?.db_pool;
+  const pool = performance?.metrics?.connection_pool ?? performance?.metrics?.db_pool;
   const poolSize = pool?.pool_size ?? 0;
   const poolUsed = pool?.checked_out ?? 0;
-  const poolPercent = poolSize > 0 ? Math.min(100, (poolUsed / poolSize) * 100) : 0;
-  const incidentCopy = INCIDENT_COPY[locale];
-  const llmCopy = LLM_COPY[locale];
-  const incidents = incidentPayload?.incidents ?? [];
+  const poolPercent =
+    typeof pool?.utilization_percent === "number"
+      ? Math.min(100, Math.max(0, pool.utilization_percent))
+      : poolSize > 0
+        ? Math.min(100, (poolUsed / poolSize) * 100)
+        : 0;
+  const incidentCopy = INCIDENT_COPY[locale] ?? INCIDENT_COPY.en;
+  const llmCopy = LLM_COPY[locale] ?? LLM_COPY.en;
+  const incidents = Array.isArray(incidentPayload?.incidents) ? incidentPayload.incidents : [];
 
   return (
     <section className="mx-auto flex min-h-full w-full max-w-[1120px] flex-col gap-4 py-1">

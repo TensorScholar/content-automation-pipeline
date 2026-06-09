@@ -10,6 +10,7 @@ This module provides:
 """
 
 import asyncio
+import hashlib
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any, Callable, Optional
@@ -51,12 +52,14 @@ class RateLimitConfig:
         default_window: int = 60,   # seconds
         auth_limit: int = 10,       # authentication attempts per minute
         auth_window: int = 60,
+        auth_ip_limit: Optional[int] = None,  # broad IP guard for auth endpoints
         concurrent_limit: int = 10, # concurrent requests per user
     ):
         self.default_limit = default_limit
         self.default_window = default_window
         self.auth_limit = auth_limit
         self.auth_window = auth_window
+        self.auth_ip_limit = auth_ip_limit if auth_ip_limit is not None else max(auth_limit * 5, default_limit)
         self.concurrent_limit = concurrent_limit
 
 
@@ -222,6 +225,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/system/health",
             "/metrics",
         }
+        self.auth_limited_paths = {
+            "/auth/login",
+            "/auth/register",
+            "/auth/token",
+        }
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process request through rate limiting."""
@@ -239,11 +247,34 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         }
 
         try:
-            # Get identifier (user ID > IP address)
-            identifier = await self._get_identifier(request)
-
             # Get appropriate limit for this endpoint
             limit, window = self._get_endpoint_limit(request.url.path)
+
+            if self._is_auth_limited_path(request.url.path):
+                ip_identifier = f"auth_ip:{self._get_client_ip(request)}"
+                ip_allowed, ip_info = await self.limiter.is_allowed(
+                    ip_identifier,
+                    self.config.auth_ip_limit,
+                    self.config.auth_window,
+                )
+                if not ip_allowed:
+                    logger.warning(
+                        "Auth IP rate limit exceeded",
+                        extra={
+                            "user": ip_identifier,
+                            "path": request.url.path,
+                            "current": ip_info["current"],
+                            "limit": self.config.auth_ip_limit,
+                        }
+                    )
+                    return self._rate_limit_response(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        retry_after=ip_info["retry_after"],
+                        reason="Rate limit exceeded",
+                    )
+
+            # Get identifier (user ID > auth account > API key > IP address)
+            identifier = await self._get_identifier(request)
 
             # Check concurrent requests
             concurrent = await self.limiter.increment_concurrent(identifier)
@@ -332,11 +363,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if hasattr(request.state, "user_id") and request.state.user_id:
             return f"user:{request.state.user_id}"
 
+        if self._is_auth_limited_path(request.url.path):
+            account_identifier = self._get_auth_account_identifier(request)
+            if account_identifier:
+                return account_identifier
+
         # Check for API key
         if "X-API-Key" in request.headers:
             return f"apikey:{request.headers['X-API-Key']}"
 
-        # Check standard proxy headers
+        return f"ip:{self._get_client_ip(request)}"
+
+    def _get_auth_account_identifier(self, request: Request) -> Optional[str]:
+        """Return an account-scoped auth key without exposing raw emails in Redis."""
+        raw_identifier = (
+            request.headers.get("X-Login-Identifier")
+            or request.headers.get("X-Auth-Identifier")
+        )
+        if not raw_identifier:
+            return None
+
+        normalized = raw_identifier.strip().lower()
+        if not normalized:
+            return None
+
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
+        return f"auth_account:{self._get_client_ip(request)}:{digest}"
+
+    @staticmethod
+    def _get_client_ip(request: Request) -> str:
+        """Resolve the client IP from trusted proxy headers with direct fallback."""
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
             # X-Forwarded-For can contain multiple IPs, the first one is the original client
@@ -348,7 +404,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Fallback to direct client connection IP
             client_ip = request.client.host if request.client else "unknown"
 
-        return f"ip:{client_ip}"
+        return client_ip
+
+    def _is_auth_limited_path(self, path: str) -> bool:
+        return path in self.auth_limited_paths
 
     def _get_endpoint_limit(self, path: str) -> tuple[int, int]:
         """Get rate limit for specific endpoint."""

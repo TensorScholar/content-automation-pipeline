@@ -23,6 +23,7 @@ interface ProjectsPanelProps {
   token: string;
   projects: Project[];
   selectedProjectId: string | null;
+  canManageProjects: boolean;
   onSelectProject: (projectId: string | null) => void;
   onProjectsRefresh: () => Promise<void>;
 }
@@ -142,7 +143,7 @@ function FolderIllustration() {
 }
 
 export function ProjectsPanel({
-  token, projects, selectedProjectId, onSelectProject, onProjectsRefresh,
+  token, projects, selectedProjectId, canManageProjects, onSelectProject, onProjectsRefresh,
 }: ProjectsPanelProps) {
   const { t, locale } = useI18n();
   const { showToast } = useToast();
@@ -156,6 +157,7 @@ export function ProjectsPanel({
   // Editor states
   const [activeTab, setActiveTab] = useState<"general" | "wordpress" | "rules" | "readiness">("general");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
   const [readinessError, setReadinessError] = useState<string | null>(null);
@@ -173,6 +175,8 @@ export function ProjectsPanel({
 
   // If selected project gets deleted, reset selection
   useEffect(() => {
+    if (selectedProjectId === "__new__") return;
+
     if (selectedProjectId && projects.length > 0 && !projects.find(p => p.id === selectedProjectId)) {
       onSelectProject(projects[0].id);
     } else if (!selectedProjectId && projects.length > 0) {
@@ -262,13 +266,19 @@ export function ProjectsPanel({
   };
 
   const onDelete = async (projectId: string) => {
-    setDeleteConfirmId(null);
+    if (!canManageProjects || deletingProjectId) return;
+    setDeletingProjectId(projectId);
     try {
       await apiRequest<void>(`/projects/${projectId}`, { method: "DELETE", token }, { cascade: true });
       showToast("success", t("toast.projectDeleted"));
+      setDeleteConfirmId(null);
       if (selectedProjectId === projectId) onSelectProject(null);
       await onProjectsRefresh();
-    } catch (e) { showToast("error", extractError(e)); }
+    } catch (e) {
+      showToast("error", extractError(e));
+    } finally {
+      setDeletingProjectId(null);
+    }
   };
 
   const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/;
@@ -290,6 +300,7 @@ export function ProjectsPanel({
             <p className="text-[14px] text-slate-500 dark:text-gray-400">{t("projects.emptySubtitle")}</p>
           </div>
 
+          {canManageProjects ? (
           <form className="space-y-6 relative z-10" onSubmit={onCreate}>
             <div className="space-y-4">
               <InputField
@@ -301,11 +312,7 @@ export function ProjectsPanel({
               />
               <InputField
                 label={t("projects.domain")}
-                helperText={
-                  <span className="flex gap-1">
-                    example.com ({t("common.without" as any)} <span dir="ltr">https://</span>)
-                  </span>
-                }
+                helperText={t("projects.domainHelper")}
                 successText={domainValid === true ? t("projects.domainValid") : undefined}
                 errorText={domainValid === false ? t("projects.domainInvalid") : undefined}
                 value={newProject.domain}
@@ -341,6 +348,11 @@ export function ProjectsPanel({
               {t("projects.createProject")}
             </Button>
           </form>
+          ) : (
+            <p className="relative z-10 rounded-lg border border-black/5 bg-slate-50 px-4 py-3 text-center text-[13px] text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
+              {t("toast.accessDenied")}
+            </p>
+          )}
         </div>
       </section>
     );
@@ -355,12 +367,26 @@ export function ProjectsPanel({
       {/* Delete confirmation modal */}
       <Modal
         open={Boolean(deleteConfirmId)}
-        onClose={() => setDeleteConfirmId(null)}
+        onClose={() => {
+          if (!deletingProjectId) setDeleteConfirmId(null);
+        }}
         title={t("projects.confirmDelete")}
         footer={
           <>
-            <Button variant="outlined" onClick={() => setDeleteConfirmId(null)}>{t("common.cancel")}</Button>
-            <Button variant="danger" onClick={() => deleteConfirmId && void onDelete(deleteConfirmId)}>{t("common.delete")}</Button>
+            <Button
+              variant="outlined"
+              disabled={Boolean(deletingProjectId)}
+              onClick={() => setDeleteConfirmId(null)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              loading={Boolean(deletingProjectId)}
+              onClick={() => deleteConfirmId && void onDelete(deleteConfirmId)}
+            >
+              {t("common.delete")}
+            </Button>
           </>
         }
       >
@@ -381,19 +407,23 @@ export function ProjectsPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-            <div className="w-[1px] h-4 bg-black/5 dark:bg-white/10 mx-0.5" />
-            <button
-              onClick={() => {
-                setNewProject({ name: "", domain: "", vertical: VERTICAL_OPTIONS[0].value, customVertical: "", description: "" });
-                onSelectProject("__new__");
-              }}
-              className="h-8 w-8 flex items-center justify-center rounded-md text-teal-600 bg-teal-500/10 hover:bg-teal-500/20 transition-all duration-200"
-              title={t("projects.createNew")}
-            >
-              <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+            {canManageProjects && (
+              <>
+                <div className="w-[1px] h-4 bg-black/5 dark:bg-white/10 mx-0.5" />
+                <button
+                  onClick={() => {
+                    setNewProject({ name: "", domain: "", vertical: VERTICAL_OPTIONS[0].value, customVertical: "", description: "" });
+                    onSelectProject("__new__");
+                  }}
+                  className="h-8 w-8 flex items-center justify-center rounded-md text-teal-600 bg-teal-500/10 hover:bg-teal-500/20 transition-all duration-200"
+                  title={t("projects.createNew")}
+                >
+                  <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -445,11 +475,7 @@ export function ProjectsPanel({
                   />
                   <InputField
                     label={t("projects.domain")}
-                    helperText={
-                      <span className="flex gap-1">
-                        example.com ({t("common.without" as any)} <span dir="ltr">https://</span>)
-                      </span>
-                    }
+                    helperText={t("projects.domainHelper")}
                     successText={domainValid === true ? t("projects.domainValid") : undefined}
                     errorText={domainValid === false ? t("projects.domainInvalid") : undefined}
                     value={newProject.domain}
@@ -503,7 +529,7 @@ export function ProjectsPanel({
                 </div>
 
                 {/* ── Polished Kebab Kenu ── */}
-                <div className="relative" ref={kebabRef}>
+                {canManageProjects && <div className="relative" ref={kebabRef}>
                   <button
                     onClick={() => setKebabOpen(!kebabOpen)}
                     className={clsx(
@@ -525,7 +551,7 @@ export function ProjectsPanel({
                       </button>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
 
               {/* TABS (Zero layout shift: inactive has transparent border) */}
@@ -565,13 +591,28 @@ export function ProjectsPanel({
                 />
               )}
               {activeTab === "general" && (
-                <GeneralTab token={token} project={selectedProject} onProjectsRefresh={onProjectsRefresh} />
+                <GeneralTab
+                  token={token}
+                  project={selectedProject}
+                  canManageProjects={canManageProjects}
+                  verticalOptions={verticalOptions}
+                  onProjectsRefresh={onProjectsRefresh}
+                />
               )}
               {activeTab === "wordpress" && (
-                <WordPressTab token={token} project={selectedProject} onProjectsRefresh={onProjectsRefresh} />
+                <WordPressTab
+                  token={token}
+                  project={selectedProject}
+                  canManageProjects={canManageProjects}
+                  onProjectsRefresh={onProjectsRefresh}
+                />
               )}
               {activeTab === "rules" && (
-                <RulebookTab token={token} project={selectedProject} />
+                <RulebookTab
+                  token={token}
+                  project={selectedProject}
+                  canManageProjects={canManageProjects}
+                />
               )}
             </div>
           </>
@@ -751,22 +792,70 @@ function ReadinessTab({
   );
 }
 
-function GeneralTab({ token, project, onProjectsRefresh }: { token: string; project: Project; onProjectsRefresh: () => Promise<void> }) {
+function projectDraft(project: Project) {
+  const preset = VERTICAL_OPTIONS.find(
+    (option) => option.value === project.vertical || option.en === project.vertical
+  );
+  return {
+    name: project.name,
+    domain: project.domain ?? "",
+    description: project.description ?? "",
+    vertical: preset?.value ?? (project.vertical ? "__custom__" : VERTICAL_OPTIONS[0].value),
+    customVertical: preset ? "" : project.vertical ?? "",
+  };
+}
+
+function GeneralTab({
+  token,
+  project,
+  canManageProjects,
+  verticalOptions,
+  onProjectsRefresh,
+}: {
+  token: string;
+  project: Project;
+  canManageProjects: boolean;
+  verticalOptions: SelectOption[];
+  onProjectsRefresh: () => Promise<void>;
+}) {
   const { t } = useI18n();
-  const [draft, setDraft] = useState({ name: project.name, domain: project.domain ?? "", description: project.description ?? "" });
+  const [draft, setDraft] = useState(() => projectDraft(project));
   const [saving, setSaving] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
-    setDraft({ name: project.name, domain: project.domain ?? "", description: project.description ?? "" });
+    setDraft(projectDraft(project));
   }, [project]);
 
+  const initialDraft = projectDraft(project);
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(initialDraft);
+  const normalizedName = draft.name.trim();
+  const normalizedDomain = draft.domain.trim();
+  const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/;
+  const domainValid = normalizedDomain.length === 0 || domainPattern.test(
+    normalizedDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "")
+  );
+  const resolvedVertical = draft.vertical === "__custom__"
+    ? draft.customVertical.trim()
+    : VERTICAL_OPTIONS.find((option) => option.value === draft.vertical)?.en ?? draft.vertical;
+  const canSave = canManageProjects
+    && isDirty
+    && normalizedName.length > 0
+    && domainValid
+    && resolvedVertical.length > 0;
+
   const onSave = async () => {
+    if (!canSave || saving) return;
     setSaving(true);
     try {
       await apiRequest(`/projects/${project.id}`, {
         method: "PUT", token,
-        body: { name: draft.name.trim(), domain: draft.domain.trim(), description: draft.description.trim() },
+        body: {
+          name: normalizedName,
+          domain: normalizedDomain,
+          description: draft.description.trim(),
+          vertical: resolvedVertical,
+        },
       });
       showToast("success", t("common.success"));
       await onProjectsRefresh();
@@ -779,33 +868,78 @@ function GeneralTab({ token, project, onProjectsRefresh }: { token: string; proj
       <div className="space-y-4">
         <InputField
           label={t("projects.projectName")}
+          required
           value={draft.name}
+          disabled={!canManageProjects}
           onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))}
         />
         <InputField
           label={t("projects.domain")}
           value={draft.domain}
+          disabled={!canManageProjects}
+          errorText={!domainValid ? t("projects.domainInvalid") : undefined}
+          successText={domainValid && normalizedDomain ? t("projects.domainValid") : undefined}
           onChange={(e) => setDraft((p) => ({ ...p, domain: e.target.value }))}
           dir="ltr"
         />
+        <SelectDropdown
+          label={t("projects.industry")}
+          options={verticalOptions}
+          value={draft.vertical}
+          disabled={!canManageProjects}
+          onChange={(vertical) => setDraft((current) => ({ ...current, vertical }))}
+        />
+        {draft.vertical === "__custom__" && (
+          <InputField
+            label={t("projects.customVertical")}
+            required
+            disabled={!canManageProjects}
+            value={draft.customVertical}
+            onChange={(event) => setDraft((current) => ({
+              ...current,
+              customVertical: event.target.value,
+            }))}
+          />
+        )}
         <div className="flex flex-col gap-[6px]">
           <label className="text-[13px] font-semibold text-slate-700 dark:text-gray-200">{t("projects.description")}</label>
           <textarea
-            className="min-h-[120px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100"
+            disabled={!canManageProjects}
+            className="min-h-[120px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100"
             value={draft.description}
             onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
           />
         </div>
       </div>
 
-      <div className="flex justify-end pt-2">
-        <Button variant="primary" loading={saving} onClick={() => void onSave()} className="min-w-[120px]">{t("common.save")}</Button>
-      </div>
+      {canManageProjects && (
+        <div className="flex justify-end pt-2">
+          <Button
+            variant="primary"
+            loading={saving}
+            disabled={!canSave}
+            onClick={() => void onSave()}
+            className="min-w-[120px]"
+          >
+            {t("common.save")}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-function WordPressTab({ token, project, onProjectsRefresh }: { token: string; project: Project; onProjectsRefresh: () => Promise<void> }) {
+function WordPressTab({
+  token,
+  project,
+  canManageProjects,
+  onProjectsRefresh,
+}: {
+  token: string;
+  project: Project;
+  canManageProjects: boolean;
+  onProjectsRefresh: () => Promise<void>;
+}) {
   const { t } = useI18n();
   const { showToast } = useToast();
   const [wpUrl, setWpUrl] = useState("");
@@ -821,6 +955,7 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
   }, [project]);
 
   const save = async () => {
+    if (!canManageProjects || saving) return;
     setSaving(true);
     try {
       const payload: Record<string, string> = {
@@ -859,6 +994,7 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
           label={t("projects.wpUrl")}
           helperText={t("projects.wpUrlHelper")}
           value={wpUrl}
+          disabled={!canManageProjects}
           onChange={(e) => setWpUrl(e.target.value)}
           dir="ltr"
         />
@@ -866,6 +1002,7 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
           <InputField
             label={t("projects.wpUsername")}
             value={wpUsername}
+            disabled={!canManageProjects}
             onChange={(e) => setWpUsername(e.target.value)}
             dir="ltr"
           />
@@ -874,6 +1011,7 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
             type="password"
             helperText={t("projects.wpPasswordTooltip")}
             value={wpPassword}
+            disabled={!canManageProjects}
             onChange={(e) => setWpPassword(e.target.value)}
             dir="ltr"
           />
@@ -881,20 +1019,31 @@ function WordPressTab({ token, project, onProjectsRefresh }: { token: string; pr
 
         <div className="flex justify-end gap-3 pt-6 border-block-start border-black/5 dark:border-white/10">
           <Button variant="outlined" loading={testing} onClick={() => void testConnection()}>{t("projects.wpTestConnection")}</Button>
-          <Button variant="primary" loading={saving} onClick={() => void save()} className="min-w-[120px]">{t("projects.wpSave")}</Button>
+          {canManageProjects && (
+            <Button variant="primary" loading={saving} onClick={() => void save()} className="min-w-[120px]">
+              {t("projects.wpSave")}
+            </Button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function RulebookTab({ token, project }: { token: string; project: Project }) {
+function RulebookTab({
+  token,
+  project,
+  canManageProjects,
+}: {
+  token: string;
+  project: Project;
+  canManageProjects: boolean;
+}) {
   const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [rulebook, setRulebook] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const aiAssistLabel = locale === "fa" ? "دستیار AI" : locale === "ar" ? "مساعد AI" : "AI Assist";
   const rulebookPlaceholder = locale === "fa"
     ? "- از لحن رسمی استفاده شود\n- نام رقیب ذکر نشود..."
     : locale === "ar"
@@ -918,6 +1067,7 @@ function RulebookTab({ token, project }: { token: string; project: Project }) {
   }, [project.id, token]);
 
   const save = async () => {
+    if (!canManageProjects || saving || loading || !rulebook.trim()) return;
     setSaving(true);
     try {
       await apiRequest(`/projects/${project.id}/rulebook`, { method: "POST", token, body: { content: rulebook } });
@@ -937,30 +1087,28 @@ function RulebookTab({ token, project }: { token: string; project: Project }) {
       <div className="group relative flex min-h-[400px] flex-1 flex-col overflow-hidden rounded-xl border border-black/5 bg-white transition-colors duration-150 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/20 dark:border-white/10 dark:bg-surface-alt dark:focus-within:bg-surface">
 
           <textarea
-            disabled={loading}
+            disabled={loading || !canManageProjects}
             className="w-full h-full flex-1 bg-transparent p-6 text-[14px] text-slate-900 dark:text-gray-100 leading-relaxed outline-none border-none resize-y disabled:opacity-50"
             value={rulebook}
             onChange={(e) => setRulebook(e.target.value)}
             placeholder={rulebookPlaceholder}
           />
-
-        {/* AI Sparkle Action Button strictly inside the container */}
-        <button
-          className="group/ai absolute bottom-4 inset-inline-end-4 flex items-center gap-1.5 rounded-lg border border-black/5 bg-white px-3 py-1.5 transition-colors duration-150 hover:bg-gray-50 disabled:opacity-0 dark:border-white/10 dark:bg-surface dark:hover:bg-surface-alt"
-          title={aiAssistLabel}
-          disabled={loading}
-        >
-          <svg className="w-4 h-4 text-teal-500 group-hover/ai:text-teal-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
-          <span className="text-[11px] font-bold bg-gradient-to-r from-teal-600 to-emerald-500 bg-clip-text text-transparent">{aiAssistLabel}</span>
-        </button>
       </div>
 
       {/* Primary Action Button (Spatially separated from the textarea) */}
-      <div className="absolute bottom-0 inset-inline-end-0 flex justify-end">
-        <Button variant="primary" loading={saving || loading} disabled={loading} onClick={() => void save()} className="min-w-[140px] shadow-sm">
-          {t("common.save")}
-        </Button>
-      </div>
+      {canManageProjects && (
+        <div className="absolute bottom-0 inset-inline-end-0 flex justify-end">
+          <Button
+            variant="primary"
+            loading={saving || loading}
+            disabled={loading || !rulebook.trim()}
+            onClick={() => void save()}
+            className="min-w-[140px] shadow-sm"
+          >
+            {t("common.save")}
+          </Button>
+        </div>
+      )}
 
     </div>
   );

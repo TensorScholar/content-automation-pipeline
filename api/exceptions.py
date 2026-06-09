@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from core.exceptions import (
+    DatabaseException,
     DistributionError,
     ProjectNotFoundError,
     TokenBudgetExceededError,
@@ -109,6 +110,20 @@ async def distribution_error_handler(request: Request, exc: DistributionError):
     )
 
 
+async def database_error_handler(request: Request, exc: DatabaseException):
+    """Return an explicit availability error without leaking database details."""
+    logger.error(f"Database error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "error": "Database Unavailable",
+            "detail": "The database operation could not be completed safely. Please retry.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": getattr(request.state, "request_id", None),
+        },
+    )
+
+
 async def global_exception_handler(request: Request, exc: Exception):
     """Catch-all handler for unhandled exceptions. Prevents leaking internals."""
     logger.error(
@@ -133,5 +148,6 @@ def add_exception_handlers(app: FastAPI):
     app.add_exception_handler(WorkflowError, workflow_error_handler)
     app.add_exception_handler(TokenBudgetExceededError, budget_exceeded_handler)
     app.add_exception_handler(DistributionError, distribution_error_handler)
+    app.add_exception_handler(DatabaseException, database_error_handler)
     # Global catch-all: prevents raw tracebacks from reaching clients
     app.add_exception_handler(Exception, global_exception_handler)

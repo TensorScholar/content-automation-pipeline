@@ -5,10 +5,18 @@ from infrastructure.llm_client import LLMResponse, ModelProvider, TokenUsage, Un
 
 
 class StubFallbackClient(UnifiedLLMClient):
-    def __init__(self, fail_models: set[str]):
+    def __init__(
+        self,
+        fail_models: set[str],
+        available_providers: set[ModelProvider] | None = None,
+    ):
         self.fail_models = fail_models
         self.calls: list[str] = []
+        self.available_providers = available_providers or set()
         super().__init__(cache_manager=None, metrics_collector=None)
+
+    def _provider_has_credentials(self, provider: ModelProvider) -> bool:
+        return provider in self.available_providers
 
     async def _call_llm(
         self,
@@ -44,7 +52,10 @@ def clean_llm_env(monkeypatch):
 @pytest.mark.asyncio
 async def test_generate_falls_back_to_available_cross_provider(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-    client = StubFallbackClient(fail_models={"claude-haiku-4-5"})
+    client = StubFallbackClient(
+        fail_models={"claude-haiku-4-5"},
+        available_providers={ModelProvider.OPENAI},
+    )
 
     response = await client.generate(
         model="claude-haiku-4-5",
@@ -76,7 +87,10 @@ async def test_generate_raises_primary_error_when_no_fallback_is_available():
 @pytest.mark.asyncio
 async def test_generate_does_not_recursively_fallback_after_fallback_failure(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-    client = StubFallbackClient(fail_models={"claude-haiku-4-5", "gpt-4o-mini"})
+    client = StubFallbackClient(
+        fail_models={"claude-haiku-4-5", "gpt-4o-mini"},
+        available_providers={ModelProvider.OPENAI},
+    )
 
     with pytest.raises(LLMConnectionError):
         await client.generate(

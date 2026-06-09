@@ -18,6 +18,19 @@ from infrastructure.database import DatabaseManager
 from infrastructure.schema import Table, metadata
 
 
+def _utc_now_naive() -> datetime:
+    """Return UTC compatible with the existing TIMESTAMP WITHOUT TIME ZONE columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _duration_seconds(start_time: datetime | None, end_time: datetime) -> float | None:
+    if start_time is None:
+        return None
+    if start_time.tzinfo is not None:
+        start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None)
+    return max(0.0, (end_time - start_time).total_seconds())
+
+
 class TaskStatus(str, Enum):
     """Task execution status states."""
 
@@ -48,8 +61,8 @@ task_results_table = Table(
     Column("duration_seconds", Float),
     Column("retry_count", Integer, default=0),
     Column("worker_name", String(255)),
-    Column("created_at", DateTime, default=lambda: datetime.now(timezone.utc)),
-    Column("updated_at", DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)),
+    Column("created_at", DateTime, default=_utc_now_naive),
+    Column("updated_at", DateTime, default=_utc_now_naive, onupdate=_utc_now_naive),
     extend_existing=True,
 )
 
@@ -77,6 +90,8 @@ class TaskResultRepository:
         args: tuple,
         kwargs: dict,
         idempotency_key: Optional[str] = None,
+        status: TaskStatus = TaskStatus.STARTED,
+        worker_name: Optional[str] = None,
     ) -> UUID:
         """
         Create initial task record when task starts.
@@ -93,19 +108,26 @@ class TaskResultRepository:
         """
         from sqlalchemy import insert
 
+        now = _utc_now_naive()
         query = insert(task_results_table).values(
             task_id=task_id,
             task_name=task_name,
             idempotency_key=idempotency_key,
-            status=TaskStatus.STARTED,
+            status=status.value,
             args=list(args),
             kwargs=kwargs,
-            start_time=datetime.now(timezone.utc),
+            start_time=now if status == TaskStatus.STARTED else None,
             retry_count=0,
+            worker_name=worker_name,
+            created_at=now,
+            updated_at=now,
         ).returning(task_results_table.c.id)
 
         result = await self.db.execute(query)
-        return result.get("id")
+        row = result.fetchone()
+        if not row:
+            raise RuntimeError(f"Task record insert returned no row for task {task_id}")
+        return row._mapping["id"]
 
     async def update_task_success(
         self,
@@ -124,7 +146,7 @@ class TaskResultRepository:
         """
         from sqlalchemy import update
 
-        end_time = datetime.now(timezone.utc)
+        end_time = _utc_now_naive()
 
         query = (
             update(task_results_table)
@@ -145,7 +167,7 @@ class TaskResultRepository:
         start_result = await self.db.fetch_one(start_query)
 
         if start_result and start_result.get("start_time"):
-            duration = (end_time - start_result["start_time"]).total_seconds()
+            duration = _duration_seconds(start_result["start_time"], end_time)
             query = query.values(duration_seconds=duration)
 
         await self.db.execute(query)
@@ -170,7 +192,17 @@ class TaskResultRepository:
         """
         from sqlalchemy import update
 
-        end_time = datetime.now(timezone.utc)
+        end_time = _utc_now_naive()
+
+        from sqlalchemy import select
+        start_query = select(task_results_table.c.start_time).where(
+            task_results_table.c.task_id == task_id
+        )
+        start_result = await self.db.fetch_one(start_query)
+        duration = _duration_seconds(
+            start_result.get("start_time") if start_result else None,
+            end_time,
+        )
 
         query = (
             update(task_results_table)
@@ -180,6 +212,7 @@ class TaskResultRepository:
                 error=error,
                 traceback=traceback,
                 end_time=end_time,
+                duration_seconds=duration,
                 updated_at=end_time,
             )
         )
@@ -215,7 +248,7 @@ class TaskResultRepository:
             .values(
                 retry_count=new_count,
                 status=TaskStatus.RETRY,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=_utc_now_naive(),
             )
         )
 
@@ -238,7 +271,7 @@ class TaskResultRepository:
             "status": TaskStatus.RETRY,
             "error": error,
             "traceback": traceback,
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": _utc_now_naive(),
         }
         if retry_count is not None:
             values["retry_count"] = retry_count
@@ -320,6 +353,8 @@ class TaskResultRepository:
         )
 
         if since:
+            if since.tzinfo is not None:
+                since = since.astimezone(timezone.utc).replace(tzinfo=None)
             query = query.where(task_results_table.c.created_at >= since)
 
         query = query.order_by(task_results_table.c.created_at.desc()).limit(limit)
@@ -355,6 +390,7 @@ class SyncTaskResultRepository:
         args: tuple,
         kwargs: dict,
         idempotency_key: Optional[str] = None,
+        worker_name: Optional[str] = None,
     ) -> str:
         """
         Create initial task record when task starts (synchronous).
@@ -373,14 +409,25 @@ class SyncTaskResultRepository:
 
         query = """
             INSERT INTO task_results (
-                task_id, task_name, idempotency_key, status, args, kwargs, start_time, retry_count, updated_at
+                task_id, task_name, idempotency_key, status, args, kwargs, start_time,
+                retry_count, worker_name, updated_at
             ) VALUES (
                 %(task_id)s, %(task_name)s, %(idempotency_key)s, %(status)s,
-                %(args)s, %(kwargs)s, %(start_time)s, %(retry_count)s, %(updated_at)s
-            ) ON CONFLICT (task_id) DO NOTHING
+                %(args)s, %(kwargs)s, %(start_time)s, %(retry_count)s,
+                %(worker_name)s, %(updated_at)s
+            ) ON CONFLICT (task_id) DO UPDATE SET
+                task_name = EXCLUDED.task_name,
+                idempotency_key = COALESCE(EXCLUDED.idempotency_key, task_results.idempotency_key),
+                status = EXCLUDED.status,
+                args = EXCLUDED.args,
+                kwargs = EXCLUDED.kwargs,
+                start_time = COALESCE(task_results.start_time, EXCLUDED.start_time),
+                worker_name = COALESCE(EXCLUDED.worker_name, task_results.worker_name),
+                updated_at = EXCLUDED.updated_at
             RETURNING id
         """
 
+        now = _utc_now_naive()
         params = {
             "task_id": task_id,
             "task_name": task_name,
@@ -388,9 +435,10 @@ class SyncTaskResultRepository:
             "status": TaskStatus.STARTED.value,
             "args": json.dumps(list(args)),
             "kwargs": json.dumps(kwargs),
-            "start_time": datetime.now(timezone.utc),
+            "start_time": now,
             "retry_count": 0,
-            "updated_at": datetime.now(timezone.utc),
+            "worker_name": worker_name,
+            "updated_at": now,
         }
 
         result = self.db.execute(query, params, fetch_one=True)
@@ -422,7 +470,7 @@ class SyncTaskResultRepository:
         """
         import json
 
-        end_time = datetime.now(timezone.utc)
+        end_time = _utc_now_naive()
 
         # Get start time to calculate duration
         start_query = "SELECT start_time FROM task_results WHERE task_id = %(task_id)s"
@@ -431,10 +479,7 @@ class SyncTaskResultRepository:
         duration = None
         if start_result and start_result.get("start_time"):
             start_time = start_result["start_time"]
-            # Ensure start_time is timezone-aware
-            if start_time.tzinfo is None:
-                start_time = start_time.replace(tzinfo=timezone.utc)
-            duration = (end_time - start_time).total_seconds()
+            duration = _duration_seconds(start_time, end_time)
 
         query = """
             UPDATE task_results
@@ -475,7 +520,14 @@ class SyncTaskResultRepository:
         Returns:
             True if updated successfully
         """
-        end_time = datetime.now(timezone.utc)
+        end_time = _utc_now_naive()
+
+        start_query = "SELECT start_time FROM task_results WHERE task_id = %(task_id)s"
+        start_result = self.db.execute(start_query, {"task_id": task_id}, fetch_one=True)
+        duration = _duration_seconds(
+            start_result.get("start_time") if start_result else None,
+            end_time,
+        )
 
         query = """
             UPDATE task_results
@@ -483,6 +535,7 @@ class SyncTaskResultRepository:
                 error = %(error)s,
                 traceback = %(traceback)s,
                 end_time = %(end_time)s,
+                duration_seconds = %(duration)s,
                 updated_at = %(updated_at)s
             WHERE task_id = %(task_id)s
         """
@@ -493,6 +546,7 @@ class SyncTaskResultRepository:
             "error": error,
             "traceback": traceback,
             "end_time": end_time,
+            "duration": duration,
             "updated_at": end_time,
         }
 
@@ -509,7 +563,7 @@ class SyncTaskResultRepository:
         """
         Mark task as RETRY (non-terminal) for transient failures.
         """
-        updated_at = datetime.now(timezone.utc)
+        updated_at = _utc_now_naive()
 
         query = """
             UPDATE task_results

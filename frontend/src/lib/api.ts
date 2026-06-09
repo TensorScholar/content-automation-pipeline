@@ -1,3 +1,28 @@
+// Request deduplication: prevent identical concurrent API calls
+interface PendingRequest {
+  promise: Promise<any>;
+  timestamp: number;
+}
+
+const pendingRequests = new Map<string, PendingRequest>();
+const REQUEST_DEDUP_TTL = 2000; // 2 seconds
+
+function generateRequestKey(path: string, options?: any, query?: any): string {
+  const method = options?.method || "GET";
+  const body = options?.body ? JSON.stringify(options.body) : "";
+  const queryStr = query ? JSON.stringify(query) : "";
+  return `${method}:${path}:${queryStr}:${body}`;
+}
+
+function cleanupStaleRequests() {
+  const now = Date.now();
+  for (const [key, req] of pendingRequests.entries()) {
+    if (now - req.timestamp > REQUEST_DEDUP_TTL) {
+      pendingRequests.delete(key);
+    }
+  }
+}
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ?? "http://127.0.0.1:8000";
 const API_PROXY_BASE_URL = "/api";
@@ -23,6 +48,7 @@ interface ApiRequestOptions<TBody> {
   token?: string | null;
   body?: TBody;
   formData?: URLSearchParams;
+  headers?: Record<string, string>;
   timeoutMs?: number;
   signal?: AbortSignal;
 }
@@ -89,9 +115,28 @@ export async function apiRequest<TResponse, TBody = Record<string, unknown>>(
     token = null,
     body,
     formData,
+    headers: extraHeaders,
     timeoutMs = 30000,
     signal
   } = options ?? {};
+  const shouldDeduplicate = method === "GET" && signal === undefined;
+
+  // Component-owned requests must keep independent abort lifecycles. Sharing
+  // them can make a remount inherit an already-aborted request.
+  if (shouldDeduplicate) {
+    const requestKey = generateRequestKey(path, options, query);
+    const pending = pendingRequests.get(requestKey);
+
+    if (pending && Date.now() - pending.timestamp < REQUEST_DEDUP_TTL) {
+      // Return existing in-flight request
+      return pending.promise as Promise<TResponse>;
+    }
+
+    // Cleanup stale entries periodically
+    if (Math.random() < 0.1) {
+      cleanupStaleRequests();
+    }
+  }
 
   const requestController = new AbortController();
   let timedOut = false;
@@ -111,9 +156,13 @@ export async function apiRequest<TResponse, TBody = Record<string, unknown>>(
     timedOut = true;
     abortRequest();
   }, timeoutMs);
+  const cleanupRequestLifecycle = () => {
+    window.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortRequest);
+  };
   const composedSignal = requestController.signal;
 
-  const headers = new Headers();
+  const headers = new Headers(extraHeaders);
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -149,10 +198,13 @@ export async function apiRequest<TResponse, TBody = Record<string, unknown>>(
       }
       throw error;
     }
-    const contentType = response.headers.get("Content-Type") ?? "";
-
     let payload: unknown = null;
-    if (contentType.includes("application/json")) {
+    const contentType = response.headers.get("Content-Type") ?? "";
+    const hasResponseBody = response.status !== 204 && response.status !== 205;
+
+    if (!hasResponseBody) {
+      payload = null;
+    } else if (contentType.includes("application/json")) {
       payload = await response.json();
     } else {
       const text = await response.text();
@@ -172,7 +224,8 @@ export async function apiRequest<TResponse, TBody = Record<string, unknown>>(
     return payload as TResponse;
   };
 
-  try {
+  // Create the main promise and track it for deduplication
+  const executeRequest = async (): Promise<TResponse> => {
     try {
       return await fetchJson(API_BASE_URL);
     } catch (error) {
@@ -195,8 +248,27 @@ export async function apiRequest<TResponse, TBody = Record<string, unknown>>(
         throw proxyError;
       }
     }
+  };
+
+  // Store promise for GET request deduplication
+  if (shouldDeduplicate) {
+    const requestKey = generateRequestKey(path, options, query);
+    const requestPromise = executeRequest().finally(() => {
+      cleanupRequestLifecycle();
+      pendingRequests.delete(requestKey);
+    });
+    pendingRequests.set(requestKey, {
+      promise: requestPromise,
+      timestamp: Date.now(),
+    });
+
+    return requestPromise;
+  }
+
+  // Non-GET requests execute directly without deduplication
+  try {
+    return await executeRequest();
   } finally {
-    window.clearTimeout(timeout);
-    signal?.removeEventListener("abort", abortRequest);
+    cleanupRequestLifecycle();
   }
 }

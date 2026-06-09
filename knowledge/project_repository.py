@@ -24,7 +24,15 @@ from core.exceptions import DatabaseError, NotFoundError
 from core.models import InferredPatterns, Project
 from infrastructure.database import DatabaseManager
 from infrastructure.redis_client import RedisClient
-from infrastructure.schema import generated_articles_table, inferred_patterns_table, projects_table
+from infrastructure.schema import (
+    article_revisions_table,
+    content_plans_table,
+    generated_articles_table,
+    inferred_patterns_table,
+    projects_table,
+    rulebooks_table,
+    rules_table,
+)
 from optimization.query_cache import cached_query
 
 
@@ -221,7 +229,7 @@ class ProjectRepository:
 
         except Exception as e:
             logger.error(f"Failed to retrieve project {project_id}: {e}")
-            return None
+            raise DatabaseError(f"Project lookup failed: {e}") from e
 
     async def get_by_name(self, name: str) -> Optional[Project]:
         """Retrieve project by unique name using SQLAlchemy Core."""
@@ -244,7 +252,7 @@ class ProjectRepository:
 
         except Exception as e:
             logger.error(f"Failed to retrieve project by name '{name}': {e}")
-            return None
+            raise DatabaseError(f"Project lookup by name failed: {e}") from e
 
     @cached_query(ttl=300, key_prefix="project_list")
     async def list_all(
@@ -285,7 +293,7 @@ class ProjectRepository:
 
         except Exception as e:
             logger.error(f"Failed to list projects: {e}")
-            return []
+            raise DatabaseError(f"Project listing failed: {e}") from e
 
     # =========================================================================
     # UPDATE OPERATIONS
@@ -352,7 +360,7 @@ class ProjectRepository:
 
         except Exception as e:
             logger.error(f"Failed to update project {project_id}: {e}")
-            return None
+            raise DatabaseError(f"Project update failed: {e}") from e
 
     async def update_last_active(self, project_id: UUID) -> bool:
         """
@@ -387,6 +395,45 @@ class ProjectRepository:
     # =========================================================================
     # DELETE OPERATIONS
     # =========================================================================
+
+    async def get_deletion_impact(self, project_id: UUID) -> dict[str, int]:
+        """Return dependent-record and active-task counts before deletion."""
+        try:
+            async with self.database_manager.session() as session:
+                counts = {}
+                for label, table in (
+                    ("articles", generated_articles_table),
+                    ("content_plans", content_plans_table),
+                    ("rulebooks", rulebooks_table),
+                    ("inferred_patterns", inferred_patterns_table),
+                ):
+                    counts[label] = int(
+                        (
+                            await session.execute(
+                                select(func.count()).where(table.c.project_id == project_id)
+                            )
+                        ).scalar_one()
+                    )
+
+                active_tasks = await session.execute(
+                    text(
+                        """
+                        SELECT count(*)
+                        FROM task_results
+                        WHERE status IN ('pending', 'started', 'retry')
+                          AND (
+                            COALESCE(args ->> 0, '') = :project_id
+                            OR COALESCE(kwargs ->> 'project_id', '') = :project_id
+                          )
+                        """
+                    ),
+                    {"project_id": str(project_id)},
+                )
+                counts["active_tasks"] = int(active_tasks.scalar_one())
+                return counts
+        except Exception as e:
+            logger.error(f"Failed to inspect deletion impact for project {project_id}: {e}")
+            raise DatabaseError(f"Project deletion preflight failed: {e}") from e
 
     async def soft_delete(self, project_id: UUID) -> bool:
         """
@@ -426,19 +473,53 @@ class ProjectRepository:
 
         except Exception as e:
             logger.error(f"Failed to soft delete project {project_id}: {e}")
-            return False
+            raise DatabaseError(f"Project soft delete failed: {e}") from e
 
     async def hard_delete(self, project_id: UUID) -> bool:
         """
         Permanently delete project using SQLAlchemy Core (DANGEROUS).
 
-        Cascades to all related tables via foreign key constraints.
+        Deletes dependent rows explicitly in one transaction. Database foreign
+        keys provide a second line of defense when migrations are current.
 
         Returns:
             True if deleted successfully
         """
         try:
             async with self.database_manager.session() as session:
+                article_ids = select(generated_articles_table.c.id).where(
+                    generated_articles_table.c.project_id == project_id
+                )
+                rulebook_ids = select(rulebooks_table.c.id).where(
+                    rulebooks_table.c.project_id == project_id
+                )
+
+                await session.execute(
+                    delete(article_revisions_table).where(
+                        article_revisions_table.c.article_id.in_(article_ids)
+                    )
+                )
+                await session.execute(
+                    delete(rules_table).where(rules_table.c.rulebook_id.in_(rulebook_ids))
+                )
+                await session.execute(
+                    delete(generated_articles_table).where(
+                        generated_articles_table.c.project_id == project_id
+                    )
+                )
+                await session.execute(
+                    delete(content_plans_table).where(
+                        content_plans_table.c.project_id == project_id
+                    )
+                )
+                await session.execute(
+                    delete(inferred_patterns_table).where(
+                        inferred_patterns_table.c.project_id == project_id
+                    )
+                )
+                await session.execute(
+                    delete(rulebooks_table).where(rulebooks_table.c.project_id == project_id)
+                )
                 query = delete(projects_table).where(projects_table.c.id == project_id)
 
                 result = await session.execute(query)
@@ -456,7 +537,7 @@ class ProjectRepository:
 
         except Exception as e:
             logger.error(f"Failed to hard delete project {project_id}: {e}")
-            return False
+            raise DatabaseError(f"Project hard delete failed: {e}") from e
 
     # =========================================================================
     # STATISTICS & AGGREGATION

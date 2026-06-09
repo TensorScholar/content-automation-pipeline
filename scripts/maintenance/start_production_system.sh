@@ -32,6 +32,10 @@ DASHBOARD_PORT="${UI_PORT:-3001}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 LOG_DIR="./logs"
 PID_DIR="./pids"
+PYTHON_BIN="$REPO_ROOT/.venv/bin/python"
+CELERY_BIN="$REPO_ROOT/.venv/bin/celery"
+UVICORN_BIN="$REPO_ROOT/.venv/bin/uvicorn"
+DETACH_HELPER="$REPO_ROOT/scripts/maintenance/detached_process.py"
 
 # Derive API_URL from API_PORT so the frontend always points to the right API.
 API_URL="http://127.0.0.1:${API_PORT}"
@@ -101,6 +105,84 @@ json_field() {
     python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get(sys.argv[1], ""))' "$field"
 }
 
+run_celery() {
+    if [ -x "$CELERY_BIN" ]; then
+        "$CELERY_BIN" "$@"
+    else
+        poetry run celery "$@"
+    fi
+}
+
+process_alive_from_pidfile() {
+    local pidfile="$1"
+    local pid
+
+    if [ ! -f "$pidfile" ]; then
+        return 1
+    fi
+
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+
+    kill -0 "$pid" 2>/dev/null
+}
+
+stop_pidfile_process() {
+    local name="$1"
+    local pidfile="$2"
+    local pid
+
+    if [ ! -f "$pidfile" ]; then
+        return 0
+    fi
+
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [ -z "$pid" ]; then
+        rm -f "$pidfile"
+        return 0
+    fi
+
+    if kill -0 "$pid" 2>/dev/null; then
+        print_step "Stopping existing $name (PID: $pid)..."
+        kill "$pid" 2>/dev/null || true
+        sleep 2
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+
+    rm -f "$pidfile"
+}
+
+celery_worker_healthy() {
+    run_celery -A orchestration.celery_app.app inspect ping --timeout=5 2>/dev/null | grep -q "pong"
+}
+
+wait_for_celery_worker() {
+    local max_attempts=${1:-30}
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        if celery_worker_healthy; then
+            return 0
+        fi
+        sleep 1
+        ((attempt++))
+    done
+    return 1
+}
+
+shutdown_existing_celery_workers() {
+    if run_celery -A orchestration.celery_app.app inspect ping --timeout=2 2>/dev/null | grep -q "pong"; then
+        print_step "Requesting existing Celery workers to shut down..."
+        run_celery -A orchestration.celery_app.app control shutdown >/dev/null 2>&1 || true
+        sleep 3
+    fi
+}
+
 kill_existing_services() {
     print_step "Checking for existing services..."
 
@@ -118,8 +200,13 @@ kill_existing_services() {
         sleep 2
     fi
 
-    # Kill existing Celery processes
-    pkill -f "celery.*orchestration.celery_app" || true
+    # Stop Celery processes from pidfiles first. Process-list access can be
+    # unavailable in restricted desktop runtimes, but pidfile ownership and
+    # Celery's control plane still give us deterministic stop paths.
+    stop_pidfile_process "Celery Worker" "$PID_DIR/celery_worker.pid"
+    stop_pidfile_process "Celery Beat" "$PID_DIR/celery_beat.pid"
+    shutdown_existing_celery_workers
+    pkill -f "celery.*orchestration.celery_app" >/dev/null 2>&1 || true
     sleep 2
 
     print_success "Existing services stopped"
@@ -158,15 +245,14 @@ start_redis() {
 start_celery_worker() {
     print_step "Step 2/6: Starting Celery Worker..."
 
-    poetry run celery -A orchestration.celery_app worker \
+    run_celery -A orchestration.celery_app.app worker \
         --loglevel=info \
+        --queues=critical,high,medium,default,low \
         --logfile="$LOG_DIR/celery_worker.log" \
         --pidfile="$PID_DIR/celery_worker.pid" \
         --detach
 
-    sleep 3
-
-    if pgrep -f "celery.*worker" >/dev/null; then
+    if wait_for_celery_worker 30; then
         print_success "Celery Worker started (PID: $(cat $PID_DIR/celery_worker.pid 2>/dev/null || echo 'unknown'))"
     else
         print_error "Celery Worker failed to start"
@@ -177,7 +263,7 @@ start_celery_worker() {
 start_celery_beat() {
     print_step "Step 3/6: Starting Celery Beat (Scheduler)..."
 
-    poetry run celery -A orchestration.celery_app beat \
+    run_celery -A orchestration.celery_app.app beat \
         --loglevel=info \
         --logfile="$LOG_DIR/celery_beat.log" \
         --pidfile="$PID_DIR/celery_beat.pid" \
@@ -185,7 +271,7 @@ start_celery_beat() {
 
     sleep 2
 
-    if pgrep -f "celery.*beat" >/dev/null; then
+    if process_alive_from_pidfile "$PID_DIR/celery_beat.pid"; then
         print_success "Celery Beat started (PID: $(cat $PID_DIR/celery_beat.pid 2>/dev/null || echo 'unknown'))"
     else
         print_error "Celery Beat failed to start"
@@ -196,14 +282,17 @@ start_celery_beat() {
 start_api() {
     print_step "Step 4/6: Starting Content Automation API on port $API_PORT..."
 
-    # Start API in background.
-    nohup poetry run uvicorn api.main:app \
-        --host 0.0.0.0 \
-        --port $API_PORT \
-        --log-config logging_config.py \
-        > "$LOG_DIR/api.log" 2>&1 &
+    if [ -x "$UVICORN_BIN" ]; then
+        api_cmd=("$UVICORN_BIN" api.main:app --host 0.0.0.0 --port "$API_PORT")
+    else
+        api_cmd=(poetry run uvicorn api.main:app --host 0.0.0.0 --port "$API_PORT")
+    fi
 
-    echo $! > "$PID_DIR/api.pid"
+    "$PYTHON_BIN" "$DETACH_HELPER" \
+        --cwd "$REPO_ROOT" \
+        --pidfile "$PID_DIR/api.pid" \
+        --logfile "$LOG_DIR/api.log" \
+        -- "${api_cmd[@]}"
 
     print_step "Waiting for API health check..."
     if wait_for_health "http://127.0.0.1:$API_PORT/health" 30; then
@@ -218,12 +307,22 @@ start_api() {
 start_dashboard() {
     print_step "Step 5/6: Starting Next.js Frontend on port $DASHBOARD_PORT..."
     print_step "Frontend will connect to API at: $API_URL"
-    API_PROXY_TARGET="$API_URL" \
-    NEXT_PUBLIC_API_URL="$API_URL" \
-    nohup bash -lc "cd frontend && ./node_modules/.bin/next dev -p $DASHBOARD_PORT" \
-        > "$LOG_DIR/frontend.log" 2>&1 &
 
-    echo $! > "$PID_DIR/dashboard.pid"
+    if [ ! -f "frontend/.next/BUILD_ID" ]; then
+        print_step "Building frontend production bundle..."
+        API_PROXY_TARGET="$API_URL" \
+        NEXT_PUBLIC_API_URL="$API_URL" \
+        bash -lc "cd frontend && ./node_modules/.bin/next build" \
+            >> "$LOG_DIR/frontend.log" 2>&1
+    fi
+
+    "$PYTHON_BIN" "$DETACH_HELPER" \
+        --cwd "$REPO_ROOT/frontend" \
+        --pidfile "$PID_DIR/dashboard.pid" \
+        --logfile "$LOG_DIR/frontend.log" \
+        --env "API_PROXY_TARGET=$API_URL" \
+        --env "NEXT_PUBLIC_API_URL=$API_URL" \
+        -- ./node_modules/.bin/next start -p "$DASHBOARD_PORT"
 
     sleep 5
 
@@ -260,7 +359,7 @@ verify_system() {
     fi
 
     # Check Celery Worker
-    if pgrep -f "celery.*worker" >/dev/null; then
+    if celery_worker_healthy; then
         print_success "Celery Worker: RUNNING"
     else
         print_error "Celery Worker: DOWN"
@@ -268,7 +367,7 @@ verify_system() {
     fi
 
     # Check Celery Beat
-    if pgrep -f "celery.*beat" >/dev/null; then
+    if process_alive_from_pidfile "$PID_DIR/celery_beat.pid"; then
         print_success "Celery Beat: RUNNING"
     else
         print_error "Celery Beat: DOWN"
