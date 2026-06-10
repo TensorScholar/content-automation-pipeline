@@ -1,7 +1,7 @@
 """add fulltext search indexes
 
 Revision ID: 20251228_001
-Revises:
+Revises: 20250101_001
 Create Date: 2025-12-28
 
 CRITICAL FIX: Adds GIN index for full-text search on articles table.
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20251228_001'
-down_revision = None
+down_revision = '20250101_001'
 branch_labels = None
 depends_on = None
 
