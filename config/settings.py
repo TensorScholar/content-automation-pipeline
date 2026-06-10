@@ -185,7 +185,7 @@ class RedisSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     """LLM API configuration with provider fallbacks."""
 
-    provider: str = Field(default="anthropic", alias="LLM_PROVIDER")
+    provider: str = Field(default="gemini", alias="LLM_PROVIDER")
     anthropic_api_key: Optional[SecretStr] = Field(
         default=None,
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "LLM_ANTHROPIC_API_KEY"),
@@ -260,11 +260,27 @@ class LLMSettings(BaseSettings):
         """Auto-detect provider based on available API keys."""
         import os
 
-        def configured(value: Optional[str]) -> bool:
-            return bool(value and value.strip())
+        def configured(value: Optional[str] | SecretStr) -> bool:
+            if isinstance(value, SecretStr):
+                value = value.get_secret_value()
+            return bool(str(value).strip()) if value is not None else False
+
+        def provider_for_model(model: str) -> Optional[str]:
+            model_lower = model.lower()
+            if model_lower.startswith(("openai/", "gpt-")):
+                return "openai"
+            if model_lower.startswith(("anthropic/", "claude-")):
+                return "anthropic"
+            if model_lower.startswith(("gemini/", "gemini-")):
+                return "gemini"
+            if model_lower.startswith("local-"):
+                return "local"
+            return None
 
         # Check which API keys are available
-        has_anthropic = configured(self.anthropic_api_key) or configured(os.getenv("ANTHROPIC_API_KEY"))
+        has_anthropic = configured(self.anthropic_api_key) or configured(
+            os.getenv("ANTHROPIC_API_KEY")
+        )
         has_openai = (
             configured(self.openai_api_key)
             or configured(os.getenv("OPENAI_API_KEY"))
@@ -277,26 +293,51 @@ class LLMSettings(BaseSettings):
             or configured(os.getenv("LLM_GEMINI_API_KEY"))
         )
         has_local = configured(self.local_llm_url) or configured(os.getenv("LOCAL_LLM_URL"))
+        requested_provider = (self.provider or "").strip().lower()
+        supported_providers = {"anthropic", "openai", "gemini", "local"}
+        if requested_provider not in supported_providers:
+            raise ValueError(
+                f"Unsupported LLM_PROVIDER '{self.provider}'. "
+                f"Expected one of: {', '.join(sorted(supported_providers))}"
+            )
+        object.__setattr__(self, "provider", requested_provider)
 
-        # Auto-set provider if not explicitly configured
-        if self.provider == "anthropic" and not has_anthropic and has_gemini:
-            object.__setattr__(self, 'provider', 'gemini')
-        elif self.provider == "anthropic" and not has_anthropic and has_openai:
-            object.__setattr__(self, 'provider', 'openai')
-        elif self.provider == "anthropic" and not has_anthropic and has_local:
-            object.__setattr__(self, 'provider', 'local')
-        elif self.provider == "gemini" and not has_gemini and has_anthropic:
-            object.__setattr__(self, 'provider', 'anthropic')
-        elif self.provider == "gemini" and not has_gemini and has_openai:
-            object.__setattr__(self, 'provider', 'openai')
-        elif self.provider == "gemini" and not has_gemini and has_local:
-            object.__setattr__(self, 'provider', 'local')
-        elif self.provider == "openai" and not has_openai and has_anthropic:
-            object.__setattr__(self, 'provider', 'anthropic')
-        elif self.provider == "openai" and not has_openai and has_gemini:
-            object.__setattr__(self, 'provider', 'gemini')
-        elif self.provider == "openai" and not has_openai and has_local:
-            object.__setattr__(self, 'provider', 'local')
+        # Production must fail fast when the selected provider is not actually
+        # configured. Development keeps the historical auto-detection behavior.
+        if os.getenv("ENVIRONMENT", "development").lower() == "production":
+            provider_configured = {
+                "anthropic": has_anthropic,
+                "openai": has_openai,
+                "gemini": has_gemini,
+                "local": has_local,
+            }[requested_provider]
+            if not provider_configured:
+                required = {
+                    "anthropic": "ANTHROPIC_API_KEY or LLM_ANTHROPIC_API_KEY",
+                    "openai": "OPENAI_API_KEY or LLM_OPENAI_API_KEY",
+                    "gemini": "GEMINI_API_KEY, GOOGLE_API_KEY, or LLM_GEMINI_API_KEY",
+                    "local": "LOCAL_LLM_URL",
+                }[requested_provider]
+                raise ValueError(
+                    f"LLM_PROVIDER={requested_provider} requires {required} in production"
+                )
+
+        # Auto-set provider in development only. Production uses the selected
+        # provider strictly so deploy misconfiguration fails before traffic.
+        is_production = os.getenv("ENVIRONMENT", "development").lower() == "production"
+        if not is_production:
+            provider_candidates = [
+                ("anthropic", has_anthropic),
+                ("gemini", has_gemini),
+                ("openai", has_openai),
+                ("local", has_local),
+            ]
+            selected_is_configured = dict(provider_candidates).get(self.provider, False)
+            if not selected_is_configured:
+                for provider_name, is_configured in provider_candidates:
+                    if is_configured:
+                        object.__setattr__(self, "provider", provider_name)
+                        break
 
         provider = self.provider.lower()
         if not os.getenv("LLM_PRIMARY_MODEL"):
@@ -326,6 +367,27 @@ class LLMSettings(BaseSettings):
             object.__setattr__(self, "writing_model", self.primary_model)
         if not os.getenv("LLM_VERIFICATION_MODEL"):
             object.__setattr__(self, "verification_model", self.primary_model)
+
+        if is_production:
+            model_fields = {
+                "LLM_PRIMARY_MODEL": self.primary_model,
+                "LLM_SECONDARY_MODEL": self.secondary_model,
+                "LLM_KEYWORD_MODEL": self.keyword_model,
+                "LLM_PLANNING_MODEL": self.planning_model,
+                "LLM_WRITING_MODEL": self.writing_model,
+                "LLM_VERIFICATION_MODEL": self.verification_model,
+            }
+            for env_name, model_name in model_fields.items():
+                model_provider = provider_for_model(model_name)
+                if model_provider is None:
+                    raise ValueError(
+                        f"{env_name}={model_name} has an unknown provider prefix"
+                    )
+                if model_provider != provider:
+                    raise ValueError(
+                        f"{env_name}={model_name} resolves to provider "
+                        f"{model_provider}, but LLM_PROVIDER={provider}"
+                    )
 
         return self
 

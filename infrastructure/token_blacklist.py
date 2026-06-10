@@ -12,6 +12,7 @@ Usage:
 from datetime import datetime, timezone
 from typing import Optional
 
+from config.settings import get_settings
 from infrastructure.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -96,8 +97,8 @@ class TokenBlacklist:
             return exists
         except Exception as e:
             logger.error("Failed to check token blacklist", jti=jti, error=str(e))
-            # Fail open for availability, but log for monitoring
-            # In high-security scenarios, you might want to fail closed
+            if get_settings().is_production:
+                raise
             return False
 
     async def remove(self, jti: str) -> bool:

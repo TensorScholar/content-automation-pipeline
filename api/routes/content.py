@@ -32,6 +32,7 @@ from api.dependencies import (
     get_redis,
     get_task_result_repository,
 )
+from config.settings import settings
 from core.exceptions import WorkflowError
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
@@ -417,6 +418,7 @@ async def get_task_status(
     Simple strategy: Trust Celery for current state, use DB for results.
     """
     from celery.result import AsyncResult
+
     from orchestration.celery_app import app
 
     # Get Celery state
@@ -603,7 +605,8 @@ async def get_task_history(
     Retrieve task history from database.
     Returns list of all tasks with their status, timestamps, results, and extracted topic.
     """
-    from sqlalchemy import select, or_
+    from sqlalchemy import or_, select
+
     from orchestration.task_persistence import task_results_table
 
     try:
@@ -689,10 +692,11 @@ async def delete_task(
     C-4 fix: Also revokes the running Celery task (terminate=True) so it
     no longer consumes LLM tokens or worker capacity.
     """
-    from sqlalchemy import delete
-    from orchestration.task_persistence import task_results_table
     from celery.result import AsyncResult
+    from sqlalchemy import delete
+
     from orchestration.celery_app import app
+    from orchestration.task_persistence import task_results_table
 
     db_task = None
     try:
@@ -768,7 +772,12 @@ async def batch_generate_content(
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"H-3: Rate limit check skipped (Redis unavailable): {e}")
+        logger.warning(f"H-3: Batch rate limit unavailable: {e}")
+        if settings.is_production:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Batch generation is temporarily unavailable while rate limiting is degraded.",
+            ) from e
 
     return await content_service.batch_generate_content(
         request.project_id,

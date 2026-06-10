@@ -5,6 +5,7 @@ RUN apk add --no-cache gettext
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf.template
+COPY nginx.http.conf /etc/nginx/nginx.http.conf.template
 
 # Create directories for SSL certificates and static files
 RUN mkdir -p /etc/nginx/ssl /var/www/certbot /var/www/static

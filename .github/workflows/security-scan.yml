@@ -271,9 +271,34 @@ jobs:
             echo "⚠️ Bandit report not available" >> $GITHUB_STEP_SUMMARY
           fi
 
+          # pip-audit reports are high-confidence dependency findings. Treat any
+          # reported vulnerability as blocking for production launch readiness.
+          if [ -f reports/pip-audit-report.json ]; then
+            PIP_AUDIT_COUNT=$(python -c "
+          import json
+          data = json.load(open('reports/pip-audit-report.json'))
+          if isinstance(data, dict):
+              print(len(data.get('vulnerabilities', [])))
+          elif isinstance(data, list):
+              print(sum(len(item.get('vulns', [])) for item in data))
+          else:
+              print(0)
+          " 2>/dev/null || echo "0")
+
+            if [ "$PIP_AUDIT_COUNT" -gt 0 ] 2>/dev/null; then
+              echo "❌ **$PIP_AUDIT_COUNT dependency vulnerability finding(s)**" >> $GITHUB_STEP_SUMMARY
+              FAILED=1
+            else
+              echo "✅ No pip-audit dependency vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⚠️ pip-audit report not available" >> $GITHUB_STEP_SUMMARY
+          fi
+
           # Check upstream job results
           if [ "${{ needs.dependency-scan.result }}" = "failure" ]; then
-            echo "⚠️ Dependency scan had failures (review artifacts)" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Dependency scan job failed**" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
           fi
 
           if [ "${{ needs.secret-detection.result }}" = "failure" ]; then

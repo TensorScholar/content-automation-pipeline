@@ -19,6 +19,7 @@ venv/
 env/
 ENV/
 .venv/
+.venv_clean/
 
 # IDE
 .vscode/
@@ -88,6 +89,14 @@ temp/
 # Node (if any)
 node_modules/
 package-lock.json
+frontend/node_modules/
+frontend/.next/
+frontend/src-tauri/
+frontend/coverage/
+frontend/reports/
+frontend/test-results/
+frontend/playwright-report/
+frontend/tsconfig.tsbuildinfo
 
 # Benchmark results
 benchmark_results/

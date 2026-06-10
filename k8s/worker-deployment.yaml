@@ -18,25 +18,38 @@ spec:
           image: content-automation-pipeline:1.0.0
           command: ["./entrypoint.sh", "worker"]
           env:
-            - name: DATABASE_URL
-              value: postgresql+asyncpg://content_user:$(POSTGRES_PASSWORD)@postgres:5432/content_automation
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: content-automation-secrets
                   key: postgres-password
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://content_user:$(POSTGRES_PASSWORD)@postgres:5432/content_automation
             - name: REDIS_URL
               value: redis://redis:6379/0
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: content-automation-secrets
+                  key: secret-key
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: content-automation-secrets
                   key: anthropic-api-key
+                  optional: true
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: content-automation-secrets
                   key: openai-api-key
+                  optional: true
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: content-automation-secrets
+                  key: gemini-api-key
+                  optional: true
           envFrom:
             - configMapRef:
                 name: content-automation-config

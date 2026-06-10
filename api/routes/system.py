@@ -8,11 +8,11 @@ monitoring and operational visibility.
 Architectural Pattern: System API + Health Check Pattern
 """
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-import asyncio
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -589,6 +589,7 @@ async def get_incident_inbox(
 
     try:
         from sqlalchemy import func, select
+
         from orchestration.task_persistence import TaskStatus, task_results_table
 
         # task_results.created_at is TIMESTAMP WITHOUT TIME ZONE in the
@@ -663,7 +664,7 @@ async def liveness_probe() -> Dict[str, str]:
     summary="Kubernetes readiness probe",
     description="Readiness check for Kubernetes to determine if pod can accept traffic",
 )
-async def readiness_probe() -> Dict[str, Any]:
+async def readiness_probe(response: Response) -> Dict[str, Any]:
     """
     Kubernetes readiness probe endpoint.
 
@@ -674,6 +675,8 @@ async def readiness_probe() -> Dict[str, Any]:
     health = await checker.check_all()
 
     is_ready = health.status in (HealthStatus.HEALTHY, HealthStatus.DEGRADED)
+    if not is_ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return {
         "status": "ready" if is_ready else "not_ready",

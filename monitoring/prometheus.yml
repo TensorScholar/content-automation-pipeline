@@ -30,6 +30,8 @@ scrape_configs:
 
   # ========================================================================
   # FastAPI Application Metrics
+  # Scrapes the API container over the private Docker network. The production
+  # nginx config does not route /metrics publicly.
   # ========================================================================
   - job_name: "content-automation-api"
     static_configs:

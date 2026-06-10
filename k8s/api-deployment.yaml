@@ -41,11 +41,19 @@ spec:
                 secretKeyRef:
                   name: content-automation-secrets
                   key: anthropic-api-key
+                  optional: true
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: content-automation-secrets
                   key: openai-api-key
+                  optional: true
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: content-automation-secrets
+                  key: gemini-api-key
+                  optional: true
           envFrom:
             - configMapRef:
                 name: content-automation-config
@@ -64,7 +72,7 @@ spec:
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /health
+              path: /system/ready
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10

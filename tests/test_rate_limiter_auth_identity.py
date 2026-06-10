@@ -1,7 +1,29 @@
 import pytest
 from starlette.requests import Request
 
-from infrastructure.rate_limiter import RateLimitConfig, RateLimitMiddleware
+from config.settings import get_settings
+from infrastructure.rate_limiter import RateLimitConfig, RateLimitMiddleware, RedisRateLimiter
+
+
+class BrokenRedis:
+    def pipeline(self, transaction=True):
+        raise RuntimeError("redis unavailable")
+
+
+def set_required_settings(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/db")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
+    monkeypatch.setenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("LLM_PRIMARY_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setenv("LLM_SECONDARY_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setenv("LLM_KEYWORD_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setenv("LLM_PLANNING_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setenv("LLM_WRITING_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setenv("LLM_VERIFICATION_MODEL", "gemini-2.5-flash-lite")
 
 
 def make_request(path: str, headers: dict[str, str] | None = None) -> Request:
@@ -70,3 +92,18 @@ async def test_non_auth_identifier_falls_back_to_ip() -> None:
     identifier = await middleware._get_identifier(make_request("/projects"))
 
     assert identifier == "ip:192.0.2.10"
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_fails_closed_in_production(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DEBUG", "false")
+    get_settings.cache_clear()
+
+    limiter = RedisRateLimiter(BrokenRedis(), RateLimitConfig())
+
+    allowed, info = await limiter.is_allowed("user:1", limit=10, window=60)
+
+    assert allowed is False
+    assert info["retry_after"] == 60

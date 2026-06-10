@@ -63,6 +63,51 @@ services:
   # --------------------------------------------------------------------------
   # API Server (Production with Gunicorn)
   # --------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: content-automation-pipeline:${IMAGE_TAG:-latest}
+    restart: "no"
+    profiles: ["migrate"]
+    command: ["migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LLM_GEMINI_MODEL: ${LLM_GEMINI_MODEL:-gemini-2.5-flash-lite}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-}
+      LLM_SECONDARY_MODEL: ${LLM_SECONDARY_MODEL:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
+      LLM_KEYWORD_MODEL: ${LLM_KEYWORD_MODEL:-}
+      LLM_PLANNING_MODEL: ${LLM_PLANNING_MODEL:-}
+      LLM_WRITING_MODEL: ${LLM_WRITING_MODEL:-}
+      LLM_VERIFICATION_MODEL: ${LLM_VERIFICATION_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_OPENAI_API_KEY: ${LLM_OPENAI_API_KEY:-}
+      LLM_OPENAI_MODEL: ${LLM_OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_API_KEY: ${LLM_ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ENVIRONMENT: production
+      DEBUG: "false"
+      MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+    networks:
+      - content-automation-network
+
   api:
     build:
       context: .
@@ -82,25 +127,49 @@ services:
 
       # Redis configuration
       REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
 
-      # LLM API keys (set in .env file)
+      # LLM provider configuration. LLM_PROVIDER selects the required key.
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LLM_GEMINI_MODEL: ${LLM_GEMINI_MODEL:-gemini-2.5-flash-lite}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-}
+      LLM_SECONDARY_MODEL: ${LLM_SECONDARY_MODEL:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
+      LLM_KEYWORD_MODEL: ${LLM_KEYWORD_MODEL:-}
+      LLM_PLANNING_MODEL: ${LLM_PLANNING_MODEL:-}
+      LLM_WRITING_MODEL: ${LLM_WRITING_MODEL:-}
+      LLM_VERIFICATION_MODEL: ${LLM_VERIFICATION_MODEL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_OPENAI_API_KEY: ${LLM_OPENAI_API_KEY:-}
+      LLM_OPENAI_MODEL: ${LLM_OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_API_KEY: ${LLM_ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
 
       # Application configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: production
+      DEBUG: "false"
+      RUN_MIGRATIONS: "false"
 
       # Security
-      SECRET_KEY: ${SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
 
       # Performance tuning - Adjusted for 2 API replicas
       WORKERS: 4
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-4}
       MAX_CONNECTIONS: ${MAX_CONNECTIONS:-100}
       DB_POOL_SIZE: 5 # 2 replicas * 5 = 10 total connections
       DB_MAX_OVERFLOW: 5 # Allow burst to 10 per replica
-    ports:
-      - "${API_PORT:-8000}:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -150,9 +219,10 @@ services:
       API_PROXY_TARGET: http://api:8000
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: production
-    ports:
-      - "${FRONTEND_PORT:-3001}:3001"
+    expose:
+      - "3001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/"]
       interval: 30s
@@ -209,10 +279,33 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
       REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LLM_GEMINI_MODEL: ${LLM_GEMINI_MODEL:-gemini-2.5-flash-lite}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-}
+      LLM_SECONDARY_MODEL: ${LLM_SECONDARY_MODEL:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
+      LLM_KEYWORD_MODEL: ${LLM_KEYWORD_MODEL:-}
+      LLM_PLANNING_MODEL: ${LLM_PLANNING_MODEL:-}
+      LLM_WRITING_MODEL: ${LLM_WRITING_MODEL:-}
+      LLM_VERIFICATION_MODEL: ${LLM_VERIFICATION_MODEL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_OPENAI_API_KEY: ${LLM_OPENAI_API_KEY:-}
+      LLM_OPENAI_MODEL: ${LLM_OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_API_KEY: ${LLM_ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: production
+      DEBUG: "false"
       CELERY_CONCURRENCY: "4"
       CELERY_LOG_LEVEL: info
       DB_POOL_SIZE: 3 # 3 replicas * 3 = 9 total connections
@@ -250,12 +343,40 @@ services:
     restart: unless-stopped
     command: ["beat"]
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
+      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
       REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LLM_GEMINI_MODEL: ${LLM_GEMINI_MODEL:-gemini-2.5-flash-lite}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-}
+      LLM_SECONDARY_MODEL: ${LLM_SECONDARY_MODEL:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
+      LLM_KEYWORD_MODEL: ${LLM_KEYWORD_MODEL:-}
+      LLM_PLANNING_MODEL: ${LLM_PLANNING_MODEL:-}
+      LLM_WRITING_MODEL: ${LLM_WRITING_MODEL:-}
+      LLM_VERIFICATION_MODEL: ${LLM_VERIFICATION_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_OPENAI_API_KEY: ${LLM_OPENAI_API_KEY:-}
+      LLM_OPENAI_MODEL: ${LLM_OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_API_KEY: ${LLM_ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: production
+      DEBUG: "false"
       CELERY_LOG_LEVEL: info
     logging:
       driver: json-file
@@ -282,8 +403,33 @@ services:
       redis:
         condition: service_healthy
     environment:
+      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
       REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LLM_GEMINI_MODEL: ${LLM_GEMINI_MODEL:-gemini-2.5-flash-lite}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-}
+      LLM_SECONDARY_MODEL: ${LLM_SECONDARY_MODEL:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
+      LLM_KEYWORD_MODEL: ${LLM_KEYWORD_MODEL:-}
+      LLM_PLANNING_MODEL: ${LLM_PLANNING_MODEL:-}
+      LLM_WRITING_MODEL: ${LLM_WRITING_MODEL:-}
+      LLM_VERIFICATION_MODEL: ${LLM_VERIFICATION_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_OPENAI_API_KEY: ${LLM_OPENAI_API_KEY:-}
+      LLM_OPENAI_MODEL: ${LLM_OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_API_KEY: ${LLM_ANTHROPIC_API_KEY:-}
+      LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
       ENVIRONMENT: production
+      DEBUG: "false"
       FLOWER_USER: ${FLOWER_USER:?Required}
       FLOWER_PASSWORD: ${FLOWER_PASSWORD:?Required}
     ports:
@@ -310,9 +456,9 @@ services:
       - frontend
     environment:
       SERVER_NAME: ${SERVER_NAME:-localhost}
+      NGINX_CONFIG_TEMPLATE: /etc/nginx/nginx.http.conf.template
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       # SSL certificates (use Let's Encrypt or custom certificates)
       - ./nginx/ssl:/etc/nginx/ssl:ro

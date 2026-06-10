@@ -100,6 +100,15 @@ run_migrations() {
     fi
 }
 
+should_run_migrations_for_api() {
+    local default_run="true"
+    if [ "${ENVIRONMENT:-development}" = "production" ]; then
+        default_run="false"
+    fi
+
+    [ "${RUN_MIGRATIONS:-$default_run}" = "true" ]
+}
+
 # Main entrypoint logic
 main() {
     local command="${1:-api}"
@@ -114,9 +123,14 @@ main() {
             wait_for_db
             wait_for_redis
 
-            # Run migrations only for API service (primary)
-            if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+            # Production deployments must run migrations explicitly via
+            # `entrypoint.sh migrate` or the compose migration service. Running
+            # migrations from replicated API startup risks concurrent Alembic
+            # upgrades during rolling deploys.
+            if should_run_migrations_for_api; then
                 run_migrations
+            else
+                echo -e "${YELLOW}Skipping API startup migrations (RUN_MIGRATIONS=${RUN_MIGRATIONS:-unset}, ENVIRONMENT=${ENVIRONMENT:-development})${NC}"
             fi
 
             echo -e "${GREEN}Starting API server...${NC}"
@@ -142,6 +156,7 @@ main() {
             ;;
 
         beat)
+            wait_for_db
             wait_for_redis
 
             echo -e "${GREEN}Starting Celery beat scheduler...${NC}"

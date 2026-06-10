@@ -21,14 +21,9 @@
 #          --webroot-path=/var/www/certbot \
 #          -d your-domain.com -d api.your-domain.com
 #
-# NOTE on port overrides:
-#   Docker Compose merge adds to (not replaces) port lists. To prevent the
-#   API/Frontend/Flower from being publicly reachable, set these in your .env:
-#
-#     API_PORT=127.0.0.1:8000
-#     FRONTEND_PORT=127.0.0.1:3001
-#
-#   This binds them to localhost only — all public traffic goes through nginx.
+# NOTE on service exposure:
+#   docker-compose.prod.yml exposes API and frontend only on the internal
+#   Docker network by default. Public traffic should enter through nginx only.
 # ============================================================================
 
 version: "3.9"
@@ -50,6 +45,7 @@ services:
         condition: service_healthy
     environment:
       SERVER_NAME: ${SERVER_NAME:?SERVER_NAME is required - set your domain in .env}
+      NGINX_CONFIG_TEMPLATE: /etc/nginx/nginx.conf.template
       TZ: UTC
     ports:
       - "80:80"

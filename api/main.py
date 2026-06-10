@@ -30,6 +30,7 @@ from api.dependencies import (
     get_content_agent,
     get_content_service,
     get_database,
+    get_metrics,
     get_project_service,
     get_redis,
     get_user_service,
@@ -56,7 +57,7 @@ from config.settings import settings
 from core.models import ContentPlan, GeneratedArticle, Project
 
 # Import structured logging and configure
-from infrastructure.monitoring import configure_structlog, get_logger
+from infrastructure.monitoring import MetricsCollector, configure_structlog, get_logger
 
 # Import rate limiting middleware
 from infrastructure.rate_limiter import RateLimitConfig, RateLimitMiddleware
@@ -77,6 +78,15 @@ def _dependency_is_healthy(raw_status: str) -> bool:
     """Avoid treating strings like 'unhealthy' as healthy via substring checks."""
     normalized = raw_status.lower()
     return "healthy" in normalized and "unhealthy" not in normalized
+
+
+def _secret_is_configured(value) -> bool:
+    """Return True for populated SecretStr/string settings without exposing values."""
+    if value is None:
+        return False
+    if hasattr(value, "get_secret_value"):
+        value = value.get_secret_value()
+    return bool(str(value).strip())
 
 # ============================================================================
 # MIDDLEWARE STACK (Cross-Cutting Concerns)
@@ -210,13 +220,23 @@ async def lifespan(app: FastAPI):
             validation_errors.append("REDIS_URL is required")
 
         # Check LLM API keys (at least one required)
-        has_anthropic = bool(settings.llm.anthropic_api_key and settings.llm.anthropic_api_key.strip())
-        has_openai = bool(settings.llm.openai_api_key and settings.llm.openai_api_key.strip())
-        has_gemini = bool(settings.llm.gemini_api_key and settings.llm.gemini_api_key.strip())
+        has_anthropic = _secret_is_configured(settings.llm.anthropic_api_key)
+        has_openai = _secret_is_configured(settings.llm.openai_api_key)
+        has_gemini = _secret_is_configured(settings.llm.gemini_api_key)
         has_local = bool(settings.llm.local_llm_url and settings.llm.local_llm_url.strip())
         if not has_anthropic and not has_openai and not has_gemini and not has_local:
             validation_errors.append(
                 "At least one LLM provider is required (GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL)"
+            )
+        selected_provider_configured = {
+            "anthropic": has_anthropic,
+            "openai": has_openai,
+            "gemini": has_gemini,
+            "local": has_local,
+        }.get(settings.llm.provider, False)
+        if not selected_provider_configured:
+            validation_errors.append(
+                f"LLM_PROVIDER={settings.llm.provider} is selected but its required credentials are not configured"
             )
 
         # Check secret key strength
@@ -338,9 +358,9 @@ app = FastAPI(
     title="Content Automation Engine API",
     description="Advanced NLP-driven SEO content automation platform with adaptive intelligence",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if not settings.is_production else None,
+    redoc_url="/redoc" if not settings.is_production else None,
+    openapi_url="/openapi.json" if not settings.is_production else None,
     lifespan=lifespan,
 )
 
@@ -374,11 +394,47 @@ app.include_router(projects.router)
 app.include_router(system.router)
 app.include_router(auth.router)
 
-# API Root - redirect to docs
+
 @app.get("/")
 async def root():
-    """Redirect root to API documentation."""
-    return RedirectResponse(url="/docs")
+    """Return a small service descriptor; development links to API docs."""
+    if not settings.is_production:
+        return RedirectResponse(url="/docs")
+    return {
+        "service": "Content Automation Engine API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "disabled in production",
+    }
+
+
+@app.get("/metrics", include_in_schema=False)
+async def internal_metrics(metrics: MetricsCollector = Depends(get_metrics)) -> Response:
+    """
+    Internal Prometheus scrape endpoint.
+
+    This route is intentionally mounted at the API container root so Prometheus
+    can scrape `api:8000/metrics` over the private Docker network. nginx does
+    not route `/metrics` publicly in the production config.
+    """
+    try:
+        metrics_content = metrics.export_metrics()
+        content_type = metrics.get_content_type()
+        if not metrics_content or metrics_content.strip() == "":
+            metrics_content = """# HELP system_info System information
+# TYPE system_info gauge
+system_info{version="1.0.0",status="running"} 1
+"""
+        return Response(content=metrics_content, media_type=content_type)
+    except Exception as exc:
+        fallback_metrics = f"""# HELP system_error System error occurred
+# TYPE system_error gauge
+system_error{{component="metrics",error="{str(exc)}"}} 1
+"""
+        return Response(
+            content=fallback_metrics,
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
 
 # Health alias at root to match Docker healthcheck and docs
@@ -491,6 +547,7 @@ try:
         # so we store a coroutine and resolve it lazily via lifespan.
         # The cleanest fix: create a bare AsyncRedis directly from REDIS_URL.
         import os as _os
+
         from redis.asyncio import Redis as _AsyncRedis
         _raw_redis_for_middleware = _AsyncRedis.from_url(
             _os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),

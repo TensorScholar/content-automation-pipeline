@@ -1,0 +1,11 @@
+.next
+node_modules
+src-tauri
+coverage
+reports
+test-results
+playwright-report
+*.log
+.env
+.env.*
+tsconfig.tsbuildinfo

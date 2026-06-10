@@ -5,11 +5,16 @@ FROM python:3.11-slim AS builder
 ARG POETRY_VERSION=1.8.3
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:$PATH" \
-    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5 \
     PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update && \
+    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
@@ -17,13 +22,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python -m venv ${VIRTUAL_ENV}
 
-RUN pip install --upgrade pip setuptools wheel && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel && \
     pip install "poetry==${POETRY_VERSION}"
 
 WORKDIR /src
 COPY pyproject.toml poetry.lock* ./
 
-RUN poetry export -f requirements.txt --output requirements.txt --without-hashes && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    poetry export -f requirements.txt --output requirements.txt --without-hashes && \
     pip install -r requirements.txt && \
     rm requirements.txt
 
@@ -34,10 +41,14 @@ FROM python:3.11-slim AS final
 
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="${VIRTUAL_ENV}/bin:$PATH" \
+    DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update && \
+    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y --no-install-recommends \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/*

@@ -2,7 +2,8 @@
 set -e
 
 # Substitute environment variables in nginx config
-envsubst '${SERVER_NAME}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+template="${NGINX_CONFIG_TEMPLATE:-/etc/nginx/nginx.http.conf.template}"
+envsubst '${SERVER_NAME}' < "$template" > /etc/nginx/nginx.conf
 
 # Validate nginx configuration
 nginx -t

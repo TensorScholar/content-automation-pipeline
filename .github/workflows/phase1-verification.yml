@@ -1,0 +1,105 @@
+name: Phase 1 Verification Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+      - "codex/**"
+
+concurrency:
+  group: phase1-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-stack-verification:
+    name: Docker Compose Stack Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      POSTGRES_PASSWORD: ci-postgres-password
+      REDIS_PASSWORD: ci-redis-password
+      SECRET_KEY: ci-secret-key-minimum-32-chars-long-for-validation
+      SERVER_NAME: localhost
+      ALLOWED_HOSTS: localhost,127.0.0.1,api,nginx
+      CORS_ORIGINS: http://127.0.0.1,http://localhost,http://127.0.0.1:3001,http://localhost:3001
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ci-gemini-placeholder
+      LLM_GEMINI_MODEL: gemini-2.5-flash-lite
+      LLM_PRIMARY_MODEL: ""
+      LLM_SECONDARY_MODEL: ""
+      LLM_FALLBACK_MODEL: ""
+      LLM_KEYWORD_MODEL: ""
+      LLM_PLANNING_MODEL: ""
+      LLM_WRITING_MODEL: ""
+      LLM_VERIFICATION_MODEL: ""
+      FLOWER_USER: admin
+      FLOWER_PASSWORD: ci-flower-password
+      NEXT_PUBLIC_API_URL: /api
+      DOCKER_BUILDKIT: "1"
+      COMPOSE_DOCKER_CLI_BUILD: "1"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate production Compose config
+        run: |
+          docker compose -f docker-compose.prod.yml config --quiet
+          docker compose -f docker-compose.prod.yml -f docker-compose.prod.https.yml config --quiet
+
+      - name: Build production images
+        run: docker compose -f docker-compose.prod.yml build
+
+      - name: Start database and Redis
+        run: docker compose -f docker-compose.prod.yml up -d postgres redis
+
+      - name: Run one-off migration
+        run: docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+
+      - name: Start application stack
+        run: docker compose -f docker-compose.prod.yml up -d api worker celery-beat frontend nginx
+
+      - name: Show service status
+        run: docker compose -f docker-compose.prod.yml ps
+
+      - name: Verify nginx HTTP behavior
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1/health
+          root_status="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1/)"
+          test "$root_status" != "307"
+          test "$root_status" != "308"
+
+          for path in /docs /redoc /openapi.json /metrics /api/metrics; do
+            status="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1${path}")"
+            case "$status" in
+              401|403|404) ;;
+              *) echo "Unexpected public status for ${path}: ${status}" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: Run production smoke check inside Docker network
+        run: |
+          docker compose -f docker-compose.prod.yml exec -T api \
+            python scripts/maintenance/production_smoke_check.py \
+              --api-url http://api:8000 \
+              --frontend-url http://frontend:3001 \
+              --nginx-url http://nginx
+
+      - name: Collect service logs
+        if: always()
+        run: |
+          docker compose -f docker-compose.prod.yml logs --tail=150 api || true
+          docker compose -f docker-compose.prod.yml logs --tail=150 worker || true
+          docker compose -f docker-compose.prod.yml logs --tail=150 celery-beat || true
+          docker compose -f docker-compose.prod.yml logs --tail=150 frontend || true
+          docker compose -f docker-compose.prod.yml logs --tail=150 nginx || true
+          docker compose -f docker-compose.prod.yml logs --tail=100 postgres || true
+          docker compose -f docker-compose.prod.yml logs --tail=100 redis || true
+
+      - name: Stop stack
+        if: always()
+        run: docker compose -f docker-compose.prod.yml down

@@ -21,6 +21,7 @@ from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from config.settings import get_settings
 from infrastructure.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -127,13 +128,12 @@ class RedisRateLimiter:
             return allowed, info
 
         except Exception as e:
-            # On Redis error, fail open (allow request) but return a full info dict
-            # so callers can always safely access info["current"] etc.
             logger.error(f"Rate limiter error: {e}")
-            return True, {
+            fail_closed = get_settings().is_production
+            return not fail_closed, {
                 "current": 0,
                 "limit": limit,
-                "retry_after": 0,
+                "retry_after": window if fail_closed else 0,
                 "reset_time": datetime.now() + timedelta(seconds=window),
                 "error": str(e),
             }

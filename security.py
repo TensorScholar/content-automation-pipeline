@@ -360,7 +360,8 @@ async def get_current_user(
         if token_data.username is None:
             raise credentials_exception
 
-        # Check token blacklist for revoked tokens (fail-open for availability)
+        # Check token blacklist for revoked tokens. Production fails closed so
+        # Redis outages cannot silently revive revoked credentials.
         if token_data.jti:
             from infrastructure.token_blacklist import get_token_blacklist
             blacklist = get_token_blacklist()
@@ -373,7 +374,9 @@ async def get_current_user(
                 except HTTPException:
                     raise
                 except Exception as e:
-                    logger.error(f"Blacklist check failed (fail-open): {e}")
+                    logger.error(f"Blacklist check failed: {e}")
+                    if settings.is_production:
+                        raise credentials_exception
 
         # Get user from database via injected UserService
         user_in_db = await user_service.get_user_by_email(token_data.username)
