@@ -3,8 +3,11 @@
 FROM python:3.11-slim AS builder
 
 ARG POETRY_VERSION=1.8.3
+ARG TORCH_CPU_VERSION=2.9.0+cpu
+ARG PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG PYPI_INDEX_URL=https://pypi.org/simple
 ENV VIRTUAL_ENV=/opt/venv \
-    PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:$PATH" \
+    PATH="/opt/venv/bin:/root/.local/bin:$PATH" \
     DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_DEFAULT_TIMEOUT=120 \
@@ -31,8 +34,14 @@ COPY pyproject.toml poetry.lock* ./
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     poetry export -f requirements.txt --output requirements.txt --without-hashes && \
-    pip install -r requirements.txt && \
-    rm requirements.txt
+    grep -Ev '^(torch|triton|nvidia-[^= ]+)(==|[<>=!~ ])' requirements.txt > requirements.docker.txt && \
+    pip install \
+        --index-url "${PYTORCH_CPU_INDEX_URL}" \
+        --extra-index-url "${PYPI_INDEX_URL}" \
+        "torch==${TORCH_CPU_VERSION}" && \
+    pip install -r requirements.docker.txt && \
+    python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers" && \
+    rm requirements.txt requirements.docker.txt
 
 # Download spacy model
 RUN python -m spacy download en_core_web_sm
@@ -40,7 +49,7 @@ RUN python -m spacy download en_core_web_sm
 FROM python:3.11-slim AS final
 
 ENV VIRTUAL_ENV=/opt/venv \
-    PATH="${VIRTUAL_ENV}/bin:$PATH" \
+    PATH="/opt/venv/bin:$PATH" \
     DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

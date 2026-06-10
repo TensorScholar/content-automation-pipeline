@@ -53,6 +53,27 @@ jobs:
       - name: Build production images
         run: docker compose -f docker-compose.prod.yml build
 
+      - name: Verify backend image uses CPU-only ML stack
+        run: |
+          docker compose -f docker-compose.prod.yml run --rm --no-deps api python - <<'PY'
+          import importlib.metadata as md
+
+          names = {dist.metadata["Name"].lower() for dist in md.distributions()}
+          blocked = sorted(name for name in names if name.startswith("nvidia-") or name == "triton")
+          if blocked:
+              raise SystemExit(f"Unexpected CUDA packages installed: {blocked}")
+
+          import torch
+          if torch.version.cuda is not None:
+              raise SystemExit(f"Expected CPU-only torch, got CUDA={torch.version.cuda}")
+
+          import sentence_transformers
+          import infrastructure.llm_client
+
+          print(f"CPU-only torch verified: {torch.__version__}")
+          print(f"sentence-transformers import verified: {sentence_transformers.__version__}")
+          PY
+
       - name: Start database and Redis
         run: docker compose -f docker-compose.prod.yml up -d postgres redis
 
