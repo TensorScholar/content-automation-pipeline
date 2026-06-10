@@ -64,7 +64,7 @@ from infrastructure.redis_client import RedisClient
 async def check():
     redis = RedisClient()
     try:
-        return await redis.health_check()
+        return await redis.ping()
     except Exception:
         return False
 

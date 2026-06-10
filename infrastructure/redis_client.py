@@ -726,6 +726,10 @@ class RedisClient:
             logger.error(f"Redis ping failed: {e}")
             return False
 
+    async def health_check(self) -> bool:
+        """Compatibility health check used by startup and monitoring code."""
+        return await self.ping()
+
     async def info(self) -> dict:
         """Return Redis server INFO as a dict (mirrors aioredis/redis-py interface)."""
         try:
