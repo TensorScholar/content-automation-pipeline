@@ -82,7 +82,7 @@ jobs:
 
       - name: Start application stack
         run: |
-          docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 240 \
+          docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 420 \
             api worker celery-beat frontend nginx
 
       - name: Show service status

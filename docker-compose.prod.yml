@@ -175,7 +175,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      # Importing the CPU-only NLP/embedding stack can take over a minute on
+      # small VPS and CI hosts. Do not consume health retries during startup.
+      start_period: 180s
     networks:
       - content-automation-network
     deploy:
