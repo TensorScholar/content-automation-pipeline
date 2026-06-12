@@ -81,10 +81,25 @@ jobs:
         run: docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
 
       - name: Start application stack
-        run: docker compose -f docker-compose.prod.yml up -d api worker celery-beat frontend nginx
+        run: |
+          docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 240 \
+            api worker celery-beat frontend nginx
 
       - name: Show service status
         run: docker compose -f docker-compose.prod.yml ps
+
+      - name: Verify Celery workers
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.prod.yml exec -T worker \
+            celery -A orchestration.celery_app.app inspect ping --timeout=10 |
+            tee /tmp/celery-ping.txt
+          grep -q "pong" /tmp/celery-ping.txt
+
+          docker compose -f docker-compose.prod.yml exec -T worker \
+            celery -A orchestration.celery_app.app inspect active_queues --timeout=10 |
+            tee /tmp/celery-queues.txt
+          grep -q "celery" /tmp/celery-queues.txt
 
       - name: Verify nginx HTTP behavior
         run: |

@@ -308,8 +308,8 @@ services:
       DEBUG: "false"
       CELERY_CONCURRENCY: "4"
       CELERY_LOG_LEVEL: info
-      DB_POOL_SIZE: 3 # 3 replicas * 3 = 9 total connections
-      DB_MAX_OVERFLOW: 2 # Allow burst to 5 per replica
+      DB_POOL_SIZE: 5 # 3 replicas * 5 = 15 steady connections
+      DB_MAX_OVERFLOW: 5 # Allow burst to 10 per replica
     networks:
       - content-automation-network
     deploy:
