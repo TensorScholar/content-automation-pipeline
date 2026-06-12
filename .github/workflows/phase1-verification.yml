@@ -38,6 +38,10 @@ jobs:
       FLOWER_USER: admin
       FLOWER_PASSWORD: ci-flower-password
       NEXT_PUBLIC_API_URL: /api
+      # Hosted runners have two CPU cores. Verify the production images and
+      # topology without starving them with the deployment replica defaults.
+      GUNICORN_WORKERS: "1"
+      CELERY_CONCURRENCY: "1"
       DOCKER_BUILDKIT: "1"
       COMPOSE_DOCKER_CLI_BUILD: "1"
 
@@ -83,6 +87,7 @@ jobs:
       - name: Start application stack
         run: |
           docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 420 \
+            --scale api=1 --scale worker=1 \
             api worker celery-beat frontend nginx
 
       - name: Show service status

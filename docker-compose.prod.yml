@@ -302,7 +302,7 @@ services:
       MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: production
       DEBUG: "false"
-      CELERY_CONCURRENCY: "4"
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
       CELERY_LOG_LEVEL: info
       DB_POOL_SIZE: 5 # 3 replicas * 5 = 15 steady connections
       DB_MAX_OVERFLOW: 5 # Allow burst to 10 per replica
