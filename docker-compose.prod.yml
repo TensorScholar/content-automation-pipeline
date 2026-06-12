@@ -258,14 +258,8 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "celery",
-          "-A",
-          "orchestration.celery_app.app",
-          "inspect",
-          "ping",
-          "-d",
-          "celery@$$HOSTNAME",
+          "CMD-SHELL",
+          "celery -A orchestration.celery_app.app inspect ping --timeout=5 -d celery@$$HOSTNAME | grep -q pong",
         ]
       interval: 30s
       timeout: 10s
