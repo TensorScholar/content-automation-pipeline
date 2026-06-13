@@ -1,7 +1,11 @@
 import unittest
-from hypothesis import given, strategies as st
+
+from hypothesis import given
+from hypothesis import strategies as st
 from pydantic import ValidationError
-from api.schemas import GenerateContentRequest, CreateProjectRequest
+
+from api.schemas import CreateProjectRequest, GenerateContentRequest
+
 
 class TestAPISchemasPBT(unittest.TestCase):
 

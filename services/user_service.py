@@ -12,10 +12,10 @@ import asyncio
 from typing import List, Optional
 from uuid import UUID
 
-from core.exceptions import DatabaseConnectionError
 from fastapi import HTTPException, status
 from loguru import logger
 
+from core.exceptions import DatabaseConnectionError
 from core.models import UserCreate, UserInDB, UserUpdate
 from knowledge.user_repository import UserRepository
 from security import User, get_password_hash, verify_password

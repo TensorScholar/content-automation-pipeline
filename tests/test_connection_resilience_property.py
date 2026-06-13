@@ -5,19 +5,21 @@ GOAL: Find edge cases and failure modes, NOT to make tests pass.
 Uses Hypothesis to generate random scenarios that might break the system.
 """
 
-import pytest
-import time
-from hypothesis import given, strategies as st, settings, example, HealthCheck
-from hypothesis.stateful import RuleBasedStateMachine, rule, initialize
-from unittest.mock import Mock, patch, MagicMock
-import httpx
-import sys
 import os
+import sys
+import time
+from unittest.mock import MagicMock, Mock, patch
+
+import httpx
+import pytest
+from hypothesis import HealthCheck, example, given, settings
+from hypothesis import strategies as st
+from hypothesis.stateful import RuleBasedStateMachine, initialize, rule
 
 # Add parent directory to path to import dashboard components
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dashboard_utils import api_call, CircuitBreaker, CircuitState
+from dashboard_utils import CircuitBreaker, CircuitState, api_call
 
 # ============================================================================
 # PROPERTY 1: Circuit Breaker State Transitions

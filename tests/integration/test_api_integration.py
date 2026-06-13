@@ -9,10 +9,11 @@ Tests for the FastAPI endpoints ensuring:
 - Rate limiting behavior
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
-from unittest.mock import patch, MagicMock, AsyncMock
-from uuid import uuid4
 
 
 class TestHealthEndpoints:

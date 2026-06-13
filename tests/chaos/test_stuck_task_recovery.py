@@ -12,7 +12,6 @@ from celery.result import AsyncResult
 from orchestration.celery_app import app
 from orchestration.tasks import generate_social_posts_task
 
-
 MTTR_SLA_SECONDS = int(os.getenv("CHAOS_MTTR_SLA_SECONDS", "120"))
 STALE_SECONDS = int(os.getenv("CHAOS_STALE_SECONDS", "45"))
 

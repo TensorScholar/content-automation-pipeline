@@ -14,14 +14,14 @@ from datetime import timedelta
 from typing import Optional
 from uuid import UUID
 
-from loguru import logger
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from loguru import logger
 from pydantic import BaseModel
 
 from api.dependencies import get_redis, get_user_service
-from core.models import UserCreate
 from core.exceptions import DatabaseConnectionError
+from core.models import UserCreate
 from infrastructure.audit_logger import (
     AuditEventType,
     AuditSeverity,

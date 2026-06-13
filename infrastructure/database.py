@@ -13,6 +13,9 @@ Architecture: Repository Pattern + Unit of Work
 
 import asyncio
 import logging
+import time
+
+# Connection pool monitoring and timeout enforcement
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Optional
 
@@ -29,14 +32,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import NullPool, QueuePool
 from sqlalchemy.pool.impl import AsyncAdaptedQueuePool
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from config.settings import get_settings
 from core.exceptions import DatabaseConnectionError, DatabaseQueryTimeoutError
-
-# Connection pool monitoring and timeout enforcement
-from contextlib import asynccontextmanager
-import time
 
 # Initialize logger
 logger = logging.getLogger(__name__)

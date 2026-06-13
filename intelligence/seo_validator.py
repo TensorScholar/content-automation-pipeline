@@ -6,7 +6,8 @@ Validates generated articles against basic SEO best practices.
 """
 
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
 from bs4 import BeautifulSoup
 from loguru import logger
 

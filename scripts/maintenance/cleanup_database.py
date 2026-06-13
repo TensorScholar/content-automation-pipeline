@@ -5,9 +5,12 @@ Removes all test/development data from the production database
 
 import asyncio
 import sys
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+
 from config.settings import get_settings
+
 
 async def cleanup_database():
     """Clean all test data from database"""

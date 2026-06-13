@@ -8,10 +8,11 @@ Adds the task_results table used by TaskResultRepository for persisting
 Celery task execution state. Without this table, task reconciliation
 falls back to Celery-only state, losing durability guarantees.
 """
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSON
+from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '20250225_001'

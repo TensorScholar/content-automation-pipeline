@@ -10,11 +10,11 @@ a fresh database using Alembic alone, so this revision is the explicit base
 schema for article/project/rule/auth tables.
 """
 
-from alembic import op
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
 
 revision = "20250101_001"
 down_revision = None

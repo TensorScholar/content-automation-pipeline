@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Quick admin user creation with explicit connect timeout for Neon cloud DB."""
-import asyncio, os, sys, uuid
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from dotenv import load_dotenv
-load_dotenv()
+import asyncio
+import os
+import sys
+import uuid
 
 import asyncpg
-from security import get_password_hash
+from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+load_dotenv()
+
+from security import get_password_hash  # noqa: E402
 
 EMAIL = "admin@smarlux.com"
 PASSWORD = "Admin@123456"

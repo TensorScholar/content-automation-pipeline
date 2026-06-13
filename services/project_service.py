@@ -450,8 +450,9 @@ class ProjectService:
             Rulebook instance or None if not found
         """
         from sqlalchemy import select
-        from infrastructure.schema import rulebooks_table
+
         from core.models import Rulebook
+        from infrastructure.schema import rulebooks_table
 
         query = (
             select(rulebooks_table)

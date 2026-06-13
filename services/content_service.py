@@ -394,6 +394,7 @@ class ContentService:
             Batch status information with per-task breakdown
         """
         from celery.result import AsyncResult
+
         from orchestration.celery_app import app as celery_app
 
         task_ids = [tid.strip() for tid in batch_id.split(",") if tid.strip()]

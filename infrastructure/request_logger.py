@@ -22,6 +22,7 @@ from typing import Any, Callable, Optional
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from structlog import get_logger
+
 from infrastructure.redaction import redact_secrets
 
 logger = get_logger(__name__)

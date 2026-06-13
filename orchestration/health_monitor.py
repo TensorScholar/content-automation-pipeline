@@ -16,14 +16,15 @@ Run as: poetry run python orchestration/health_monitor.py
 
 import asyncio
 import json
-import time
 import logging
+import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
+
+import httpx
 import redis
 from celery import Celery
-from dataclasses import dataclass
-import httpx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

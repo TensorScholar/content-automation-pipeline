@@ -20,7 +20,8 @@ Usage:
 """
 
 import random
-from locust import HttpUser, task, between, events
+
+from locust import HttpUser, between, events, task
 from locust.contrib.fasthttp import FastHttpUser
 
 

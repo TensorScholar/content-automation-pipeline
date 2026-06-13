@@ -32,8 +32,8 @@ from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
 from security import User, get_current_active_user, get_current_superuser
 from services.content_memory_service import ContentMemoryService
-from services.project_service import ProjectService
 from services.project_readiness_service import ProjectReadinessService
+from services.project_service import ProjectService
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -587,9 +587,10 @@ async def test_wordpress_connection(
     - After saving credentials (verification)
     - When troubleshooting failed article uploads
     """
-    from knowledge.project_repository import ProjectRepository
-    from execution.distributer import Distributor
     from loguru import logger
+
+    from execution.distributer import Distributor
+    from knowledge.project_repository import ProjectRepository
 
     try:
         # Get project with WordPress configuration

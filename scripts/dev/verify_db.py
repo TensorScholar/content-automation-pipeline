@@ -6,8 +6,10 @@ import sys
 # Add parent directory to path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from infrastructure.database import DatabaseManager
 from sqlalchemy import text
+
+from infrastructure.database import DatabaseManager
+
 
 async def main():
     print("🔌 Connecting to database...")

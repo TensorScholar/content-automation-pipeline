@@ -6,12 +6,14 @@ Creates all tables and adds initial superuser
 import asyncio
 import os
 import sys
+import uuid
+
+import bcrypt
 from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+
 from infrastructure.schema import metadata
-import bcrypt
-import uuid
 
 # Load environment variables
 load_dotenv()
@@ -53,7 +55,7 @@ async def init_database():
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\""))
             try:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            except:
+            except Exception:
                 pass
 
             print("\n🏗️  Creating fresh database tables...")

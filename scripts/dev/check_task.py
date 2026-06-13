@@ -6,8 +6,10 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from infrastructure.database import DatabaseManager
 from sqlalchemy import text
+
+from infrastructure.database import DatabaseManager
+
 
 async def check_task(task_id):
     db = DatabaseManager()

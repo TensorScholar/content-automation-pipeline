@@ -1,15 +1,18 @@
-import pytest
-import unittest.mock
+from unittest.mock import MagicMock, patch
+
 import bleach
+import pytest
+
 from core.exceptions import ValidationError
-from intelligence.semantic_analyzer import SemanticAnalyzer, MAX_TEXT_LENGTH
+from intelligence.semantic_analyzer import MAX_TEXT_LENGTH, SemanticAnalyzer
+
 
 @pytest.mark.asyncio
 async def test_semantic_input_sanitization():
     """Verify that dangerous HTML inputs are sanitized before processing."""
     mock_redis = MagicMock()
     # Mock model to avoid loading heavy weights
-    with unittest.mock.patch("intelligence.semantic_analyzer.SentenceTransformer") as MockTransformer:
+    with patch("intelligence.semantic_analyzer.SentenceTransformer") as MockTransformer:
         MockTransformer.return_value.get_sentence_embedding_dimension.return_value = 384
         MockTransformer.return_value.encode.return_value = [0.1] * 384
 
@@ -50,5 +53,3 @@ async def test_semantic_input_length_limit():
         await analyzer.embed(huge_input)
 
     assert f"exceeds maximum allowed {MAX_TEXT_LENGTH}" in str(exc.value)
-
-from unittest.mock import MagicMock

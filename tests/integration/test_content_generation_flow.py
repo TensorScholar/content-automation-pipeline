@@ -9,9 +9,10 @@ End-to-end tests for content generation workflow ensuring:
 - Error recovery and retries
 """
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 
 class TestContentGenerationWorkflow:

@@ -9,12 +9,14 @@ Safe to run multiple times — idempotent.
 import asyncio
 import os
 import sys
+import uuid
+
 from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+
 from infrastructure.schema import metadata
 from security import get_password_hash
-import uuid
 
 load_dotenv()
 

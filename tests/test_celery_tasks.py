@@ -15,7 +15,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -41,7 +41,7 @@ class TestNotifyAdmin:
             with patch('api.dependencies.get_database'):
                 with patch('api.dependencies.get_metrics'):
                     with patch('api.dependencies.get_redis'):
-                        from orchestration.tasks import notify_admin, SMTP_ENABLED
+                        from orchestration.tasks import SMTP_ENABLED, notify_admin
 
                         # SMTP should be disabled
                         result = notify_admin(
@@ -103,7 +103,7 @@ class TestRouteToDeadLetterQueue:
                     if 'orchestration.tasks' in sys.modules:
                         del sys.modules['orchestration.tasks']
 
-                    from orchestration.tasks import route_to_dead_letter_queue, app
+                    from orchestration.tasks import app, route_to_dead_letter_queue
 
                     # Mock app.send_task
                     app.send_task = MagicMock()

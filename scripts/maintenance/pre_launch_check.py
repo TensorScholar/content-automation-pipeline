@@ -14,14 +14,14 @@ This script validates:
 - Dashboard connectivity
 """
 
-import sys
-import os
-import time
-import json
-import subprocess
-from typing import Dict, List, Tuple, Optional
-from datetime import datetime
 import asyncio
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
 
 # Color codes for terminal output

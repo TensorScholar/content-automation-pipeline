@@ -11,14 +11,15 @@ Usage:
     python scripts/dev/start.py --all    # Start API + UI + Celery worker
 """
 
+import os
+import signal
 import subprocess
 import sys
 import time
 import webbrowser
-import os
-import signal
-import requests
 from typing import Tuple
+
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables

@@ -13,10 +13,9 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 from loguru import logger
 
-from intelligence.semantic_analyzer import SemanticAnalyzer
 from config.settings import get_settings
+from intelligence.semantic_analyzer import SemanticAnalyzer
 from optimization.cache_manager import CacheManager
-
 
 if TYPE_CHECKING:
     from infrastructure.llm_client import AbstractLLMClient

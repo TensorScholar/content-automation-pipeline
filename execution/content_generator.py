@@ -33,8 +33,8 @@ from uuid import UUID
 from bs4 import BeautifulSoup
 from loguru import logger
 
-from core.exceptions import WorkflowError
 from config.settings import get_settings
+from core.exceptions import WorkflowError
 from core.models import ContentPlan, GeneratedArticle, Keyword, QualityMetrics
 from infrastructure.llm_client import UnifiedLLMClient
 from infrastructure.monitoring import MetricsCollector
@@ -747,8 +747,8 @@ CRITICAL FORMAT REQUIREMENTS:
         Returns:
             ValidationDetails with specific issues and overall validation result
         """
-        from core.models import ValidationDetails, ValidationIssue
         from core.enums import ValidationResult
+        from core.models import ValidationDetails, ValidationIssue
 
         issues = []
 
@@ -862,6 +862,7 @@ CRITICAL FORMAT REQUIREMENTS:
             Clean HTML content ready to be wrapped
         """
         import re
+
         from bs4 import BeautifulSoup
 
         # Try to import markdown library, use fallback if not available

@@ -3,12 +3,17 @@
 Quick test to verify session persistence works
 """
 import sys
+
 sys.path.insert(0, '.')
 
 # Test imports
 try:
-    from dashboard_utils import save_session_to_storage, load_session_from_storage, check_token_expiry
-    from dashboard_operation_manager import get_operation_manager, OperationType
+    from dashboard_operation_manager import OperationType, get_operation_manager
+    from dashboard_utils import (
+        check_token_expiry,
+        load_session_from_storage,
+        save_session_to_storage,
+    )
     print("✅ All imports successful")
 except ImportError as e:
     print(f"❌ Import failed: {e}")

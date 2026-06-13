@@ -10,10 +10,6 @@ import sys
 from typing import Any, Dict, Optional
 
 import structlog
-from infrastructure.redaction import (
-    configure_loguru_redaction,
-    structlog_redaction_processor,
-)
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     REGISTRY,
@@ -22,6 +18,11 @@ from prometheus_client import (
     Gauge,
     Histogram,
     generate_latest,
+)
+
+from infrastructure.redaction import (
+    configure_loguru_redaction,
+    structlog_redaction_processor,
 )
 
 
@@ -72,10 +73,10 @@ def configure_opentelemetry() -> None:
             return
 
         from opentelemetry import trace
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.resources import Resource, SERVICE_NAME
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         # Create resource with service name
         resource = Resource.create({

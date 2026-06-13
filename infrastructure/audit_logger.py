@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 
 from loguru import logger
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, JSON, String, Boolean, Text, Table, insert
+from sqlalchemy import JSON, Boolean, Column, DateTime, String, Table, Text, insert
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infrastructure.database import DatabaseManager

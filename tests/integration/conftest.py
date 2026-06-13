@@ -130,6 +130,7 @@ async def test_client():
     use httpx.AsyncClient with the app.
     """
     from httpx import AsyncClient
+
     from api.main import app
 
     # Disable rate limiting for tests

@@ -31,9 +31,10 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
-from security import get_password_hash, validate_password_strength
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.sql import text
+
+from security import get_password_hash, validate_password_strength
 
 # Email regex pattern for validation
 EMAIL_REGEX = re.compile(

@@ -8,7 +8,6 @@ API routes and services can reuse the same logic.
 
 from typing import Optional, Tuple
 
-
 TERMINAL_STATES = {"SUCCESS", "FAILURE", "REVOKED"}
 ACTIVE_STATES = {"PENDING", "STARTED", "RETRY", "PROCESSING"}
 
