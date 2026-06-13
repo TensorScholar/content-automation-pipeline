@@ -100,6 +100,16 @@ services:
       LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      LLM_DAILY_COST_LIMIT_USD: ${LLM_DAILY_COST_LIMIT_USD:-10}
+      LLM_MONTHLY_COST_LIMIT_USD: ${LLM_MONTHLY_COST_LIMIT_USD:-100}
+      LLM_PROJECT_DAILY_COST_LIMIT_USD: ${LLM_PROJECT_DAILY_COST_LIMIT_USD:-0}
+      LLM_PROJECT_MONTHLY_COST_LIMIT_USD: ${LLM_PROJECT_MONTHLY_COST_LIMIT_USD:-0}
+      LLM_USER_DAILY_COST_LIMIT_USD: ${LLM_USER_DAILY_COST_LIMIT_USD:-0}
+      LLM_USER_MONTHLY_COST_LIMIT_USD: ${LLM_USER_MONTHLY_COST_LIMIT_USD:-0}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       ENVIRONMENT: production
       DEBUG: "false"
       MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
@@ -114,6 +124,7 @@ services:
       dockerfile: Dockerfile
     image: content-automation-pipeline:${IMAGE_TAG:-latest}
     # Note: container_name removed to support replicas
+    init: true
     restart: unless-stopped
     command: ["api"]
     depends_on:
@@ -159,6 +170,16 @@ services:
 
       # Security
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      LLM_DAILY_COST_LIMIT_USD: ${LLM_DAILY_COST_LIMIT_USD:-10}
+      LLM_MONTHLY_COST_LIMIT_USD: ${LLM_MONTHLY_COST_LIMIT_USD:-100}
+      LLM_PROJECT_DAILY_COST_LIMIT_USD: ${LLM_PROJECT_DAILY_COST_LIMIT_USD:-0}
+      LLM_PROJECT_MONTHLY_COST_LIMIT_USD: ${LLM_PROJECT_MONTHLY_COST_LIMIT_USD:-0}
+      LLM_USER_DAILY_COST_LIMIT_USD: ${LLM_USER_DAILY_COST_LIMIT_USD:-0}
+      LLM_USER_MONTHLY_COST_LIMIT_USD: ${LLM_USER_MONTHLY_COST_LIMIT_USD:-0}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
 
@@ -213,6 +234,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     image: content-automation-frontend:${IMAGE_TAG:-latest}
     container_name: content-automation-frontend-prod
+    init: true
     restart: unless-stopped
     depends_on:
       api:
@@ -261,18 +283,19 @@ services:
       dockerfile: Dockerfile
     image: content-automation-pipeline:${IMAGE_TAG:-latest}
     # Note: container_name removed to support replicas
+    init: true
     restart: unless-stopped
     command: ["worker"]
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "celery -A orchestration.celery_app.app inspect ping --timeout=5 -d celery@$$HOSTNAME | grep -q pong",
+          "timeout 15s celery --broker=$$CELERY_BROKER_URL inspect ping --timeout=5 -d celery@$$HOSTNAME | grep -q pong",
         ]
-      interval: 30s
-      timeout: 10s
+      interval: 60s
+      timeout: 20s
       retries: 3
-      start_period: 30s
+      start_period: 180s
     depends_on:
       postgres:
         condition: service_healthy
@@ -302,6 +325,16 @@ services:
       LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      LLM_DAILY_COST_LIMIT_USD: ${LLM_DAILY_COST_LIMIT_USD:-10}
+      LLM_MONTHLY_COST_LIMIT_USD: ${LLM_MONTHLY_COST_LIMIT_USD:-100}
+      LLM_PROJECT_DAILY_COST_LIMIT_USD: ${LLM_PROJECT_DAILY_COST_LIMIT_USD:-0}
+      LLM_PROJECT_MONTHLY_COST_LIMIT_USD: ${LLM_PROJECT_MONTHLY_COST_LIMIT_USD:-0}
+      LLM_USER_DAILY_COST_LIMIT_USD: ${LLM_USER_DAILY_COST_LIMIT_USD:-0}
+      LLM_USER_MONTHLY_COST_LIMIT_USD: ${LLM_USER_MONTHLY_COST_LIMIT_USD:-0}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -342,6 +375,7 @@ services:
       dockerfile: Dockerfile
     image: content-automation-pipeline:${IMAGE_TAG:-latest}
     container_name: content-automation-celery-beat-prod
+    init: true
     restart: unless-stopped
     command: ["beat"]
     depends_on:
@@ -373,6 +407,16 @@ services:
       LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      LLM_DAILY_COST_LIMIT_USD: ${LLM_DAILY_COST_LIMIT_USD:-10}
+      LLM_MONTHLY_COST_LIMIT_USD: ${LLM_MONTHLY_COST_LIMIT_USD:-100}
+      LLM_PROJECT_DAILY_COST_LIMIT_USD: ${LLM_PROJECT_DAILY_COST_LIMIT_USD:-0}
+      LLM_PROJECT_MONTHLY_COST_LIMIT_USD: ${LLM_PROJECT_MONTHLY_COST_LIMIT_USD:-0}
+      LLM_USER_DAILY_COST_LIMIT_USD: ${LLM_USER_DAILY_COST_LIMIT_USD:-0}
+      LLM_USER_MONTHLY_COST_LIMIT_USD: ${LLM_USER_MONTHLY_COST_LIMIT_USD:-0}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -397,6 +441,7 @@ services:
       dockerfile: Dockerfile
     image: content-automation-pipeline:${IMAGE_TAG:-latest}
     container_name: content-automation-flower-prod
+    init: true
     restart: unless-stopped
     # SECURITY: No default credentials - deployment will fail if not set
     command: >
@@ -428,6 +473,16 @@ services:
       LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      LLM_DAILY_COST_LIMIT_USD: ${LLM_DAILY_COST_LIMIT_USD:-10}
+      LLM_MONTHLY_COST_LIMIT_USD: ${LLM_MONTHLY_COST_LIMIT_USD:-100}
+      LLM_PROJECT_DAILY_COST_LIMIT_USD: ${LLM_PROJECT_DAILY_COST_LIMIT_USD:-0}
+      LLM_PROJECT_MONTHLY_COST_LIMIT_USD: ${LLM_PROJECT_MONTHLY_COST_LIMIT_USD:-0}
+      LLM_USER_DAILY_COST_LIMIT_USD: ${LLM_USER_DAILY_COST_LIMIT_USD:-0}
+      LLM_USER_MONTHLY_COST_LIMIT_USD: ${LLM_USER_MONTHLY_COST_LIMIT_USD:-0}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
       ENVIRONMENT: production
@@ -451,6 +506,7 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile
+    image: content-automation-pipeline-nginx:${IMAGE_TAG:-latest}
     container_name: content-automation-nginx-prod
     restart: unless-stopped
     depends_on:
