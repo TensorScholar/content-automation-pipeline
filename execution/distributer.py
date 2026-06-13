@@ -63,14 +63,15 @@ class Distributor:
 
         class GutenbergParser(HTMLParser):
             """SAX-style HTML parser that emits Gutenberg block wrappers."""
+
             BLOCK_MAP = {
-                "h2": ('<!-- wp:heading {"level":2} -->', '<!-- /wp:heading -->'),
-                "h3": ('<!-- wp:heading {"level":3} -->', '<!-- /wp:heading -->'),
-                "h4": ('<!-- wp:heading {"level":4} -->', '<!-- /wp:heading -->'),
-                "p":  ('<!-- wp:paragraph -->', '<!-- /wp:paragraph -->'),
-                "ul": ('<!-- wp:list -->', '<!-- /wp:list -->'),
-                "ol": ('<!-- wp:list {"ordered":true} -->', '<!-- /wp:list -->'),
-                "blockquote": ('<!-- wp:quote -->', '<!-- /wp:quote -->'),
+                "h2": ('<!-- wp:heading {"level":2} -->', "<!-- /wp:heading -->"),
+                "h3": ('<!-- wp:heading {"level":3} -->', "<!-- /wp:heading -->"),
+                "h4": ('<!-- wp:heading {"level":4} -->', "<!-- /wp:heading -->"),
+                "p": ("<!-- wp:paragraph -->", "<!-- /wp:paragraph -->"),
+                "ul": ("<!-- wp:list -->", "<!-- /wp:list -->"),
+                "ol": ('<!-- wp:list {"ordered":true} -->', "<!-- /wp:list -->"),
+                "blockquote": ("<!-- wp:quote -->", "<!-- /wp:quote -->"),
             }
 
             def __init__(self):
@@ -79,9 +80,19 @@ class Distributor:
                 self._stack: list[str] = []
 
             def handle_starttag(self, tag, attrs):
-                attr_str = "".join(
-                    f' {k}="{v}"' if v else f" {k}" for k, v in attrs
-                )
+                if tag == "blockquote":
+                    attrs = list(attrs)
+                    for index, (name, value) in enumerate(attrs):
+                        if name == "class":
+                            classes = (value or "").split()
+                            if "wp-block-quote" not in classes:
+                                classes.append("wp-block-quote")
+                            attrs[index] = (name, " ".join(classes))
+                            break
+                    else:
+                        attrs.append(("class", "wp-block-quote"))
+
+                attr_str = "".join(f' {k}="{v}"' if v else f" {k}" for k, v in attrs)
                 raw = f"<{tag}{attr_str}>"
                 if tag in self.BLOCK_MAP:
                     self._out.append(self.BLOCK_MAP[tag][0] + "\n")

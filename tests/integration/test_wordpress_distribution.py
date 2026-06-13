@@ -16,17 +16,17 @@ Date: December 29, 2025
 """
 
 import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
 import uuid
-import httpx
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from execution.distributer import Distributor
-from core.models import GeneratedArticle, Project, QualityMetrics
-from core.exceptions import DistributionError
+import httpx
+import pytest
 from pydantic import SecretStr
 
+from core.exceptions import DistributionError
+from core.models import GeneratedArticle, Project, QualityMetrics
+from execution.distributer import Distributor
 
 # ============================================================================
 # FIXTURES
@@ -38,6 +38,7 @@ def sample_article():
     return GeneratedArticle(
         id=uuid.uuid4(),
         project_id=uuid.uuid4(),
+        content_plan_id=uuid.uuid4(),
         topic="تست موضوع",
         title="راهنمای کامل تست WordPress",
         content="""
@@ -56,13 +57,16 @@ def sample_article():
         <blockquote>این یک نقل قول است.</blockquote>
         """,
         meta_description="این یک توضیح متا برای تست است که باید بین 120 تا 160 کاراکتر باشد تا در نتایج جستجو به درستی نمایش داده شود.",
-        keywords=["تست", "wordpress", "توزیع محتوا", "SEO", "وبلاگ"],
+        keywords=[],
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
         quality_metrics=QualityMetrics(
             readability_score=75.0,
             word_count=250,
-            seo_score=85.0
+            lexical_diversity=0.72,
+            keyword_density={"تست": 0.03, "wordpress": 0.02},
+            avg_sentence_length=14.0,
+            paragraph_count=5,
         ),
         total_cost_usd=0.05,
         total_tokens_used=500,
@@ -398,8 +402,17 @@ def test_convert_to_gutenberg_blocks_blockquotes(distributor):
     result = distributor.convert_to_gutenberg_blocks(html)
 
     assert '<!-- wp:quote -->' in result
-    assert 'wp-block-quote' in result
+    assert '<blockquote class="wp-block-quote">' in result
     assert '<!-- /wp:quote -->' in result
+
+
+def test_convert_to_gutenberg_blocks_preserves_blockquote_classes(distributor):
+    """Test Gutenberg conversion merges the canonical quote class."""
+    html = '<blockquote class="featured">This is a quote</blockquote>'
+
+    result = distributor.convert_to_gutenberg_blocks(html)
+
+    assert '<blockquote class="featured wp-block-quote">' in result
 
 
 # ============================================================================
@@ -429,6 +442,7 @@ def test_generate_schema_markup_with_faq(distributor, sample_article):
 
 def test_generate_schema_markup_keywords(distributor, sample_article):
     """Test schema.org markup includes keywords."""
+    sample_article.keywords = ["تست", "wordpress", "توزیع محتوا", "SEO", "وبلاگ"]
     schema = distributor.generate_schema_markup(sample_article)
 
     for keyword in sample_article.keywords:
@@ -481,36 +495,20 @@ async def test_exponential_backoff_timing(distributor, sample_article, sample_pr
 # EDGE CASES AND ERROR SCENARIOS
 # ============================================================================
 
-@pytest.mark.asyncio
-async def test_distribute_empty_content(distributor, sample_article, sample_project):
-    """Test distribution with empty content."""
-    sample_article.content = ""
-    mock_validation = AsyncMock(return_value=(True, ""))
-
-    mock_response = MagicMock()
-    mock_response.status_code = 201
-    mock_response.json.return_value = {"id": 999, "link": "https://test-blog.com/p/999"}
-    mock_response.raise_for_status = MagicMock()
-
-    mock_update_response = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
-    mock_client.__aexit__.return_value = None
-    mock_client.post.side_effect = [mock_response, mock_update_response]
-
-    with patch.object(distributor, "validate_wordpress_connection", mock_validation):
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await distributor.distribute_to_wordpress(sample_article, sample_project)
-
-            assert result["status"] == "published"
+def test_generated_article_rejects_empty_content(sample_article):
+    """Test invalid empty content is rejected before distribution."""
+    with pytest.raises(ValueError, match="at least 100 characters"):
+        sample_article.content = ""
 
 
 @pytest.mark.asyncio
 async def test_distribute_unicode_content(distributor, sample_article, sample_project):
     """Test distribution with Unicode/Persian content."""
     sample_article.title = "راهنمای کامل محتوای فارسی 🚀"
-    sample_article.content = "<p>این یک تست با محتوای فارسی و ایموجی است 😊</p>"
+    sample_article.content = (
+        "<p>این یک تست با محتوای فارسی و ایموجی است 😊 که برای بررسی انتشار "
+        "صحیح نویسه‌های یونیکد در وردپرس به اندازه کافی طولانی نوشته شده است.</p>"
+    )
 
     mock_validation = AsyncMock(return_value=(True, ""))
     mock_response = MagicMock()
@@ -557,7 +555,8 @@ async def test_connection_pooling_limits(distributor, sample_article, sample_pro
 
     def capture_client(*args, **kwargs):
         nonlocal captured_limits
-        captured_limits = kwargs.get('limits')
+        if kwargs.get("limits") is not None:
+            captured_limits = kwargs["limits"]
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
