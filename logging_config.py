@@ -16,6 +16,8 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from infrastructure.redaction import redact_secrets, redact_text
+
 # Determine environment
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -42,7 +44,7 @@ class JSONFormatter(logging.Formatter):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_text(record.getMessage()),
         }
 
         # Add correlation ID if present
@@ -57,22 +59,40 @@ class JSONFormatter(logging.Formatter):
         if record.exc_info:
             log_data["exception"] = {
                 "type": record.exc_info[0].__name__ if record.exc_info[0] else None,
-                "message": str(record.exc_info[1]) if record.exc_info[1] else None,
-                "traceback": self.formatException(record.exc_info),
+                "message": redact_text(str(record.exc_info[1])) if record.exc_info[1] else None,
+                "traceback": redact_text(self.formatException(record.exc_info)),
             }
 
         # Add extra fields (excluding standard LogRecord attributes)
         standard_attrs = {
-            "name", "msg", "args", "created", "filename", "funcName",
-            "levelname", "levelno", "lineno", "module", "msecs", "pathname",
-            "process", "processName", "relativeCreated", "stack_info",
-            "thread", "threadName", "exc_info", "exc_text", "message",
-            "correlation_id", "request_id"
+            "name",
+            "msg",
+            "args",
+            "created",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "module",
+            "msecs",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "stack_info",
+            "thread",
+            "threadName",
+            "exc_info",
+            "exc_text",
+            "message",
+            "correlation_id",
+            "request_id",
         }
 
         extra = {k: v for k, v in record.__dict__.items() if k not in standard_attrs}
         if extra:
-            log_data["extra"] = extra
+            log_data["extra"] = redact_secrets(extra)
 
         return json.dumps(log_data, default=str)
 
@@ -85,11 +105,11 @@ class DevelopmentFormatter(logging.Formatter):
     """
 
     COLORS = {
-        "DEBUG": "\033[36m",    # Cyan
-        "INFO": "\033[32m",     # Green
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",    # Red
-        "CRITICAL": "\033[35m", # Magenta
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
         "RESET": "\033[0m",
     }
 
@@ -105,7 +125,7 @@ class DevelopmentFormatter(logging.Formatter):
         else:
             level_str = f"{level:8}"
 
-        message = record.getMessage()
+        message = redact_text(record.getMessage())
 
         # Add correlation ID if present
         correlation = ""

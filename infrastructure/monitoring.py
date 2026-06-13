@@ -10,6 +10,10 @@ import sys
 from typing import Any, Dict, Optional
 
 import structlog
+from infrastructure.redaction import (
+    configure_loguru_redaction,
+    structlog_redaction_processor,
+)
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     REGISTRY,
@@ -31,6 +35,7 @@ def configure_structlog() -> None:
     - Exception formatting with stack traces
     - JSON rendering
     """
+    configure_loguru_redaction()
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -38,6 +43,7 @@ def configure_structlog() -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.dev.set_exc_info,
             structlog.processors.TimeStamper(fmt="iso"),
+            structlog_redaction_processor,
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),

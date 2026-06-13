@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import DatabaseError, NotFoundError
 from core.models import InferredPatterns, Project
+from infrastructure.credential_encryption import encrypt_credential
 from infrastructure.database import DatabaseManager
 from infrastructure.redis_client import RedisClient
 from infrastructure.schema import (
@@ -48,7 +49,9 @@ class ProjectRepository:
     - Redis caching for read-heavy operations
     """
 
-    def __init__(self, database_manager: DatabaseManager, redis_client: Optional[RedisClient] = None):
+    def __init__(
+        self, database_manager: DatabaseManager, redis_client: Optional[RedisClient] = None
+    ):
         """
         Initialize repository with database manager and optional Redis client.
 
@@ -58,6 +61,17 @@ class ProjectRepository:
         """
         self.database_manager = database_manager
         self.redis_client = redis_client
+
+    @staticmethod
+    def _encrypted_wordpress_password(value) -> Optional[str]:
+        if value is None:
+            return None
+        from config.settings import get_settings
+
+        return encrypt_credential(
+            value,
+            get_settings().credential_encryption_key,
+        )
 
     # =========================================================================
     # CREATE OPERATIONS
@@ -90,10 +104,8 @@ class ProjectRepository:
                         telegram_channel=project.telegram_channel,
                         wordpress_url=str(project.wordpress_url) if project.wordpress_url else None,
                         wordpress_username=project.wordpress_username,
-                        wordpress_app_password=(
-                            project.wordpress_app_password.get_secret_value()
-                            if project.wordpress_app_password
-                            else None
+                        wordpress_app_password=self._encrypted_wordpress_password(
+                            project.wordpress_app_password
                         ),
                         created_at=func.now(),
                         updated_at=func.now(),
@@ -146,31 +158,29 @@ class ProjectRepository:
                 values = []
                 for project in projects:
                     project_id = project.id or uuid4()
-                    values.append({
-                        "id": project_id,
-                        "name": project.name,
-                        "domain": str(project.domain) if project.domain else None,
-                        "description": project.description,
-                        "vertical": project.vertical,
-                        "telegram_channel": project.telegram_channel,
-                        "wordpress_url": str(project.wordpress_url) if project.wordpress_url else None,
-                        "wordpress_username": project.wordpress_username,
-                        "wordpress_app_password": (
-                            project.wordpress_app_password.get_secret_value()
-                            if project.wordpress_app_password
-                            else None
-                        ),
-                        "created_at": func.now(),
-                        "updated_at": func.now(),
-                        "last_active": func.now(),
-                    })
+                    values.append(
+                        {
+                            "id": project_id,
+                            "name": project.name,
+                            "domain": str(project.domain) if project.domain else None,
+                            "description": project.description,
+                            "vertical": project.vertical,
+                            "telegram_channel": project.telegram_channel,
+                            "wordpress_url": str(project.wordpress_url)
+                            if project.wordpress_url
+                            else None,
+                            "wordpress_username": project.wordpress_username,
+                            "wordpress_app_password": self._encrypted_wordpress_password(
+                                project.wordpress_app_password
+                            ),
+                            "created_at": func.now(),
+                            "updated_at": func.now(),
+                            "last_active": func.now(),
+                        }
+                    )
 
                 # Single INSERT with multiple VALUES, returning all rows
-                query = (
-                    insert(projects_table)
-                    .values(values)
-                    .returning(projects_table)
-                )
+                query = insert(projects_table).values(values).returning(projects_table)
 
                 result = await session.execute(query)
                 rows = result.fetchall()
@@ -324,6 +334,11 @@ class ProjectRepository:
 
             if not valid_updates:
                 return await self.get_by_id(project_id)
+
+            if "wordpress_app_password" in valid_updates:
+                valid_updates["wordpress_app_password"] = self._encrypted_wordpress_password(
+                    valid_updates["wordpress_app_password"]
+                )
 
             valid_updates["updated_at"] = func.now()
 
@@ -785,14 +800,14 @@ class ProjectRepository:
             id=row.id,
             name=row.name,
             domain=row.domain,
-            description=getattr(row, 'description', None),
-            vertical=getattr(row, 'vertical', None),
+            description=getattr(row, "description", None),
+            vertical=getattr(row, "vertical", None),
             telegram_channel=row.telegram_channel,
             wordpress_url=getattr(row, "wordpress_url", None),
             wordpress_username=getattr(row, "wordpress_username", None),
             wordpress_app_password=getattr(row, "wordpress_app_password", None),
             created_at=row.created_at,
-            updated_at=getattr(row, 'updated_at', None),
+            updated_at=getattr(row, "updated_at", None),
             last_active=row.last_active or row.created_at,  # Use created_at if last_active is None
             total_articles_generated=row.total_articles_generated,
             total_tokens_consumed=row.total_tokens_consumed,

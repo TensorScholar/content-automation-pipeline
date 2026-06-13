@@ -244,3 +244,42 @@ users_table = Table(
     Column("created_at", DateTime, default=func.now()),
     Column("updated_at", DateTime, default=func.now(), onupdate=func.now()),
 )
+
+# Persistent provider usage and distributed cost reservations. Prompt bodies
+# are deliberately excluded to avoid retaining customer content.
+llm_usage_records_table = Table(
+    "llm_usage_records",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column("provider", String(50), nullable=False, index=True),
+    Column("model", String(255), nullable=False, index=True),
+    Column("operation_type", String(100), nullable=False, index=True),
+    Column(
+        "project_id",
+        PG_UUID,
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    ),
+    Column(
+        "user_id",
+        PG_UUID,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    ),
+    Column("task_id", String(255), nullable=True, index=True),
+    Column("prompt_tokens", Integer, nullable=False, default=0),
+    Column("completion_tokens", Integer, nullable=False, default=0),
+    Column("total_tokens", Integer, nullable=False, default=0),
+    Column("estimated_cost_usd", Numeric(14, 6), nullable=False, default=0),
+    Column("actual_cost_usd", Numeric(14, 6), nullable=False, default=0),
+    Column("status", String(20), nullable=False, index=True),
+    Column("error_category", String(100), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, default=func.now(), index=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("reservation_expires_at", DateTime(timezone=True), nullable=True, index=True),
+    Index("idx_llm_usage_project_created", "project_id", "created_at"),
+    Index("idx_llm_usage_user_created", "user_id", "created_at"),
+    Index("idx_llm_usage_status_expiry", "status", "reservation_expires_at"),
+)

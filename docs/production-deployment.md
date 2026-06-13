@@ -29,6 +29,7 @@ Production must set these values in `.env` or the deployment environment:
 - `CELERY_BROKER_URL`
 - `CELERY_RESULT_BACKEND`
 - `SECRET_KEY`
+- `CREDENTIAL_ENCRYPTION_KEY`
 - `ALLOWED_HOSTS`
 - `CORS_ORIGINS`
 - `LLM_PROVIDER`
@@ -37,6 +38,14 @@ Production must set these values in `.env` or the deployment environment:
   - `OPENAI_API_KEY` or `LLM_OPENAI_API_KEY` when `LLM_PROVIDER=openai`
   - `ANTHROPIC_API_KEY` or `LLM_ANTHROPIC_API_KEY` when `LLM_PROVIDER=anthropic`
   - `LOCAL_LLM_URL` when `LLM_PROVIDER=local`
+- `LLM_DAILY_COST_LIMIT_USD`
+- `LLM_MONTHLY_COST_LIMIT_USD`
+
+Optional production settings:
+
+- project/user LLM limit variables documented in `docs/llm-cost-control.md`
+- `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, and `SENTRY_TRACES_SAMPLE_RATE`
+- `BACKUP_DIR` and `RETENTION_DAYS` for host-side PostgreSQL backups
 
 Do not commit real secret values.
 
@@ -106,14 +115,38 @@ Docker network. The production nginx config blocks both `/metrics` and
 Always take a database backup before running migrations:
 
 ```bash
-scripts/maintenance/backup_database.sh
+BACKUP_DIR=./backups RETENTION_DAYS=7 \
+  scripts/maintenance/backup_database.sh
 ```
 
-## Known Phase 1 Limitations
+Backups are written on the Docker host, not inside an ephemeral container.
+Copy them to encrypted off-server or object storage. Validate a backup without
+changing the database:
 
-- WordPress credentials still need encryption-at-rest hardening.
-- LLM cost accounting still needs a persistent distributed quota ledger.
+```bash
+scripts/maintenance/restore_database.sh backups/content_automation_TIMESTAMP.dump
+```
+
+Restore only during a maintenance window:
+
+```bash
+scripts/maintenance/restore_database.sh \
+  backups/content_automation_TIMESTAMP.dump --confirm
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+docker compose -f docker-compose.prod.yml up -d api worker celery-beat frontend nginx
+docker compose -f docker-compose.prod.yml exec -T api \
+  python scripts/maintenance/production_smoke_check.py \
+    --api-url http://api:8000 \
+    --frontend-url http://frontend:3001 \
+    --nginx-url http://nginx
+```
+
+## Known Phase 2 Limitations
+
 - Generated exports still use local storage.
-- Sentry or equivalent error tracking is not wired as a required service.
-- Prompt-injection policy and moderation boundaries are still Phase 2 work.
+- Sentry remains optional and must be configured by the operator.
+- Backups require an external scheduler and off-server replication.
+- Legacy plaintext WordPress credentials remain readable until updated or
+  migrated under an operator-controlled credential rotation.
+- Prompt-injection policy and moderation boundaries remain future work.
 - Full browser E2E coverage is not yet required by CI.

@@ -40,7 +40,9 @@ class SyncProjectRepository:
         """
         try:
             query = """
-                SELECT id, name, domain, telegram_channel, created_at, updated_at,
+                SELECT id, name, domain, description, vertical, telegram_channel,
+                       wordpress_url, wordpress_username, wordpress_app_password,
+                       created_at, updated_at,
                        last_active, total_articles_generated, total_tokens_consumed,
                        total_cost_usd
                 FROM projects
@@ -58,16 +60,21 @@ class SyncProjectRepository:
             row = result[0]
 
             return Project(
-                id=row['id'],
-                name=row['name'],
-                domain=row['domain'],
-                telegram_channel=row['telegram_channel'],
-                created_at=row['created_at'],
-                updated_at=row['updated_at'],
-                last_active=row['last_active'] or row['created_at'],
-                total_articles_generated=row['total_articles_generated'],
-                total_tokens_consumed=row['total_tokens_consumed'],
-                total_cost_usd=float(row['total_cost_usd']) if row['total_cost_usd'] else 0.0,
+                id=row["id"],
+                name=row["name"],
+                domain=row["domain"],
+                description=row["description"],
+                vertical=row["vertical"],
+                telegram_channel=row["telegram_channel"],
+                wordpress_url=row["wordpress_url"],
+                wordpress_username=row["wordpress_username"],
+                wordpress_app_password=row["wordpress_app_password"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+                last_active=row["last_active"] or row["created_at"],
+                total_articles_generated=row["total_articles_generated"],
+                total_tokens_consumed=row["total_tokens_consumed"],
+                total_cost_usd=float(row["total_cost_usd"]) if row["total_cost_usd"] else 0.0,
             )
 
         except Exception as e:

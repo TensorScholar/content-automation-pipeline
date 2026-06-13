@@ -55,6 +55,7 @@ from api.schemas import (
 )
 from config.settings import settings
 from core.models import ContentPlan, GeneratedArticle, Project
+from infrastructure.error_tracking import initialize_sentry
 
 # Import structured logging and configure
 from infrastructure.monitoring import MetricsCollector, configure_structlog, get_logger
@@ -71,6 +72,7 @@ from services.project_service import ProjectService
 
 # Configure structlog for the application
 configure_structlog()
+initialize_sentry("api")
 logger = get_logger(__name__)
 
 
@@ -87,6 +89,7 @@ def _secret_is_configured(value) -> bool:
     if hasattr(value, "get_secret_value"):
         value = value.get_secret_value()
     return bool(str(value).strip())
+
 
 # ============================================================================
 # MIDDLEWARE STACK (Cross-Cutting Concerns)
@@ -140,10 +143,7 @@ class RequestTimeoutMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         try:
             # Use asyncio.wait_for to enforce timeout
-            response = await asyncio.wait_for(
-                call_next(request),
-                timeout=self.timeout_seconds
-            )
+            response = await asyncio.wait_for(call_next(request), timeout=self.timeout_seconds)
             return response
         except asyncio.TimeoutError:
             logger.warning(
@@ -152,14 +152,14 @@ class RequestTimeoutMiddleware(BaseHTTPMiddleware):
                     "path": request.url.path,
                     "method": request.method,
                     "request_id": getattr(request.state, "request_id", "unknown"),
-                }
+                },
             )
             return JSONResponse(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 content={
                     "detail": f"Request timeout after {self.timeout_seconds} seconds",
                     "request_id": getattr(request.state, "request_id", None),
-                }
+                },
             )
 
 
@@ -174,6 +174,7 @@ _keepalive_task: asyncio.Task | None = None
 async def _db_keepalive(database_manager) -> None:
     """Ping the DB every 4 minutes to keep Neon Cloud compute warm."""
     from sqlalchemy import text
+
     while True:
         await asyncio.sleep(240)  # 4 minutes
         try:
@@ -205,6 +206,7 @@ async def lifespan(app: FastAPI):
 
         # Check Python version
         import sys
+
         py_version = sys.version_info
         if py_version.major != 3 or py_version.minor < 11 or py_version.minor > 12:
             validation_warnings.append(
@@ -246,6 +248,7 @@ async def lifespan(app: FastAPI):
         # Check spacy model
         try:
             import spacy
+
             spacy.load("en_core_web_sm")
         except Exception:
             validation_warnings.append(
@@ -273,23 +276,30 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(database_manager.initialize(), timeout=60.0)
             logger.info("database_manager_initialized")
         except asyncio.TimeoutError:
-            logger.error("Database initialization timed out after 60s - connection pool may be exhausted")
+            logger.error(
+                "Database initialization timed out after 60s - connection pool may be exhausted"
+            )
             if settings.is_production:
                 raise RuntimeError("Failed to initialize database - connection pool timeout")
             else:
-                logger.warning("Continuing without database initialization (development mode - will retry on first request)")
+                logger.warning(
+                    "Continuing without database initialization (development mode - will retry on first request)"
+                )
 
         # Initialize FastAPI Limiter with raw Redis connection
         # FastAPILimiter requires native redis-py async client (with script_load method)
         try:
             redis_client = get_redis()
-            await asyncio.wait_for(redis_client.initialize(), timeout=10.0)  # Ensure pool is initialized
+            await asyncio.wait_for(
+                redis_client.initialize(), timeout=10.0
+            )  # Ensure pool is initialized
             raw_redis = await redis_client.get_raw_connection()
             await asyncio.wait_for(FastAPILimiter.init(raw_redis), timeout=5.0)
             logger.info("rate_limiter_initialized")
 
             # Initialize token blacklist for secure logout
             from infrastructure.token_blacklist import init_token_blacklist
+
             init_token_blacklist(redis_client)
             logger.info("token_blacklist_initialized")
         except asyncio.TimeoutError:
@@ -346,11 +356,11 @@ async def lifespan(app: FastAPI):
 
 # Initialize rate limit configuration
 rate_limit_config = RateLimitConfig(
-    default_limit=100,          # 100 requests per minute
+    default_limit=100,  # 100 requests per minute
     default_window=60,
-    auth_limit=20,              # 20 login attempts per minute (10 was too aggressive for testing)
+    auth_limit=20,  # 20 login attempts per minute (10 was too aggressive for testing)
     auth_window=60,
-    concurrent_limit=10,        # 10 concurrent requests per user
+    concurrent_limit=10,  # 10 concurrent requests per user
 )
 
 
@@ -479,7 +489,9 @@ async def root_health(request: Request):
             logger.warning(f"Redis health check failed: {e}")
 
         overall_status = (
-            "healthy" if all(_dependency_is_healthy(v) for v in dependencies.values()) else "degraded"
+            "healthy"
+            if all(_dependency_is_healthy(v) for v in dependencies.values())
+            else "degraded"
         )
         return HealthCheckResponse(
             status=overall_status,
@@ -516,7 +528,12 @@ app.add_middleware(
         "X-Request-ID",
         "X-Correlation-ID",
     ],
-    expose_headers=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+    expose_headers=[
+        "X-Request-ID",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+    ],
 )
 
 
@@ -540,6 +557,7 @@ class HostValidationMiddleware(BaseHTTPMiddleware):
 try:
     if not os.getenv("PYTEST_CURRENT_TEST"):
         import asyncio as _asyncio
+
         _redis_wrapper = get_redis()
         # Must pass raw AsyncRedis — the wrapper has no .pipeline() method
         # Use run_until_complete only if no event loop is running yet (module-level)
@@ -549,11 +567,14 @@ try:
         import os as _os
 
         from redis.asyncio import Redis as _AsyncRedis
+
         _raw_redis_for_middleware = _AsyncRedis.from_url(
             _os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
             decode_responses=False,
         )
-        app.add_middleware(RateLimitMiddleware, redis_client=_raw_redis_for_middleware, config=rate_limit_config)
+        app.add_middleware(
+            RateLimitMiddleware, redis_client=_raw_redis_for_middleware, config=rate_limit_config
+        )
         logger.info(
             "Rate limiting middleware initialized",
             limit=rate_limit_config.default_limit,

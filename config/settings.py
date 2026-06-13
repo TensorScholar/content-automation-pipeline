@@ -48,7 +48,9 @@ LIST_ENV_FIELDS = {"allowed_hosts", "cors_origins"}
 class CommaSeparatedListEnvSource(EnvSettingsSource):
     """Support comma-separated values for selected list settings."""
 
-    def prepare_field_value(self, field_name: str, field, value: Any, value_is_complex: bool) -> Any:
+    def prepare_field_value(
+        self, field_name: str, field, value: Any, value_is_complex: bool
+    ) -> Any:
         if field_name in LIST_ENV_FIELDS and isinstance(value, str):
             stripped = value.strip()
             if not stripped:
@@ -62,7 +64,9 @@ class CommaSeparatedListEnvSource(EnvSettingsSource):
 class CommaSeparatedListDotEnvSource(DotEnvSettingsSource):
     """Apply the same selected-list parsing to .env file values."""
 
-    def prepare_field_value(self, field_name: str, field, value: Any, value_is_complex: bool) -> Any:
+    def prepare_field_value(
+        self, field_name: str, field, value: Any, value_is_complex: bool
+    ) -> Any:
         if field_name in LIST_ENV_FIELDS and isinstance(value, str):
             stripped = value.strip()
             if not stripped:
@@ -205,7 +209,9 @@ class LLMSettings(BaseSettings):
     local_llm_url: Optional[str] = Field(default=None, alias="LOCAL_LLM_URL")
     primary_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_PRIMARY_MODEL")
     secondary_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_SECONDARY_MODEL")
-    fallback_model: Optional[str] = Field(default="claude-haiku-4-5-20251001", alias="LLM_FALLBACK_MODEL")
+    fallback_model: Optional[str] = Field(
+        default="claude-haiku-4-5-20251001", alias="LLM_FALLBACK_MODEL"
+    )
     max_requests_per_minute: int = Field(
         default=60, ge=1, le=500, alias="LLM_MAX_REQUESTS_PER_MINUTE"
     )
@@ -214,6 +220,20 @@ class LLMSettings(BaseSettings):
     )
     daily_token_budget: int = Field(default=1_000_000, ge=10_000, alias="LLM_DAILY_TOKEN_BUDGET")
     cost_alert_threshold: float = Field(default=10.0, ge=0.0, alias="LLM_COST_ALERT_THRESHOLD")
+    daily_cost_limit_usd: float = Field(default=10.0, ge=0.0, alias="LLM_DAILY_COST_LIMIT_USD")
+    monthly_cost_limit_usd: float = Field(default=100.0, ge=0.0, alias="LLM_MONTHLY_COST_LIMIT_USD")
+    project_daily_cost_limit_usd: float = Field(
+        default=0.0, ge=0.0, alias="LLM_PROJECT_DAILY_COST_LIMIT_USD"
+    )
+    project_monthly_cost_limit_usd: float = Field(
+        default=0.0, ge=0.0, alias="LLM_PROJECT_MONTHLY_COST_LIMIT_USD"
+    )
+    user_daily_cost_limit_usd: float = Field(
+        default=0.0, ge=0.0, alias="LLM_USER_DAILY_COST_LIMIT_USD"
+    )
+    user_monthly_cost_limit_usd: float = Field(
+        default=0.0, ge=0.0, alias="LLM_USER_MONTHLY_COST_LIMIT_USD"
+    )
     max_retries: int = Field(default=3, ge=1, le=10, alias="LLM_MAX_RETRIES")
     retry_delay: float = Field(default=1.0, ge=0.1, le=10.0, alias="LLM_RETRY_DELAY")
     default_temperature: float = Field(default=0.7, ge=0.0, le=2.0, alias="LLM_DEFAULT_TEMPERATURE")
@@ -228,7 +248,9 @@ class LLMSettings(BaseSettings):
     keyword_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_KEYWORD_MODEL")
     planning_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_PLANNING_MODEL")
     writing_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_WRITING_MODEL")
-    verification_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_VERIFICATION_MODEL")
+    verification_model: str = Field(
+        default="claude-haiku-4-5-20251001", alias="LLM_VERIFICATION_MODEL"
+    )
     # Single source of truth for model pricing (used by llm_client)
     model_pricing: Dict[str, Dict[str, float]] = Field(
         default={
@@ -252,10 +274,10 @@ class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(
         case_sensitive=False,
         extra="ignore",
-        protected_namespaces=()  # Disable model_ namespace warnings
+        protected_namespaces=(),  # Disable model_ namespace warnings
     )
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_and_auto_detect_provider(self) -> "LLMSettings":
         """Auto-detect provider based on available API keys."""
         import os
@@ -346,9 +368,13 @@ class LLMSettings(BaseSettings):
             elif provider == "anthropic":
                 object.__setattr__(self, "primary_model", self.anthropic_model)
             elif provider == "openai":
-                object.__setattr__(self, "primary_model", os.getenv("LLM_OPENAI_MODEL", "gpt-4o-mini"))
+                object.__setattr__(
+                    self, "primary_model", os.getenv("LLM_OPENAI_MODEL", "gpt-4o-mini")
+                )
             elif provider == "local":
-                object.__setattr__(self, "primary_model", os.getenv("LOCAL_LLM_MODEL", "local-qwen-turbo"))
+                object.__setattr__(
+                    self, "primary_model", os.getenv("LOCAL_LLM_MODEL", "local-qwen-turbo")
+                )
         if not os.getenv("LLM_SECONDARY_MODEL"):
             object.__setattr__(self, "secondary_model", self.primary_model)
         if not os.getenv("LLM_FALLBACK_MODEL"):
@@ -357,7 +383,10 @@ class LLMSettings(BaseSettings):
         # Log warning if no provider available
         if not has_anthropic and not has_openai and not has_gemini and not has_local:
             import logging
-            logging.warning("No LLM provider configured! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL")
+
+            logging.warning(
+                "No LLM provider configured! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL"
+            )
 
         if not os.getenv("LLM_KEYWORD_MODEL"):
             object.__setattr__(self, "keyword_model", self.primary_model)
@@ -380,9 +409,7 @@ class LLMSettings(BaseSettings):
             for env_name, model_name in model_fields.items():
                 model_provider = provider_for_model(model_name)
                 if model_provider is None:
-                    raise ValueError(
-                        f"{env_name}={model_name} has an unknown provider prefix"
-                    )
+                    raise ValueError(f"{env_name}={model_name} has an unknown provider prefix")
                 if model_provider != provider:
                     raise ValueError(
                         f"{env_name}={model_name} resolves to provider "
@@ -415,7 +442,7 @@ class NLPSettings(BaseSettings):
         env_prefix="NLP_",
         case_sensitive=False,
         extra="ignore",
-        protected_namespaces=()  # Disable model_ namespace warnings
+        protected_namespaces=(),  # Disable model_ namespace warnings
     )
 
 
@@ -480,32 +507,43 @@ class MonitoringSettings(BaseSettings):
     otlp_endpoint: Optional[str] = Field(
         default=None,
         alias="OTEL_EXPORTER_OTLP_ENDPOINT",
-        description="OTLP exporter endpoint (e.g., http://jaeger:4317)"
+        description="OTLP exporter endpoint (e.g., http://jaeger:4317)",
     )
     otlp_service_name: str = Field(
         default="content-automation-api",
         alias="OTEL_SERVICE_NAME",
-        description="Service name for traces"
+        description="Service name for traces",
     )
     otlp_insecure: bool = Field(
         default=True,
         alias="OTEL_EXPORTER_OTLP_INSECURE",
-        description="Use insecure connection (no TLS) for OTLP"
+        description="Use insecure connection (no TLS) for OTLP",
     )
 
     # Security headers - CSP configuration
     enable_strict_csp: bool = Field(
         default=True,
-        description="Enable strict Content-Security-Policy (disable in dev for easier debugging)"
+        description="Enable strict Content-Security-Policy (disable in dev for easier debugging)",
     )
     csp_report_only: bool = Field(
-        default=False,
-        description="Use CSP in report-only mode (logs violations without blocking)"
+        default=False, description="Use CSP in report-only mode (logs violations without blocking)"
     )
 
     model_config = SettingsConfigDict(
         env_prefix="MONITORING_", case_sensitive=False, extra="ignore"
     )
+
+
+class SentrySettings(BaseSettings):
+    """Optional Sentry configuration shared by API and Celery processes."""
+
+    dsn: Optional[SecretStr] = Field(default=None, alias="SENTRY_DSN")
+    environment: Optional[str] = Field(default=None, alias="SENTRY_ENVIRONMENT")
+    traces_sample_rate: float = Field(
+        default=0.0, ge=0.0, le=1.0, alias="SENTRY_TRACES_SAMPLE_RATE"
+    )
+
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
 
 
 class Settings(BaseSettings):
@@ -534,9 +572,15 @@ class Settings(BaseSettings):
     scraping: ScrapingSettings = Field(default_factory=ScrapingSettings)
     celery: CelerySettings = Field(default_factory=CelerySettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
+    sentry: SentrySettings = Field(default_factory=SentrySettings)
 
     # Security
     secret_key: SecretStr = Field(..., alias="SECRET_KEY", description="Application secret key")
+    credential_encryption_key: Optional[SecretStr] = Field(
+        default=None,
+        alias="CREDENTIAL_ENCRYPTION_KEY",
+        description="Fernet key used to encrypt persisted third-party credentials",
+    )
     allowed_hosts: list[str] = Field(default=["localhost", "127.0.0.1"], alias="ALLOWED_HOSTS")
     # CORS: Explicitly list allowed origins. Add production domain via CORS_ORIGINS env var.
     cors_origins: list[str] = Field(
@@ -547,9 +591,11 @@ class Settings(BaseSettings):
             "http://127.0.0.1:3001",
         ],
         alias="CORS_ORIGINS",
-        description="Allowed CORS origins (comma-separated in env var)"
+        description="Allowed CORS origins (comma-separated in env var)",
     )
-    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM", description="JWT signing algorithm")
+    jwt_algorithm: str = Field(
+        default="HS256", alias="JWT_ALGORITHM", description="JWT signing algorithm"
+    )
     jwt_issuer: str = Field(default="content-automation-engine")
     jwt_audience: str = Field(default="api")
 
@@ -656,6 +702,15 @@ class Settings(BaseSettings):
 
         return v
 
+    @model_validator(mode="after")
+    def validate_production_credential_encryption(self) -> "Settings":
+        """Production must be able to encrypt WordPress credentials before serving traffic."""
+        if self.environment == "production":
+            from infrastructure.credential_encryption import validate_encryption_key
+
+            validate_encryption_key(self.credential_encryption_key)
+        return self
+
     @property
     def is_production(self) -> bool:
         """Check if running in production environment."""
@@ -720,6 +775,7 @@ __all__ = [
     "ScrapingSettings",
     "CelerySettings",
     "MonitoringSettings",
+    "SentrySettings",
     "get_settings",
     "settings",
 ]

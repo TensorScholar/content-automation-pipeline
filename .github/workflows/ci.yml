@@ -9,7 +9,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "codex/**"]
   pull_request:
     branches: [main]
 
@@ -109,6 +109,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/content_automation_test
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret-key-minimum-32-chars-long-for-validation
+      CREDENTIAL_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
       ENVIRONMENT: development
       ANTHROPIC_API_KEY: sk-ant-test-placeholder
       CELERY_BROKER_URL: redis://localhost:6379/0
@@ -143,6 +144,9 @@ jobs:
 
       - name: Download spaCy model
         run: python -m spacy download en_core_web_sm
+
+      - name: Run Phase 2 security and cost controls
+        run: pytest tests/test_phase2_security_cost.py -q
 
       - name: Run unit and integration tests
         run: |
@@ -214,6 +218,7 @@ jobs:
       POSTGRES_PASSWORD: ci-postgres-password
       REDIS_PASSWORD: ci-redis-password
       SECRET_KEY: ci-secret-key-minimum-32-chars-long-for-validation
+      CREDENTIAL_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
       SERVER_NAME: localhost
       ALLOWED_HOSTS: localhost,127.0.0.1,api,nginx
       CORS_ORIGINS: https://localhost

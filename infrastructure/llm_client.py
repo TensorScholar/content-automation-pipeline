@@ -51,7 +51,9 @@ from core.exceptions import (
     LLMProviderError,
     LLMRateLimitError,
     LLMTimeoutError,
+    TokenBudgetExceededError,
 )
+from infrastructure.llm_usage import LLMUsageService, get_llm_usage_context
 
 # ============================================================================
 # CONSTANTS & CONFIGURATION
@@ -164,6 +166,7 @@ def _is_retryable_llm_exception(exc: BaseException) -> bool:
 # SAFE LOGGING FOR TENACITY RETRIES
 # ============================================================================
 
+
 def safe_before_sleep_log(logger_instance, log_level):
     """
     Safe wrapper for tenacity's before_sleep_log that prevents Loguru formatting crashes.
@@ -171,6 +174,7 @@ def safe_before_sleep_log(logger_instance, log_level):
     When exception messages contain curly braces (e.g., from JSON errors), Loguru tries to
     format them as f-strings, causing KeyError. This function sanitizes messages first.
     """
+
     def log_it(retry_state):
         if retry_state.outcome and retry_state.outcome.failed:
             exception = retry_state.outcome.exception()
@@ -183,11 +187,12 @@ def safe_before_sleep_log(logger_instance, log_level):
         logger_instance.log(
             log_level,
             f"Retrying {{}} in {{}} seconds as it {{}} {{}}.".replace("{{}}", "{}"),
-            retry_state.fn.__name__ if hasattr(retry_state.fn, '__name__') else retry_state.fn,
-            getattr(retry_state.next_action, 'sleep', 0),
+            retry_state.fn.__name__ if hasattr(retry_state.fn, "__name__") else retry_state.fn,
+            getattr(retry_state.next_action, "sleep", 0),
             verb,
-            value
+            value,
         )
+
     return log_it
 
 
@@ -228,6 +233,7 @@ class CircuitBreaker:
         """
         if self._lock is None:
             import threading
+
             # Thread-safe initialization: use threading.Lock for synchronization
             _init_lock = threading.Lock()
             with _init_lock:
@@ -262,7 +268,10 @@ class CircuitBreaker:
 
             if self._state == "open":
                 # Check if recovery time has passed
-                if self._last_failure_time and (time.time() - self._last_failure_time) >= self.recovery_time:
+                if (
+                    self._last_failure_time
+                    and (time.time() - self._last_failure_time) >= self.recovery_time
+                ):
                     self._state = "half-open"
                     logger.info(f"Circuit breaker HALF-OPEN for {self.name} | attempting recovery")
                     return True
@@ -290,6 +299,7 @@ def is_dns_error(error: Exception) -> bool:
 
 class ModelProvider(str, Enum):
     """Supported LLM providers."""
+
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
@@ -305,6 +315,7 @@ class TokenUsage:
         completion_tokens: Number of tokens in the generated response.
         total_tokens: Sum of prompt and completion tokens.
     """
+
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
@@ -324,6 +335,7 @@ class ModelPricing:
         input_cost_per_1k: Cost per 1000 input tokens in USD.
         output_cost_per_1k: Cost per 1000 output tokens in USD.
     """
+
     input_cost_per_1k: float
     output_cost_per_1k: float
 
@@ -393,6 +405,7 @@ class LLMResponse:
         timestamp: Response creation time (UTC).
         finish_reason: Completion reason (e.g., 'stop', 'length').
     """
+
     content: str
     model: str
     usage: TokenUsage
@@ -443,6 +456,7 @@ class LLMRequest(BaseModel):
 
     All parameters are validated at instantiation. Frozen to ensure immutability.
     """
+
     model_config = {"frozen": True}
 
     prompt: str = Field(..., min_length=1, max_length=100000)
@@ -482,6 +496,7 @@ class UnifiedLLMClient:
         self,
         cache_manager: Optional[object] = None,
         metrics_collector: Optional[object] = None,
+        usage_service: Optional[LLMUsageService] = None,
     ):
         """
         Initialize the unified client.
@@ -492,6 +507,7 @@ class UnifiedLLMClient:
         """
         self.cache_manager = cache_manager
         self.metrics = metrics_collector
+        self.usage_service = usage_service
 
         # Track local LLM configuration for special handling
         self._local_base_url: str | None = None
@@ -607,7 +623,9 @@ class UnifiedLLMClient:
         if self._active_provider or openai_key:
             logger.info("✓ LiteLLM ready | providers available")
         else:
-            logger.error("✗ No LLM provider available! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL")
+            logger.error(
+                "✗ No LLM provider available! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL"
+            )
 
     def _provider_has_credentials(self, provider: ModelProvider) -> bool:
         """Return whether a provider can be attempted in this process."""
@@ -714,10 +732,16 @@ class UnifiedLLMClient:
                     stop_sequences=stop_sequences,
                     _allow_fallback=False,
                 )
-            except (LLMProviderError, LLMRateLimitError, LLMTimeoutError, LLMConnectionError, LLMError) as exc:
-                logger.warning(
-                    f"LLM fallback failed | model={fallback_model} | error={exc}"
-                )
+            except TokenBudgetExceededError:
+                raise
+            except (
+                LLMProviderError,
+                LLMRateLimitError,
+                LLMTimeoutError,
+                LLMConnectionError,
+                LLMError,
+            ) as exc:
+                logger.warning(f"LLM fallback failed | model={fallback_model} | error={exc}")
                 continue
         return None
 
@@ -772,6 +796,24 @@ class UnifiedLLMClient:
         if "/" in model:
             return model.split("/", 1)[1]
         return model
+
+    def _estimate_request_cost(self, model: str, prompt: str, max_tokens: int) -> float:
+        """Conservatively estimate request cost before a provider call."""
+        provider = self._determine_provider(model)
+        if provider == ModelProvider.LOCAL:
+            return 0.0
+        pricing = DEFAULT_MODEL_PRICING.get(
+            self._pricing_key(model),
+            ModelPricing(input_cost_per_1k=0.001, output_cost_per_1k=0.002),
+        )
+        estimated_prompt_tokens = max(1, (len(prompt) + 3) // 4)
+        return pricing.calculate_cost(
+            TokenUsage(
+                prompt_tokens=estimated_prompt_tokens,
+                completion_tokens=max_tokens,
+                total_tokens=estimated_prompt_tokens + max_tokens,
+            )
+        )
 
     @retry(
         retry=retry_if_exception(_is_retryable_llm_exception),
@@ -1001,7 +1043,7 @@ class UnifiedLLMClient:
                 future = self._in_flight_requests[request_hash]
 
         # If we found an in-flight request, await it outside the lock
-        if request_hash in self._in_flight_requests and 'future' in locals():
+        if request_hash in self._in_flight_requests and "future" in locals():
             try:
                 result = await future
                 return result
@@ -1034,7 +1076,16 @@ class UnifiedLLMClient:
                 self._in_flight_requests[request_hash] = current_task
 
         # Call LLM via unified litellm interface
+        usage_record_id = None
         try:
+            if self.usage_service:
+                usage_record_id = await self.usage_service.reserve(
+                    provider=provider.value,
+                    model=model,
+                    estimated_cost=self._estimate_request_cost(model, prompt, max_tokens),
+                    context=get_llm_usage_context(),
+                )
+
             content, usage, finish_reason = await self._call_llm(
                 model, prompt, temperature, max_tokens, top_p, stop_sequences
             )
@@ -1065,6 +1116,22 @@ class UnifiedLLMClient:
                 finish_reason=finish_reason,
             )
 
+            if usage_record_id and self.usage_service:
+                try:
+                    await self.usage_service.record_success(
+                        usage_record_id,
+                        prompt_tokens=usage.prompt_tokens,
+                        completion_tokens=usage.completion_tokens,
+                        total_tokens=usage.total_tokens,
+                        actual_cost=cost,
+                    )
+                except Exception as accounting_error:
+                    logger.exception(
+                        "LLM usage finalization failed | record_id={} | error_type={}",
+                        usage_record_id,
+                        type(accounting_error).__name__,
+                    )
+
             # Cache response if available
             if self.cache_manager:
                 try:
@@ -1094,10 +1161,32 @@ class UnifiedLLMClient:
 
             return response
 
-        except (LLMProviderError, LLMRateLimitError, LLMTimeoutError, LLMConnectionError, LLMError) as e:
+        except TokenBudgetExceededError:
+            # Cost limits are provider-independent and must never trigger a
+            # fallback attempt that would bypass the same global budget.
+            raise
+        except (
+            LLMProviderError,
+            LLMRateLimitError,
+            LLMTimeoutError,
+            LLMConnectionError,
+            LLMError,
+        ) as e:
             # Record circuit breaker failure for provider errors
             if circuit_breaker:
                 await circuit_breaker.record_failure()
+            if usage_record_id and self.usage_service:
+                try:
+                    await self.usage_service.record_failure(
+                        usage_record_id,
+                        type(e).__name__,
+                    )
+                except Exception as accounting_error:
+                    logger.exception(
+                        "LLM failure accounting failed | record_id={} | error_type={}",
+                        usage_record_id,
+                        type(accounting_error).__name__,
+                    )
             # Retryability controls repeated calls to the same provider. A
             # configured fallback is a separate recovery path and is useful
             # for terminal provider/account failures such as exhausted quota,
@@ -1123,6 +1212,18 @@ class UnifiedLLMClient:
             # Record circuit breaker failure for unexpected errors
             if circuit_breaker:
                 await circuit_breaker.record_failure()
+            if usage_record_id and self.usage_service:
+                try:
+                    await self.usage_service.record_failure(
+                        usage_record_id,
+                        type(e).__name__,
+                    )
+                except Exception as accounting_error:
+                    logger.exception(
+                        "LLM failure accounting failed | record_id={} | error_type={}",
+                        usage_record_id,
+                        type(accounting_error).__name__,
+                    )
             logger.error(f"Generation failed for {model}: {e}")
             raise
         finally:
@@ -1169,6 +1270,7 @@ class UnifiedLLMClient:
 def get_llm_client(
     cache_manager: Optional[object] = None,
     metrics_collector: Optional[object] = None,
+    usage_service: Optional[LLMUsageService] = None,
     **kwargs,
 ) -> UnifiedLLMClient:
     """Factory function for UnifiedLLMClient instantiation.
@@ -1186,6 +1288,7 @@ def get_llm_client(
     return UnifiedLLMClient(
         cache_manager=cache_manager,
         metrics_collector=metrics_collector,
+        usage_service=usage_service,
     )
 
 

@@ -20,8 +20,15 @@ Example:
     >>>     return await client.generate(...)
 """
 
-from functools import lru_cache
 import os
+
+# ============================================================================
+# INFRASTRUCTURE LAYER (Singletons)
+# ============================================================================
+# Per-process registries for components that need event loop binding
+# These avoid creating new instances on every call while still being safe for Celery workers
+import threading
+from functools import lru_cache
 from typing import AsyncGenerator, Generator, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +39,7 @@ from execution.content_planner import ContentPlanner
 from execution.keyword_researcher import KeywordResearcher
 from infrastructure.database import DatabaseManager
 from infrastructure.llm_client import UnifiedLLMClient
+from infrastructure.llm_usage import LLMUsageService
 from infrastructure.monitoring import MetricsCollector
 from infrastructure.redis_client import RedisClient
 from intelligence.best_practices_kb import BestPracticesKB
@@ -50,19 +58,12 @@ from optimization.prompt_compressor import PromptCompressor
 from optimization.token_budget_manager import BudgetConfig, TokenBudgetManager
 from orchestration.content_agent import ContentAgent, ContentAgentConfig
 from orchestration.task_persistence import TaskResultRepository
-from services.content_service import ContentService
 from services.content_memory_service import ContentMemoryService
+from services.content_service import ContentService
 from services.project_readiness_service import ProjectReadinessService
 from services.project_service import ProjectService
 from services.user_service import UserService
 
-# ============================================================================
-# INFRASTRUCTURE LAYER (Singletons)
-# ============================================================================
-
-# Per-process registries for components that need event loop binding
-# These avoid creating new instances on every call while still being safe for Celery workers
-import threading
 _redis_registry: dict[int, RedisClient] = {}
 _redis_lock = threading.Lock()
 
@@ -85,6 +86,7 @@ def get_database() -> DatabaseManager:
         DatabaseManager instance for all database operations.
     """
     from infrastructure.database import get_db_manager
+
     return get_db_manager()
 
 
@@ -98,6 +100,7 @@ def get_redis() -> RedisClient:
         RedisClient instance for the current process.
     """
     import os
+
     pid = os.getpid()
 
     with _redis_lock:
@@ -144,6 +147,7 @@ def get_llm_client() -> UnifiedLLMClient:
     return UnifiedLLMClient(
         cache_manager=get_cache_manager(),
         metrics_collector=get_metrics(),
+        usage_service=LLMUsageService(get_database()),
     )
 
 
@@ -217,6 +221,7 @@ def get_semantic_analyzer() -> Optional[SemanticAnalyzer]:
         return _semantic_analyzer_instance
     except Exception as e:
         import logging
+
         logging.error(f"Failed to create SemanticAnalyzer: {e}")
         _semantic_analyzer_attempted = True
         return None

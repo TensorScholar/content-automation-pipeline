@@ -22,6 +22,7 @@ from typing import Any, Callable, Optional
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from structlog import get_logger
+from infrastructure.redaction import redact_secrets
 
 logger = get_logger(__name__)
 
@@ -69,19 +70,8 @@ SENSITIVE_FIELDS = {
 
 def mask_sensitive_data(data: dict, fields: set = SENSITIVE_FIELDS) -> dict:
     """Mask sensitive fields in dictionary."""
-    if not isinstance(data, dict):
-        return data
-
-    masked = {}
-    for key, value in data.items():
-        if key.lower() in fields:
-            masked[key] = "***REDACTED***"
-        elif isinstance(value, dict):
-            masked[key] = mask_sensitive_data(value, fields)
-        else:
-            masked[key] = value
-
-    return masked
+    del fields
+    return redact_secrets(data)
 
 
 def truncate_string(text: str, max_length: int) -> str:

@@ -176,3 +176,5 @@ CRITICAL_BUGS_FIXED.md
 
 # Claude Code plans
 .claude/
+# Host-side database backups contain production data.
+backups/

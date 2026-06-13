@@ -30,14 +30,14 @@ from uuid import UUID
 
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
-from api.dependencies import get_database, get_metrics, get_redis
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
+from api.dependencies import get_database, get_metrics, get_redis
 from core.exceptions import WorkflowError
 from infrastructure.llm_options import validate_model_available
 from orchestration.celery_app import app
-from orchestration.task_persistence import TaskResultRepository, SyncTaskResultRepository
+from orchestration.task_persistence import SyncTaskResultRepository, TaskResultRepository
 
 # ============================================================================
 # SMTP Configuration for Admin Notifications
@@ -53,6 +53,7 @@ SMTP_ENABLED = bool(SMTP_HOST and ADMIN_EMAIL)
 # Task Input Validation Schemas
 # ============================================================================
 
+
 class GenerateContentInput(BaseModel):
     """Validation schema for generate_content_task parameters."""
 
@@ -60,10 +61,14 @@ class GenerateContentInput(BaseModel):
     topic: str = Field(min_length=1, max_length=500, description="Topic between 1-500 characters")
     priority: str = Field(default="high", pattern="^(critical|high|medium|low)$")
     custom_instructions: Optional[str] = Field(None, max_length=2000)
-    language: str = Field(default="fa", pattern="^(en|fa)$", description="Content language: 'fa' for Persian (default), 'en' for English")
+    language: str = Field(
+        default="fa",
+        pattern="^(en|fa)$",
+        description="Content language: 'fa' for Persian (default), 'en' for English",
+    )
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
 
-    @field_validator('project_id')
+    @field_validator("project_id")
     @classmethod
     def validate_project_id(cls, v: str) -> str:
         """Ensure project_id is valid UUID format."""
@@ -73,23 +78,23 @@ class GenerateContentInput(BaseModel):
         except ValueError:
             raise ValueError("project_id must be a valid UUID string")
 
-    @field_validator('topic')
+    @field_validator("topic")
     @classmethod
     def validate_topic(cls, v: str) -> str:
         """Sanitize topic to prevent injection attacks."""
         # Remove null bytes and control characters
-        sanitized = ''.join(char for char in v if ord(char) >= 32 or char in '\n\t')
+        sanitized = "".join(char for char in v if ord(char) >= 32 or char in "\n\t")
         if not sanitized.strip():
             raise ValueError("Topic cannot be empty after sanitization")
         return sanitized.strip()
 
-    @field_validator('custom_instructions')
+    @field_validator("custom_instructions")
     @classmethod
     def validate_custom_instructions(cls, v: Optional[str]) -> Optional[str]:
         """Sanitize custom instructions if provided."""
         if v is None:
             return None
-        sanitized = ''.join(char for char in v if ord(char) >= 32 or char in '\n\t')
+        sanitized = "".join(char for char in v if ord(char) >= 32 or char in "\n\t")
         return sanitized.strip() if sanitized.strip() else None
 
 
@@ -99,7 +104,7 @@ class AnalyzeWebsiteInput(BaseModel):
     project_id: str = Field(min_length=36, max_length=36, description="Valid UUID string")
     domain: str = Field(min_length=3, max_length=255, description="Valid domain name")
 
-    @field_validator('project_id')
+    @field_validator("project_id")
     @classmethod
     def validate_project_id(cls, v: str) -> str:
         """Ensure project_id is valid UUID format."""
@@ -109,7 +114,7 @@ class AnalyzeWebsiteInput(BaseModel):
         except ValueError:
             raise ValueError("project_id must be a valid UUID string")
 
-    @field_validator('domain')
+    @field_validator("domain")
     @classmethod
     def validate_domain(cls, v: str) -> str:
         """Sanitize domain to prevent SSRF and injection attacks."""
@@ -117,7 +122,7 @@ class AnalyzeWebsiteInput(BaseModel):
         domain = v.strip().lower()
 
         # Basic domain validation regex (allows subdomains)
-        domain_pattern = r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,}$'
+        domain_pattern = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,}$"
 
         if not re.match(domain_pattern, domain):
             raise ValueError("Invalid domain format")
@@ -125,21 +130,39 @@ class AnalyzeWebsiteInput(BaseModel):
         # Prevent localhost/internal access (SSRF protection)
         # Includes IPv4 private ranges, IPv6 localhost patterns, and common localhost aliases
         forbidden_patterns = [
-            'localhost',
-            '127.0.0.1',
-            '0.0.0.0',
-            '10.',
-            '172.16.', '172.17.', '172.18.', '172.19.',
-            '172.20.', '172.21.', '172.22.', '172.23.',
-            '172.24.', '172.25.', '172.26.', '172.27.',
-            '172.28.', '172.29.', '172.30.', '172.31.',
-            '192.168.',
-            '169.254.',  # Link-local
+            "localhost",
+            "127.0.0.1",
+            "0.0.0.0",
+            "10.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
+            "192.168.",
+            "169.254.",  # Link-local
             # IPv6 localhost and private patterns
-            '::1', '[::1]', '::ffff:', '[::ffff:',
-            'fe80::', '[fe80:',  # Link-local IPv6
-            'fc00::', '[fc00:',  # Unique local address
-            'fd', '[fd',  # Unique local address prefix
+            "::1",
+            "[::1]",
+            "::ffff:",
+            "[::ffff:",
+            "fe80::",
+            "[fe80:",  # Link-local IPv6
+            "fc00::",
+            "[fc00:",  # Unique local address
+            "fd",
+            "[fd",  # Unique local address prefix
         ]
 
         if any(domain.startswith(f) or f in domain for f in forbidden_patterns):
@@ -152,10 +175,12 @@ class BatchGenerateInput(BaseModel):
     """Validation schema for batch_generate_task parameters."""
 
     project_id: str = Field(min_length=36, max_length=36, description="Valid UUID string")
-    topics: List[str] = Field(min_length=1, max_length=100, description="List of topics (1-100 items)")
+    topics: List[str] = Field(
+        min_length=1, max_length=100, description="List of topics (1-100 items)"
+    )
     priority: str = Field(default="high", pattern="^(critical|high|medium|low)$")
 
-    @field_validator('project_id')
+    @field_validator("project_id")
     @classmethod
     def validate_project_id(cls, v: str) -> str:
         """Ensure project_id is valid UUID format."""
@@ -165,7 +190,7 @@ class BatchGenerateInput(BaseModel):
         except ValueError:
             raise ValueError("project_id must be a valid UUID string")
 
-    @field_validator('topics')
+    @field_validator("topics")
     @classmethod
     def validate_topics(cls, v: List[str]) -> List[str]:
         """Validate and sanitize all topics in the list."""
@@ -182,7 +207,7 @@ class BatchGenerateInput(BaseModel):
                 raise ValueError(f"Topic at index {i} must be between 1-500 characters")
 
             # Remove null bytes and control characters
-            sanitized = ''.join(char for char in topic if ord(char) >= 32 or char in '\n\t')
+            sanitized = "".join(char for char in topic if ord(char) >= 32 or char in "\n\t")
             if not sanitized.strip():
                 raise ValueError(f"Topic at index {i} cannot be empty after sanitization")
 
@@ -191,7 +216,9 @@ class BatchGenerateInput(BaseModel):
         return sanitized_topics
 
 
-def route_to_dead_letter_queue(task_id: str, task_name: str, args: tuple, kwargs: dict, exc: Exception) -> None:
+def route_to_dead_letter_queue(
+    task_id: str, task_name: str, args: tuple, kwargs: dict, exc: Exception
+) -> None:
     """
     Route permanently failed task to dead letter queue for manual review.
 
@@ -257,9 +284,7 @@ def notify_admin(
         True if notification sent successfully, False otherwise
     """
     if not SMTP_ENABLED:
-        logger.debug(
-            f"Admin notification skipped (SMTP not configured) | task_id={task_id}"
-        )
+        logger.debug(f"Admin notification skipped (SMTP not configured) | task_id={task_id}")
         return False
 
     try:
@@ -335,17 +360,12 @@ def notify_admin(
                 server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(msg["From"], [ADMIN_EMAIL], msg.as_string())
 
-        logger.info(
-            f"Admin notification sent | task_id={task_id} | recipient={ADMIN_EMAIL}"
-        )
+        logger.info(f"Admin notification sent | task_id={task_id} | recipient={ADMIN_EMAIL}")
         return True
 
     except Exception as e:
-        logger.error(
-            f"Failed to send admin notification | task_id={task_id} | error={e}"
-        )
+        logger.error(f"Failed to send admin notification | task_id={task_id} | error={e}")
         return False
-
 
 
 def generate_idempotency_key(task_name: str, *args, **kwargs) -> str:
@@ -365,15 +385,14 @@ def generate_idempotency_key(task_name: str, *args, **kwargs) -> str:
     """
     # Remove runtime-specific kwargs that shouldn't affect idempotency
     filtered_kwargs = {
-        k: v for k, v in kwargs.items()
-        if k not in ['task_id', 'retries', 'eta', 'countdown']
+        k: v for k, v in kwargs.items() if k not in ["task_id", "retries", "eta", "countdown"]
     }
 
     # Create deterministic string representation
     key_data = {
-        'task': task_name,
-        'args': [str(arg) for arg in args],
-        'kwargs': {k: str(v) for k, v in sorted(filtered_kwargs.items())}
+        "task": task_name,
+        "args": [str(arg) for arg in args],
+        "kwargs": {k: str(v) for k, v in sorted(filtered_kwargs.items())},
     }
 
     key_string = json.dumps(key_data, sort_keys=True)
@@ -506,9 +525,7 @@ def _build_social_posts(title: str, topic: str, language: str = "fa") -> Dict[st
         )
         twitter = f"{safe_title} | نگاهی سریع به {safe_topic}.\n#تولید_محتوا #SEO"
         instagram = (
-            f"✨ {safe_title}\n"
-            f"موضوع: {safe_topic}\n"
-            "برای مطالعه کامل، لینک را بررسی کنید."
+            f"✨ {safe_title}\n" f"موضوع: {safe_topic}\n" "برای مطالعه کامل، لینک را بررسی کنید."
         )
     else:
         linkedin = (
@@ -726,7 +743,7 @@ def generate_content_task(
     topic: str,
     priority: str = "high",
     custom_instructions: Optional[str] = None,
-    **kwargs  # Accept extended parameters (word_count, tone, keywords, etc.)
+    **kwargs,  # Accept extended parameters (word_count, tone, keywords, etc.)
 ) -> Dict:
     """
     Asynchronous content generation task with robust error handling.
@@ -775,8 +792,7 @@ def generate_content_task(
         )
     except Exception as validation_error:
         logger.error(
-            f"Input validation failed | task_id={self.request.id} | "
-            f"error={validation_error}"
+            f"Input validation failed | task_id={self.request.id} | " f"error={validation_error}"
         )
         # Don't retry validation errors - they're permanent
         raise ValueError(f"Invalid task parameters: {validation_error}")
@@ -893,7 +909,7 @@ def generate_content_task(
 
                 # --- GENERATE CONTENT (Async) ---
                 # CRITICAL: Clear dependency cache to ensure fresh DatabaseManager for this loop
-                from api.dependencies import get_database, get_content_agent
+                from api.dependencies import get_content_agent, get_database
 
                 # Close any existing database connections from previous event loop
                 try:
@@ -924,7 +940,9 @@ def generate_content_task(
                         custom_instructions=validated_input.custom_instructions,
                         project_context=project_context,
                         language=validated_input.language,
-                        **kwargs  # Pass extended SEO parameters
+                        _llm_user_id=submitted_by_user_id,
+                        _llm_task_id=self.request.id,
+                        **kwargs,  # Pass extended SEO parameters
                     )
 
                     execution_result = {
@@ -960,7 +978,7 @@ def generate_content_task(
 
                 finally:
                     # Cleanup fresh database resources
-                    if hasattr(content_agent, 'database_manager'):
+                    if hasattr(content_agent, "database_manager"):
                         await content_agent.database_manager.close()
 
                 # --- CACHE RESULT ---
@@ -969,10 +987,7 @@ def generate_content_task(
 
                 # --- UPDATE TASK RECORD (Sync) ---
                 try:
-                    task_repo.update_task_success(
-                        task_id=self.request.id,
-                        result=execution_result
-                    )
+                    task_repo.update_task_success(task_id=self.request.id, result=execution_result)
                 except Exception as e:
                     logger.error(f"Failed to update task status: {e}")
 
@@ -1238,8 +1253,7 @@ def analyze_website_task(self, project_id: str, domain: str) -> Dict:
         )
     except Exception as validation_error:
         logger.error(
-            f"Input validation failed | task_id={self.request.id} | "
-            f"error={validation_error}"
+            f"Input validation failed | task_id={self.request.id} | " f"error={validation_error}"
         )
         raise ValueError(f"Invalid task parameters: {validation_error}")
 
@@ -1255,6 +1269,7 @@ def analyze_website_task(self, project_id: str, domain: str) -> Dict:
         asyncio.set_event_loop(loop)
 
         from api.dependencies import get_website_analyzer
+
         analyzer = get_website_analyzer()
         inferred = loop.run_until_complete(
             analyzer.analyze_website(UUID(validated_input.project_id), validated_input.domain)

@@ -13,6 +13,7 @@ from loguru import logger
 
 from core.exceptions import DistributionError
 from core.models import GeneratedArticle, Project
+from infrastructure.credential_encryption import decrypt_credential
 
 
 class Distributor:
@@ -34,7 +35,22 @@ class Distributor:
         """
         self.max_retries = max_retries
         self.retry_delay = initial_retry_delay
-        logger.info(f"Distributor initialized | max_retries={max_retries} | retry_delay={initial_retry_delay}s")
+        logger.info(
+            f"Distributor initialized | max_retries={max_retries} | retry_delay={initial_retry_delay}s"
+        )
+
+    @staticmethod
+    def _wordpress_password(project: Project) -> str:
+        """Decrypt the stored credential only at the outbound WordPress boundary."""
+        from config.settings import get_settings
+
+        password = decrypt_credential(
+            project.wordpress_app_password,
+            get_settings().credential_encryption_key,
+        )
+        if not password:
+            raise DistributionError("WordPress credentials not configured")
+        return password
 
     def convert_to_gutenberg_blocks(self, html_content: str) -> str:
         """
@@ -119,17 +135,13 @@ class Distributor:
             "headline": article.title,
             "description": article.meta_description,
             "datePublished": article.created_at.isoformat(),
-            "dateModified": article.updated_at.isoformat() if article.updated_at else article.created_at.isoformat(),
-            "author": {
-                "@type": "Organization",
-                "name": "Smarlux Studio"
-            },
-            "publisher": {
-                "@type": "Organization",
-                "name": "Smarlux Studio"
-            },
+            "dateModified": article.updated_at.isoformat()
+            if article.updated_at
+            else article.created_at.isoformat(),
+            "author": {"@type": "Organization", "name": "Smarlux Studio"},
+            "publisher": {"@type": "Organization", "name": "Smarlux Studio"},
             "keywords": ", ".join(article.keywords) if article.keywords else "",
-            "wordCount": article.quality_metrics.word_count if article.quality_metrics else 0
+            "wordCount": article.quality_metrics.word_count if article.quality_metrics else 0,
         }
 
         if article_url:
@@ -138,7 +150,11 @@ class Distributor:
 
         # Check for FAQ section and add FAQPage schema
         content_lower = article.content.lower() if article.content else ""
-        if "سوالات متداول" in content_lower or "faq" in content_lower or "frequently asked" in content_lower:
+        if (
+            "سوالات متداول" in content_lower
+            or "faq" in content_lower
+            or "frequently asked" in content_lower
+        ):
             # Add FAQ indicator - actual FAQ extraction would require parsing
             schema["@type"] = ["Article", "FAQPage"]
 
@@ -146,7 +162,6 @@ class Distributor:
 
         logger.debug(f"Generated schema.org markup: {schema['@type']}")
         return json_ld
-
 
     async def distribute_to_rss(self, article: GeneratedArticle, feed_url: str) -> Dict[str, Any]:
         """
@@ -210,13 +225,17 @@ class Distributor:
         Returns:
             Tuple of (is_valid, error_message)
         """
-        if not project.wordpress_url or not project.wordpress_username or not project.wordpress_app_password:
+        if (
+            not project.wordpress_url
+            or not project.wordpress_username
+            or not project.wordpress_app_password
+        ):
             return False, "WordPress credentials not configured"
 
         try:
             auth = httpx.BasicAuth(
                 project.wordpress_username,
-                project.wordpress_app_password.get_secret_value()
+                self._wordpress_password(project),
             )
             # Test connection with a simple GET request to posts endpoint
             test_url = f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts?per_page=1"
@@ -257,7 +276,11 @@ class Distributor:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 # Fetch existing tags
                 resp = await client.get(f"{tags_url}?per_page=100", auth=auth)
-                existing = {t["name"].lower(): t["id"] for t in resp.json()} if resp.status_code == 200 else {}
+                existing = (
+                    {t["name"].lower(): t["id"] for t in resp.json()}
+                    if resp.status_code == 200
+                    else {}
+                )
 
                 for name in tag_names:
                     tid = existing.get(name.lower())
@@ -269,15 +292,16 @@ class Distributor:
                         if create_resp.status_code == 201:
                             tag_ids.append(create_resp.json()["id"])
                         else:
-                            logger.warning(f"Failed to create tag '{name}': {create_resp.status_code}")
+                            logger.warning(
+                                f"Failed to create tag '{name}': {create_resp.status_code}"
+                            )
         except Exception as e:
             logger.warning(f"Tag resolution failed, skipping tags: {e}")
 
         return tag_ids
 
     async def distribute_to_wordpress(
-        self, article: GeneratedArticle, project: Project,
-        post_status: str = "draft"
+        self, article: GeneratedArticle, project: Project, post_status: str = "draft"
     ) -> dict[str, Any]:
         """
         Publishes a generated article to a WordPress site using the REST API.
@@ -315,9 +339,7 @@ class Distributor:
 
         api_url = f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts"
 
-        auth = httpx.BasicAuth(
-            project.wordpress_username, project.wordpress_app_password.get_secret_value()
-        )
+        auth = httpx.BasicAuth(project.wordpress_username, self._wordpress_password(project))
 
         # Convert content to Gutenberg blocks for modern WordPress
         gutenberg_content = self.convert_to_gutenberg_blocks(article.content)
@@ -340,21 +362,17 @@ class Distributor:
         # Retry logic with exponential backoff and jitter
         import asyncio
         import random
+
         last_error = None
 
         for attempt in range(self.max_retries):
             try:
                 # Use connection pooling with longer timeout for large content
-                timeout_config = httpx.Timeout(
-                    connect=10.0,
-                    read=60.0,
-                    write=30.0,
-                    pool=5.0
-                )
+                timeout_config = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=5.0)
                 async with httpx.AsyncClient(
                     timeout=timeout_config,
                     limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-                    follow_redirects=True
+                    follow_redirects=True,
                 ) as client:
                     response = await client.post(api_url, json=post_data, auth=auth)
 
@@ -368,12 +386,12 @@ class Distributor:
                 schema_markup = self.generate_schema_markup(article, post_url)
 
                 try:
-                    update_url = f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}"
+                    update_url = (
+                        f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}"
+                    )
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         await client.post(
-                            update_url,
-                            json={"meta": {"_schema_json_ld": schema_markup}},
-                            auth=auth
+                            update_url, json={"meta": {"_schema_json_ld": schema_markup}}, auth=auth
                         )
                     logger.debug(f"Schema markup saved to post {post_id}")
                 except Exception as e:
@@ -436,7 +454,7 @@ class Distributor:
                 if attempt < self.max_retries - 1:
                     # Exponential backoff with jitter to prevent thundering herd
                     # Cap at 10 seconds to prevent unbounded growth
-                    base_wait = min(self.retry_delay * (2 ** attempt), 10.0)
+                    base_wait = min(self.retry_delay * (2**attempt), 10.0)
                     jitter = random.uniform(0, base_wait * 0.3)
                     wait_time = base_wait + jitter
                     logger.info(
@@ -455,7 +473,7 @@ class Distributor:
 
                 if attempt < self.max_retries - 1:
                     # Cap backoff at 10 seconds
-                    base_wait = min(self.retry_delay * (2 ** attempt), 10.0)
+                    base_wait = min(self.retry_delay * (2**attempt), 10.0)
                     jitter = random.uniform(0, base_wait * 0.3)
                     wait_time = base_wait + jitter
                     logger.info(
@@ -470,12 +488,12 @@ class Distributor:
                     f"Unexpected WordPress error (RETRYING) | article_id={article.id} | "
                     f"attempt={attempt + 1}/{self.max_retries} | "
                     f"error_type={type(e).__name__} | error={str(e)}",
-                    exc_info=True
+                    exc_info=True,
                 )
 
                 if attempt < self.max_retries - 1:
                     # Cap backoff at 10 seconds
-                    base_wait = min(self.retry_delay * (2 ** attempt), 10.0)
+                    base_wait = min(self.retry_delay * (2**attempt), 10.0)
                     jitter = random.uniform(0, base_wait * 0.3)
                     wait_time = base_wait + jitter
                     logger.info(
@@ -490,4 +508,6 @@ class Distributor:
             f"project_id={project.id} | max_retries={self.max_retries} | "
             f"last_error_type={type(last_error).__name__} | last_error={str(last_error)}"
         )
-        raise DistributionError(f"WordPress distribution failed after {self.max_retries} attempts: {str(last_error)}")
+        raise DistributionError(
+            f"WordPress distribution failed after {self.max_retries} attempts: {str(last_error)}"
+        )

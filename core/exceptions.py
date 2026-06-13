@@ -107,7 +107,8 @@ class LLMException(ContentAutomationException):
     """Base exception for LLM-related errors."""
 
     def __init__(self, message: str, **kwargs):
-        super().__init__(message, severity=ErrorSeverity.ERROR, **kwargs)
+        severity = kwargs.pop("severity", ErrorSeverity.ERROR)
+        super().__init__(message, severity=severity, **kwargs)
 
 
 # Aliases for backward compatibility

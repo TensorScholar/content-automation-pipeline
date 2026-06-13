@@ -30,12 +30,19 @@ from uuid import UUID
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from core.exceptions import InsufficientContextError, ProjectNotFoundError, WorkflowError
+from config.settings import settings
+from core.exceptions import (
+    InsufficientContextError,
+    ProjectNotFoundError,
+    TokenBudgetExceededError,
+    WorkflowError,
+)
 from core.models import ContentPlan, GeneratedArticle, InferredPatterns, Keyword, Project, Rulebook
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
 from execution.keyword_researcher import KeywordResearcher
 from infrastructure.database import DatabaseManager
+from infrastructure.llm_usage import llm_usage_context
 from infrastructure.monitoring import MetricsCollector
 from intelligence.context_synthesizer import ContextSynthesizer
 from intelligence.decision_engine import DecisionEngine
@@ -44,7 +51,6 @@ from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
 from knowledge.website_analyzer import WebsiteAnalyzer
 from optimization.token_budget_manager import TokenBudgetManager
-from config.settings import settings
 
 
 class WorkflowState(str, Enum):
@@ -161,6 +167,12 @@ class ContentAgent:
         """
         workflow_id = f"workflow_{datetime.now(timezone.utc).timestamp()}"
         start_time = datetime.now(timezone.utc)
+        usage_context = llm_usage_context(
+            project_id=project_id,
+            user_id=kwargs.pop("_llm_user_id", None),
+            task_id=kwargs.pop("_llm_task_id", None),
+            operation_type="content_generation",
+        )
 
         priority = priority or self.config.default_priority
 
@@ -182,6 +194,7 @@ class ContentAgent:
         }
         self.workflow_events = []
 
+        usage_context.__enter__()
         try:
             # Stage 1: Load and resolve project context
             await self._transition_state(WorkflowState.CONTEXT_LOADING)
@@ -200,8 +213,9 @@ class ContentAgent:
 
             # Merge user-provided keywords into researched categories
             if kwargs.get("primary_keyword") or kwargs.get("secondary_keywords"):
-                from core.models import Keyword
                 from core.enums import KeywordIntent
+                from core.models import Keyword
+
                 existing_phrases = set()
                 for kw_list in keywords.values():
                     for kw in kw_list:
@@ -210,12 +224,16 @@ class ContentAgent:
                 if kwargs.get("primary_keyword"):
                     pk = kwargs["primary_keyword"]
                     if pk.lower() not in existing_phrases:
-                        keywords["primary"].insert(0, Keyword(phrase=pk, intent=KeywordIntent.INFORMATIONAL))
+                        keywords["primary"].insert(
+                            0, Keyword(phrase=pk, intent=KeywordIntent.INFORMATIONAL)
+                        )
                         existing_phrases.add(pk.lower())
 
-                for sk in (kwargs.get("secondary_keywords") or []):
+                for sk in kwargs.get("secondary_keywords") or []:
                     if sk.lower() not in existing_phrases:
-                        keywords["secondary"].insert(0, Keyword(phrase=sk, intent=KeywordIntent.INFORMATIONAL))
+                        keywords["secondary"].insert(
+                            0, Keyword(phrase=sk, intent=KeywordIntent.INFORMATIONAL)
+                        )
                         existing_phrases.add(sk.lower())
 
             # Stage 3: Plan content structure
@@ -295,6 +313,13 @@ class ContentAgent:
 
             return article
 
+        except TokenBudgetExceededError:
+            await self._transition_state(WorkflowState.FAILED)
+            logger.warning(
+                "Content generation blocked by persistent LLM budget | "
+                f"workflow_id={workflow_id} | project_id={project_id}"
+            )
+            raise
         except Exception as e:
             await self._transition_state(WorkflowState.FAILED)
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
@@ -316,6 +341,8 @@ class ContentAgent:
             raise WorkflowError(
                 f"Workflow execution failed at {self.current_workflow['state']}: {str(e)}"
             ) from e
+        finally:
+            usage_context.__exit__(None, None, None)
 
     async def _load_project_context(self, project_id: UUID) -> Dict:
         """
@@ -351,7 +378,7 @@ class ContentAgent:
             project, patterns = await asyncio.gather(
                 project_repo.get_by_id(project_id),
                 self.project_repo.get_inferred_patterns(project_id),
-                return_exceptions=True
+                return_exceptions=True,
             )
 
             # Handle exceptions from parallel execution
@@ -436,7 +463,7 @@ class ContentAgent:
         )
 
         # Handle both Result objects and direct lists
-        if hasattr(keywords, 'unwrap_or'):
+        if hasattr(keywords, "unwrap_or"):
             keywords = keywords.unwrap_or([])
 
         # Categorize keywords by search intent and volume
@@ -502,18 +529,21 @@ class ContentAgent:
                     parts = word_count_range.split("-")
                     target_word_count = (int(parts[0]) + int(parts[1])) // 2
                 elif "+" in word_count_range:
-                     target_word_count = int(word_count_range.replace("+", "")) + 500
+                    target_word_count = int(word_count_range.replace("+", "")) + 500
             except ValueError:
                 logger.warning(f"Failed to parse word count range: {word_count_range}")
-                target_word_count = 1500 # Default fallback
+                target_word_count = 1500  # Default fallback
 
         if not target_word_count:
-            target_word_count = 1500 # Default
+            target_word_count = 1500  # Default
 
         # Generate content plan
         # Remove duplicate parameters from kwargs to avoid conflicts
-        filtered_kwargs = {k: v for k, v in kwargs.items()
-                          if k not in ['target_word_count', 'seo_settings', 'custom_instructions', 'language']}
+        filtered_kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ["target_word_count", "seo_settings", "custom_instructions", "language"]
+        }
 
         content_plan = await self.content_planner.create_content_plan(
             project=project,
@@ -523,7 +553,7 @@ class ContentAgent:
             language=language,
             target_word_count=target_word_count,
             seo_settings=kwargs.get("seo_settings"),
-            **filtered_kwargs # Pass only non-conflicting params
+            **filtered_kwargs,  # Pass only non-conflicting params
         )
 
         self._record_event(
@@ -606,15 +636,13 @@ class ContentAgent:
 
         # Readability check (null-safe)
         readability = 0.0
-        if article.quality_metrics and hasattr(article.quality_metrics, 'readability_score'):
+        if article.quality_metrics and hasattr(article.quality_metrics, "readability_score"):
             readability = article.quality_metrics.readability_score or 0.0
         else:
             issues.append("Quality metrics unavailable - manual review required")
 
         if readability < 60.0:
-            issues.append(
-                f"Low readability: {readability:.1f} (target: 60+)"
-            )
+            issues.append(f"Low readability: {readability:.1f} (target: 60+)")
 
         # Length validation
         word_count = len(article.content.split()) if article.content else 0
@@ -636,14 +664,18 @@ class ContentAgent:
         if settings.get("check_plagiarism", False):
             # Internal Uniqueness Check (Repetition Detection)
             # Detects if AI is looping or repeating phrases (internal plagiarism)
-            grams = [article.content[i:i+50] for i in range(0, len(article.content)-50, 50)]
+            grams = [article.content[i : i + 50] for i in range(0, len(article.content) - 50, 50)]
             unique_grams = set(grams)
             repetition_ratio = 1.0 - (len(unique_grams) / len(grams)) if grams else 0
 
-            if repetition_ratio > 0.2: # More than 20% repetitive chunks
-                issues.append(f"High repetition detected (Pseudo-Plagiarism): {repetition_ratio:.1%} content overlap")
+            if repetition_ratio > 0.2:  # More than 20% repetitive chunks
+                issues.append(
+                    f"High repetition detected (Pseudo-Plagiarism): {repetition_ratio:.1%} content overlap"
+                )
             else:
-                logger.info(f"Plagiarism/Uniqueness check passed | article_id={article.id} | score={1-repetition_ratio:.2f}")
+                logger.info(
+                    f"Plagiarism/Uniqueness check passed | article_id={article.id} | score={1-repetition_ratio:.2f}"
+                )
 
         passed = len(issues) == 0
 
@@ -708,21 +740,23 @@ class ContentAgent:
                 logger.info(f"Decreased target word count to {enhanced_plan.target_word_count}")
             elif "keyword density too low" in issue_lower:
                 # Add more keyword-focused sections
-                if hasattr(enhanced_plan, 'sections') and enhanced_plan.sections:
+                if hasattr(enhanced_plan, "sections") and enhanced_plan.sections:
                     for section in enhanced_plan.sections:
-                        if hasattr(section, 'keywords'):
-                            section.keywords = enhanced_plan.keywords[:3]  # Ensure primary keywords in sections
+                        if hasattr(section, "keywords"):
+                            section.keywords = enhanced_plan.keywords[
+                                :3
+                            ]  # Ensure primary keywords in sections
                 logger.info("Enhanced keyword focus in sections")
             elif "keyword over-optimization" in issue_lower:
                 # Reduce keyword count in sections
-                if hasattr(enhanced_plan, 'sections') and enhanced_plan.sections:
+                if hasattr(enhanced_plan, "sections") and enhanced_plan.sections:
                     for section in enhanced_plan.sections:
-                        if hasattr(section, 'keywords') and section.keywords:
+                        if hasattr(section, "keywords") and section.keywords:
                             section.keywords = section.keywords[:1]  # Keep only primary keyword
                 logger.info("Reduced keyword density in sections")
             elif "readability" in issue_lower:
                 # Request simpler language
-                if hasattr(enhanced_plan, 'tone'):
+                if hasattr(enhanced_plan, "tone"):
                     enhanced_plan.tone = "conversational"
                 logger.info("Adjusted tone for better readability")
 
@@ -746,7 +780,7 @@ class ContentAgent:
         from execution.distributer import Distributor
 
         if not self.config.enable_auto_distribution:
-             return [], []
+            return [], []
 
         distributor = Distributor()
         channels = []
@@ -776,13 +810,16 @@ class ContentAgent:
         self._record_event(
             state=new_state,
             message=f"Transitioned from {old_state} to {new_state}",
-            metadata={"previous_state": str(old_state) if old_state else None}
+            metadata={"previous_state": str(old_state) if old_state else None},
         )
 
     def _record_event(self, state: WorkflowState, message: str, metadata: Dict = None):
         """Record workflow event for audit trail."""
         event = WorkflowEvent(
-            timestamp=datetime.now(timezone.utc), state=state, message=message, metadata=metadata or {}
+            timestamp=datetime.now(timezone.utc),
+            state=state,
+            message=message,
+            metadata=metadata or {},
         )
         self.workflow_events.append(event)
 
@@ -805,9 +842,9 @@ class ContentAgent:
             return 0.0
 
         # Strip HTML tags for accurate word count
-        text = re.sub(r'<[^>]+>', '', content).lower()
+        text = re.sub(r"<[^>]+>", "", content).lower()
         # Use Unicode-aware word matching that includes Persian/Arabic characters
-        words = re.findall(r'[\w\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+', text)
+        words = re.findall(r"[\w\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+", text)
         total_words = len(words)
 
         if total_words == 0:
@@ -824,10 +861,9 @@ class ContentAgent:
             else:
                 # Multi-word phrase - count phrase occurrences
                 # Use lookaround with non-word chars (supports Persian/Arabic)
-                count = len(re.findall(
-                    r'(?<![^\s])' + re.escape(keyword_lower) + r'(?![^\s])',
-                    text
-                ))
+                count = len(
+                    re.findall(r"(?<![^\s])" + re.escape(keyword_lower) + r"(?![^\s])", text)
+                )
 
             # Density for this keyword
             density = count / total_words

@@ -23,8 +23,8 @@ except RuntimeError as e:
 
     logging.getLogger(__name__).debug(f"Multiprocessing start method already set: {e}")
 
-import os
 import asyncio
+import os
 
 from celery import Celery
 from celery.schedules import crontab
@@ -34,8 +34,10 @@ from loguru import logger
 
 from api.dependencies import get_database
 from config.settings import get_settings
+from infrastructure.error_tracking import initialize_sentry
 
 settings = get_settings()
+initialize_sentry("celery")
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
 # Create Celery application instance
@@ -104,11 +106,6 @@ app.conf.update(
 # Configure Celery Beat for periodic tasks
 # Supports both file-based and Redis-based (redbeat) scheduling
 app.conf.beat_schedule = {
-    "backup-database-daily": {
-        "task": "backup_database",
-        "schedule": crontab(hour=1, minute=30),  # 1:30 AM daily
-        "options": {"queue": "low"},
-    },
     "cleanup-old-tasks-daily": {
         "task": "cleanup_old_task_results",
         "schedule": crontab(hour=2, minute=0),  # 2 AM daily
