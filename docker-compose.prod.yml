@@ -522,8 +522,6 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       # Certbot webroot for ACME challenge
       - certbot_webroot:/var/www/certbot:ro
-      # Nginx logs
-      - ./logs/nginx:/var/log/nginx
     networks:
       - content-automation-network
     healthcheck:
