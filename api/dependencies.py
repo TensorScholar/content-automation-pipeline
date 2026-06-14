@@ -48,6 +48,7 @@ from intelligence.decision_engine import DecisionEngine
 from intelligence.semantic_analyzer import SemanticAnalyzer
 from knowledge.article_repository import ArticleRepository
 from knowledge.pattern_extractor import PatternExtractor
+from knowledge.performance_repository import PerformanceRepository
 from knowledge.project_repository import ProjectRepository
 from knowledge.publishing_repository import PublishingRepository
 from knowledge.rulebook_manager import RulebookManager
@@ -61,6 +62,7 @@ from orchestration.content_agent import ContentAgent, ContentAgentConfig
 from orchestration.task_persistence import TaskResultRepository
 from services.content_memory_service import ContentMemoryService
 from services.content_service import ContentService
+from services.performance_feedback_service import PerformanceFeedbackService
 from services.project_readiness_service import ProjectReadinessService
 from services.project_service import ProjectService
 from services.publishing_service import PublishingService
@@ -175,6 +177,11 @@ def get_article_repository() -> ArticleRepository:
 def get_publishing_repository() -> PublishingRepository:
     """Create PublishingRepository instance."""
     return PublishingRepository(db_manager=get_database())
+
+
+def get_performance_repository() -> PerformanceRepository:
+    """Create PerformanceRepository instance."""
+    return PerformanceRepository(db_manager=get_database())
 
 
 def get_user_repository() -> UserRepository:
@@ -405,6 +412,11 @@ def get_project_readiness_service() -> ProjectReadinessService:
         semantic_analyzer=get_semantic_analyzer(),
         project_repository=get_project_repository(),
     )
+
+
+def get_performance_feedback_service() -> PerformanceFeedbackService:
+    """Create PerformanceFeedbackService instance."""
+    return PerformanceFeedbackService(repository=get_performance_repository())
 
 
 def get_user_service() -> UserService:

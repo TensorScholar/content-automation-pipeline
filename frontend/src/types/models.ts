@@ -53,6 +53,71 @@ export interface ProjectReadiness {
   last_checked_at: string;
 }
 
+export type PerformanceOpportunityType =
+  | "low_ctr_high_impressions"
+  | "striking_distance_position"
+  | "declining_clicks"
+  | "missing_performance_data"
+  | "unmapped_url"
+  | string;
+
+export type PerformanceOpportunitySeverity = "low" | "medium" | "high" | string;
+export type PerformanceOpportunityStatus = "open" | "dismissed" | "resolved" | string;
+
+export interface PerformanceSummary {
+  snapshot_count: number;
+  opportunity_count: number;
+  high_priority_count: number;
+  latest_imported_at?: string | null;
+}
+
+export interface PerformanceSnapshot {
+  id: string;
+  project_id: string;
+  article_id?: string | null;
+  url: string;
+  date_from: string;
+  date_to: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  average_position: number;
+  source: string;
+  imported_at?: string | null;
+}
+
+export interface PerformanceOpportunity {
+  id: string;
+  project_id: string;
+  article_id?: string | null;
+  snapshot_id?: string | null;
+  article_title?: string | null;
+  url: string;
+  type: PerformanceOpportunityType;
+  severity: PerformanceOpportunitySeverity;
+  reason: string;
+  suggested_action: string;
+  supporting_metrics: Record<string, number | string | null | undefined>;
+  status: PerformanceOpportunityStatus;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ProjectPerformanceFeedback {
+  project_id: string;
+  summary: PerformanceSummary;
+  snapshots: PerformanceSnapshot[];
+  opportunities: PerformanceOpportunity[];
+}
+
+export interface PerformanceImportResponse {
+  project_id: string;
+  imported_count: number;
+  snapshot_count: number;
+  opportunity_count: number;
+  opportunities_created_or_updated: number;
+}
+
 export interface LlmModelOption {
   provider: string;
   model: string;

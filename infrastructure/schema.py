@@ -13,6 +13,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -146,6 +147,91 @@ publishing_attempts_table = Table(
     Index("idx_publishing_attempts_article_started", "article_id", "started_at"),
     Index("idx_publishing_attempts_project_started", "project_id", "started_at"),
     Index("idx_publishing_attempts_idempotency", "article_id", "idempotency_key"),
+)
+
+
+content_performance_snapshots_table = Table(
+    "content_performance_snapshots",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column(
+        "project_id",
+        PG_UUID,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column(
+        "article_id",
+        PG_UUID,
+        ForeignKey("generated_articles.id", ondelete="SET NULL"),
+        index=True,
+    ),
+    Column("url", String(1000), nullable=False),
+    Column("date_from", Date, nullable=False),
+    Column("date_to", Date, nullable=False),
+    Column("clicks", Integer, nullable=False, server_default="0"),
+    Column("impressions", Integer, nullable=False, server_default="0"),
+    Column("ctr", Float, nullable=False, server_default="0"),
+    Column("average_position", Float, nullable=False, server_default="0"),
+    Column("source", String(40), nullable=False, server_default="manual_csv"),
+    Column("imported_at", DateTime, nullable=False, server_default=func.now()),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    Index(
+        "uq_performance_snapshot_project_url_period_source",
+        "project_id",
+        "url",
+        "date_from",
+        "date_to",
+        "source",
+        unique=True,
+    ),
+    Index("idx_performance_snapshots_project_period", "project_id", "date_to"),
+    Index("idx_performance_snapshots_article_period", "article_id", "date_to"),
+)
+
+
+content_improvement_opportunities_table = Table(
+    "content_improvement_opportunities",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column(
+        "project_id",
+        PG_UUID,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column(
+        "article_id",
+        PG_UUID,
+        ForeignKey("generated_articles.id", ondelete="SET NULL"),
+        index=True,
+    ),
+    Column(
+        "snapshot_id",
+        PG_UUID,
+        ForeignKey("content_performance_snapshots.id", ondelete="CASCADE"),
+        index=True,
+    ),
+    Column("url", String(1000), nullable=False),
+    Column("type", String(80), nullable=False),
+    Column("severity", String(20), nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("suggested_action", Text, nullable=False),
+    Column("supporting_metrics", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", String(40), nullable=False, server_default="open"),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime, nullable=False, server_default=func.now()),
+    Index(
+        "uq_improvement_opportunity_project_url_type",
+        "project_id",
+        "url",
+        "type",
+        unique=True,
+    ),
+    Index("idx_improvement_opportunities_project_status", "project_id", "status"),
+    Index("idx_improvement_opportunities_article_status", "article_id", "status"),
 )
 
 # Article Revisions Table

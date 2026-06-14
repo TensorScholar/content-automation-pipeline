@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # Import dependency functions from new dependencies module
 from api.dependencies import (
     get_content_memory_service,
+    get_performance_feedback_service,
     get_project_readiness_service,
     get_project_service,
 )
@@ -30,8 +31,9 @@ from core.models import InferredPatterns, Project, Rulebook
 from infrastructure.database import DatabaseManager
 from knowledge.project_repository import ProjectRepository
 from knowledge.rulebook_manager import RulebookManager
-from security import User, get_current_active_user, get_current_superuser
+from security import User, get_current_active_user, get_current_superuser, is_manager_user
 from services.content_memory_service import ContentMemoryService
+from services.performance_feedback_service import PerformanceFeedbackService
 from services.project_readiness_service import ProjectReadinessService
 from services.project_service import ProjectService
 
@@ -198,6 +200,18 @@ class ProjectContentMemoryResponse(BaseModel):
     planning_guidance: List[str]
 
 
+class PerformanceCsvImportRequest(BaseModel):
+    """Command: Import a manual performance CSV snapshot."""
+
+    csv_text: str = Field(..., min_length=1, max_length=200_000)
+    source: str = Field("manual_csv", pattern="^manual_csv$")
+
+
+class DismissOpportunityResponse(BaseModel):
+    id: str
+    status: str
+
+
 # ============================================================================
 # DEPENDENCY INJECTION
 # ============================================================================
@@ -305,6 +319,62 @@ async def get_project_content_memory(
 ):
     """Return read-only content memory derived from generated article metadata."""
     return await memory_service.get_project_memory(project_id, limit=limit)
+
+
+@router.get(
+    "/{project_id:uuid}/performance",
+    response_model=dict,
+    summary="Get read-only performance feedback",
+)
+async def get_project_performance_feedback(
+    project_id: UUID,
+    service: PerformanceFeedbackService = Depends(get_performance_feedback_service),
+    user: User = Depends(get_current_active_user),
+):
+    del user
+    return await service.get_project_performance(project_id)
+
+
+@router.post(
+    "/{project_id:uuid}/performance/import-csv",
+    response_model=dict,
+    summary="Import manual performance CSV",
+)
+async def import_project_performance_csv(
+    project_id: UUID,
+    request: PerformanceCsvImportRequest,
+    service: PerformanceFeedbackService = Depends(get_performance_feedback_service),
+    user: User = Depends(get_current_active_user),
+):
+    if not is_manager_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager access is required to import performance snapshots",
+        )
+    return await service.import_csv(
+        project_id=project_id,
+        csv_text=request.csv_text,
+        source=request.source,
+    )
+
+
+@router.post(
+    "/{project_id:uuid}/performance/opportunities/{opportunity_id:uuid}/dismiss",
+    response_model=DismissOpportunityResponse,
+    summary="Dismiss performance opportunity",
+)
+async def dismiss_project_performance_opportunity(
+    project_id: UUID,
+    opportunity_id: UUID,
+    service: PerformanceFeedbackService = Depends(get_performance_feedback_service),
+    user: User = Depends(get_current_active_user),
+):
+    if not is_manager_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager access is required to dismiss performance opportunities",
+        )
+    return await service.dismiss_opportunity(project_id=project_id, opportunity_id=opportunity_id)
 
 
 @router.put("/{project_id:uuid}", response_model=dict, summary="Update project")

@@ -3,7 +3,14 @@
 import { FormEvent, useEffect, useMemo, useState, useRef } from "react";
 import clsx from "clsx";
 import { ApiError, apiRequest } from "@/lib/api";
-import { Project, ProjectReadiness } from "@/types/models";
+import {
+  PerformanceImportResponse,
+  PerformanceOpportunity,
+  PerformanceSnapshot,
+  Project,
+  ProjectPerformanceFeedback,
+  ProjectReadiness,
+} from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -29,6 +36,8 @@ interface ProjectsPanelProps {
 }
 
 interface RulebookResponse { content?: string; }
+
+type ProjectTab = "general" | "wordpress" | "rules" | "readiness" | "performance";
 
 const VERTICAL_OPTIONS = [
   { value: "tech", fa: "فناوری و نرم‌افزار", ar: "التكنولوجيا والبرمجيات", en: "Technology and Software" },
@@ -108,6 +117,138 @@ const READINESS_COPY = {
   },
 };
 
+const PERFORMANCE_COPY = {
+  en: {
+    tab: "Performance",
+    title: "Performance Feedback",
+    subtitle: "Read-only Search Console style snapshots for editorial prioritization.",
+    refresh: "Refresh",
+    import: "Import CSV",
+    importTitle: "Import performance snapshot",
+    importSubtitle: "Paste a CSV export with url, clicks, impressions, ctr, average_position, date_from, and date_to columns.",
+    importPlaceholder: "url,clicks,impressions,ctr,average_position,date_from,date_to\nhttps://example.com/article,24,3200,0.75%,11.4,2026-05-01,2026-05-31",
+    importEmpty: "Paste CSV data before importing.",
+    importSuccess: "Performance snapshot imported.",
+    snapshots: "Snapshots",
+    opportunities: "Open opportunities",
+    highPriority: "High priority",
+    latestImport: "Latest import",
+    noImport: "No imports yet",
+    emptyTitle: "No performance data yet",
+    emptyBody: "Import a manual Search Console CSV to surface read-only improvement opportunities. Nothing here rewrites or publishes content.",
+    opportunitiesTitle: "Improvement opportunities",
+    recentSnapshots: "Recent snapshots",
+    dismiss: "Dismiss",
+    loading: "Loading performance feedback...",
+    failed: "Performance feedback failed.",
+    noOpportunities: "No open opportunities. Imported pages do not currently need action by the configured rules.",
+    noSnapshots: "No snapshots imported yet.",
+    source: "Source",
+    period: "Period",
+    clicks: "Clicks",
+    impressions: "Impressions",
+    ctr: "CTR",
+    position: "Avg. position",
+    previousClicks: "Previous clicks",
+    article: "Article",
+    unmapped: "Unmapped URL",
+    severity: { low: "Low", medium: "Medium", high: "High" },
+    types: {
+      low_ctr_high_impressions: "Low CTR, high impressions",
+      striking_distance_position: "Striking distance",
+      declining_clicks: "Declining clicks",
+      missing_performance_data: "Missing performance data",
+      unmapped_url: "Unmapped URL",
+    },
+  },
+  fa: {
+    tab: "عملکرد",
+    title: "بازخورد عملکرد",
+    subtitle: "اسنپ‌شات‌های خواندنی از عملکرد محتوا برای اولویت‌بندی ویرایشی.",
+    refresh: "بروزرسانی",
+    import: "ورود CSV",
+    importTitle: "ورود اسنپ‌شات عملکرد",
+    importSubtitle: "CSV شامل ستون‌های url, clicks, impressions, ctr, average_position, date_from, date_to را وارد کنید.",
+    importPlaceholder: "url,clicks,impressions,ctr,average_position,date_from,date_to\nhttps://example.com/article,24,3200,0.75%,11.4,2026-05-01,2026-05-31",
+    importEmpty: "قبل از ورود، داده CSV را وارد کنید.",
+    importSuccess: "اسنپ‌شات عملکرد وارد شد.",
+    snapshots: "اسنپ‌شات‌ها",
+    opportunities: "فرصت‌های باز",
+    highPriority: "اولویت بالا",
+    latestImport: "آخرین ورود",
+    noImport: "هنوز ورودی ثبت نشده",
+    emptyTitle: "هنوز داده عملکردی وجود ندارد",
+    emptyBody: "برای دیدن فرصت‌های بهبود، CSV دستی سرچ کنسول را وارد کنید. این بخش هیچ محتوا را بازنویسی یا منتشر نمی‌کند.",
+    opportunitiesTitle: "فرصت‌های بهبود",
+    recentSnapshots: "اسنپ‌شات‌های اخیر",
+    dismiss: "نادیده گرفتن",
+    loading: "در حال بارگذاری بازخورد عملکرد...",
+    failed: "بازخورد عملکرد ناموفق بود.",
+    noOpportunities: "فرصت بازی وجود ندارد. صفحات واردشده طبق قواعد فعلی نیازمند اقدام نیستند.",
+    noSnapshots: "هنوز اسنپ‌شاتی وارد نشده است.",
+    source: "منبع",
+    period: "بازه",
+    clicks: "کلیک",
+    impressions: "نمایش",
+    ctr: "CTR",
+    position: "میانگین رتبه",
+    previousClicks: "کلیک قبلی",
+    article: "مقاله",
+    unmapped: "URL بدون اتصال",
+    severity: { low: "کم", medium: "متوسط", high: "بالا" },
+    types: {
+      low_ctr_high_impressions: "CTR پایین با نمایش بالا",
+      striking_distance_position: "نزدیک به صفحه اول",
+      declining_clicks: "کاهش کلیک",
+      missing_performance_data: "داده عملکرد ناقص",
+      unmapped_url: "URL بدون اتصال",
+    },
+  },
+  ar: {
+    tab: "الأداء",
+    title: "ملاحظات الأداء",
+    subtitle: "لقطات قراءة فقط تشبه Search Console لتحديد أولويات التحرير.",
+    refresh: "تحديث",
+    import: "استيراد CSV",
+    importTitle: "استيراد لقطة أداء",
+    importSubtitle: "الصق ملف CSV يحتوي أعمدة url و clicks و impressions و ctr و average_position و date_from و date_to.",
+    importPlaceholder: "url,clicks,impressions,ctr,average_position,date_from,date_to\nhttps://example.com/article,24,3200,0.75%,11.4,2026-05-01,2026-05-31",
+    importEmpty: "الصق بيانات CSV قبل الاستيراد.",
+    importSuccess: "تم استيراد لقطة الأداء.",
+    snapshots: "اللقطات",
+    opportunities: "الفرص المفتوحة",
+    highPriority: "أولوية عالية",
+    latestImport: "آخر استيراد",
+    noImport: "لا توجد واردات بعد",
+    emptyTitle: "لا توجد بيانات أداء بعد",
+    emptyBody: "استورد CSV يدوي من Search Console لإظهار فرص تحسين قراءة فقط. هذا القسم لا يعيد الكتابة ولا ينشر المحتوى.",
+    opportunitiesTitle: "فرص التحسين",
+    recentSnapshots: "اللقطات الأخيرة",
+    dismiss: "تجاهل",
+    loading: "جارٍ تحميل ملاحظات الأداء...",
+    failed: "فشل تحميل ملاحظات الأداء.",
+    noOpportunities: "لا توجد فرص مفتوحة. الصفحات المستوردة لا تحتاج إجراءً وفق القواعد الحالية.",
+    noSnapshots: "لم يتم استيراد أي لقطة بعد.",
+    source: "المصدر",
+    period: "الفترة",
+    clicks: "النقرات",
+    impressions: "الظهور",
+    ctr: "CTR",
+    position: "متوسط الترتيب",
+    previousClicks: "النقرات السابقة",
+    article: "المقالة",
+    unmapped: "رابط غير مربوط",
+    severity: { low: "منخفض", medium: "متوسط", high: "عالٍ" },
+    types: {
+      low_ctr_high_impressions: "CTR منخفض مع ظهور عالٍ",
+      striking_distance_position: "قريب من الصفحة الأولى",
+      declining_clicks: "انخفاض النقرات",
+      missing_performance_data: "بيانات أداء ناقصة",
+      unmapped_url: "رابط غير مربوط",
+    },
+  },
+};
+
 function extractError(error: unknown): string {
   if (error instanceof ApiError) return error.detail;
   return "Unexpected error";
@@ -155,12 +296,19 @@ export function ProjectsPanel({
   });
 
   // Editor states
-  const [activeTab, setActiveTab] = useState<"general" | "wordpress" | "rules" | "readiness">("general");
+  const [activeTab, setActiveTab] = useState<ProjectTab>("general");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
   const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [performance, setPerformance] = useState<ProjectPerformanceFeedback | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
+  const [performanceError, setPerformanceError] = useState<string | null>(null);
+  const [performanceImportOpen, setPerformanceImportOpen] = useState(false);
+  const [performanceCsv, setPerformanceCsv] = useState("");
+  const [performanceImporting, setPerformanceImporting] = useState(false);
+  const [dismissingOpportunityId, setDismissingOpportunityId] = useState<string | null>(null);
 
   // Kebab Menu State
   const [kebabOpen, setKebabOpen] = useState(false);
@@ -172,6 +320,7 @@ export function ProjectsPanel({
     [projects, selectedProjectId]
   );
   const readinessCopy = READINESS_COPY[locale];
+  const performanceCopy = PERFORMANCE_COPY[locale];
 
   // If selected project gets deleted, reset selection
   useEffect(() => {
@@ -217,6 +366,40 @@ export function ProjectsPanel({
     return () => controller.abort();
   }, [selectedProject, selectedProjectId, token]);
 
+  useEffect(() => {
+    if (!selectedProject || selectedProjectId === "__new__") {
+      setPerformance(null);
+      setPerformanceError(null);
+      setPerformanceLoading(false);
+      return;
+    }
+    if (activeTab !== "performance") return;
+
+    const controller = new AbortController();
+    setPerformanceLoading(true);
+    setPerformanceError(null);
+
+    apiRequest<ProjectPerformanceFeedback>(`/projects/${selectedProject.id}/performance`, {
+      token,
+      signal: controller.signal,
+      timeoutMs: 10000,
+    })
+      .then((payload) => {
+        if (!controller.signal.aborted) setPerformance(payload);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setPerformance(null);
+          setPerformanceError(extractError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPerformanceLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [activeTab, selectedProject, selectedProjectId, token]);
+
   const refreshReadiness = async () => {
     if (!selectedProject) return;
     setReadinessLoading(true);
@@ -232,6 +415,69 @@ export function ProjectsPanel({
       setReadinessError(extractError(error));
     } finally {
       setReadinessLoading(false);
+    }
+  };
+
+  const refreshPerformance = async () => {
+    if (!selectedProject) return;
+    setPerformanceLoading(true);
+    setPerformanceError(null);
+    try {
+      const payload = await apiRequest<ProjectPerformanceFeedback>(`/projects/${selectedProject.id}/performance`, {
+        token,
+        timeoutMs: 10000,
+      });
+      setPerformance(payload);
+    } catch (error) {
+      setPerformance(null);
+      setPerformanceError(extractError(error));
+    } finally {
+      setPerformanceLoading(false);
+    }
+  };
+
+  const importPerformanceCsv = async () => {
+    if (!selectedProject || performanceImporting) return;
+    if (!performanceCsv.trim()) {
+      showToast("error", performanceCopy.importEmpty);
+      return;
+    }
+    setPerformanceImporting(true);
+    try {
+      await apiRequest<PerformanceImportResponse, { csv_text: string; source: "manual_csv" }>(
+        `/projects/${selectedProject.id}/performance/import-csv`,
+        {
+          method: "POST",
+          token,
+          body: { csv_text: performanceCsv, source: "manual_csv" },
+          timeoutMs: 15000,
+        }
+      );
+      showToast("success", performanceCopy.importSuccess);
+      setPerformanceCsv("");
+      setPerformanceImportOpen(false);
+      await refreshPerformance();
+    } catch (error) {
+      showToast("error", extractError(error));
+    } finally {
+      setPerformanceImporting(false);
+    }
+  };
+
+  const dismissOpportunity = async (opportunityId: string) => {
+    if (!selectedProject || !canManageProjects || dismissingOpportunityId) return;
+    setDismissingOpportunityId(opportunityId);
+    try {
+      await apiRequest(`/projects/${selectedProject.id}/performance/opportunities/${opportunityId}/dismiss`, {
+        method: "POST",
+        token,
+        timeoutMs: 10000,
+      });
+      await refreshPerformance();
+    } catch (error) {
+      showToast("error", extractError(error));
+    } finally {
+      setDismissingOpportunityId(null);
     }
   };
 
@@ -391,6 +637,48 @@ export function ProjectsPanel({
         }
       >
         <p className="text-[14px] text-slate-600 dark:text-gray-300 leading-relaxed">{t("projects.confirmDeleteMsg")}</p>
+      </Modal>
+
+      <Modal
+        open={performanceImportOpen}
+        onClose={() => {
+          if (!performanceImporting) setPerformanceImportOpen(false);
+        }}
+        title={performanceCopy.importTitle}
+        maxWidth="42rem"
+        footer={
+          <>
+            <Button
+              variant="outlined"
+              disabled={performanceImporting}
+              onClick={() => setPerformanceImportOpen(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              loading={performanceImporting}
+              disabled={!performanceCsv.trim()}
+              onClick={() => void importPerformanceCsv()}
+            >
+              {performanceCopy.import}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">
+            {performanceCopy.importSubtitle}
+          </p>
+          <textarea
+            className="min-h-[220px] w-full resize-y rounded-xl border border-black/5 bg-white px-3 py-3 font-mono text-[13px] leading-5 text-slate-900 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100 dark:placeholder:text-gray-500"
+            placeholder={performanceCopy.importPlaceholder}
+            value={performanceCsv}
+            onChange={(event) => setPerformanceCsv(event.target.value)}
+            dir="ltr"
+            spellCheck={false}
+          />
+        </div>
       </Modal>
 
       {/* ── LEFT COLUMN (MASTER: macOS style sidebar list) ── */}
@@ -560,11 +848,12 @@ export function ProjectsPanel({
                   { id: "readiness", label: readinessCopy.tab },
                   { id: "general", label: t("projects.tabGeneral") },
                   { id: "wordpress", label: t("projects.tabWordpress") },
+                  { id: "performance", label: performanceCopy.tab },
                   { id: "rules", label: t("projects.tabRules") },
                 ].map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => setActiveTab(tab.id as ProjectTab)}
                     className={clsx(
                       "pb-3 text-[13px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] border-block-end-[2px]",
                       activeTab === tab.id
@@ -605,6 +894,19 @@ export function ProjectsPanel({
                   project={selectedProject}
                   canManageProjects={canManageProjects}
                   onProjectsRefresh={onProjectsRefresh}
+                />
+              )}
+              {activeTab === "performance" && (
+                <PerformanceTab
+                  copy={performanceCopy}
+                  canManageProjects={canManageProjects}
+                  feedback={performance}
+                  loading={performanceLoading}
+                  error={performanceError}
+                  dismissingOpportunityId={dismissingOpportunityId}
+                  onRefresh={() => void refreshPerformance()}
+                  onOpenImport={() => setPerformanceImportOpen(true)}
+                  onDismiss={(opportunityId) => void dismissOpportunity(opportunityId)}
                 />
               )}
               {activeTab === "rules" && (
@@ -788,6 +1090,323 @@ function ReadinessTab({
           </aside>
         </section>
       )}
+    </div>
+  );
+}
+
+function performanceSeverityClasses(severity: string) {
+  if (severity === "high") {
+    return "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300";
+  }
+  if (severity === "medium") {
+    return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  }
+  return "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+}
+
+function performanceTypeLabel(copy: typeof PERFORMANCE_COPY.en, type: string) {
+  const key = type as keyof typeof PERFORMANCE_COPY.en.types;
+  return copy.types[key] ?? type.replaceAll("_", " ");
+}
+
+function formatCompactNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function formatFixedNumber(value: number | null | undefined, digits = 1) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(value);
+}
+
+function formatCtr(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `${formatFixedNumber(value * 100, 2)}%`;
+}
+
+function formatShortDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function metricFromOpportunity(
+  opportunity: PerformanceOpportunity,
+  key: string,
+  fallback?: number | string | null,
+) {
+  const value = opportunity.supporting_metrics?.[key] ?? fallback;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+}
+
+function PerformanceTab({
+  copy,
+  canManageProjects,
+  feedback,
+  loading,
+  error,
+  dismissingOpportunityId,
+  onRefresh,
+  onOpenImport,
+  onDismiss,
+}: {
+  copy: typeof PERFORMANCE_COPY.en;
+  canManageProjects: boolean;
+  feedback: ProjectPerformanceFeedback | null;
+  loading: boolean;
+  error: string | null;
+  dismissingOpportunityId: string | null;
+  onRefresh: () => void;
+  onOpenImport: () => void;
+  onDismiss: (opportunityId: string) => void;
+}) {
+  const hasData = Boolean(
+    feedback && (feedback.snapshots.length > 0 || feedback.opportunities.length > 0)
+  );
+
+  return (
+    <div className="max-w-5xl space-y-4 animate-fade-in">
+      <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
+            <h3 className="mt-1 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">
+              {copy.title}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outlined" size="sm" loading={loading} onClick={onRefresh}>
+              {copy.refresh}
+            </Button>
+            {canManageProjects && (
+              <Button variant="primary" size="sm" onClick={onOpenImport}>
+                {copy.import}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {loading && !feedback && (
+          <div className="mt-5 rounded-lg border border-black/5 bg-slate-50 px-4 py-3 text-[13px] font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
+            {copy.loading}
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-5 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] font-medium text-red-700 dark:text-red-300" role="alert">
+            {copy.failed} {error}
+          </div>
+        )}
+
+        {feedback && (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <PerformanceSummaryCard label={copy.snapshots} value={feedback.summary.snapshot_count} />
+            <PerformanceSummaryCard label={copy.opportunities} value={feedback.summary.opportunity_count} />
+            <PerformanceSummaryCard label={copy.highPriority} value={feedback.summary.high_priority_count} tone={feedback.summary.high_priority_count > 0 ? "warning" : "default"} />
+            <PerformanceSummaryCard
+              label={copy.latestImport}
+              value={feedback.summary.latest_imported_at ? formatShortDate(feedback.summary.latest_imported_at) : copy.noImport}
+              valueClassName="text-[14px]"
+            />
+          </div>
+        )}
+      </section>
+
+      {feedback && !hasData && !loading && (
+        <section className="rounded-xl border border-dashed border-black/10 bg-white p-6 text-center dark:border-white/15 dark:bg-surface-alt">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-teal-500/15 bg-teal-500/10 text-teal-700 dark:text-teal-200">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 19V5m0 14h16M8 16v-5m4 5V8m4 8v-7" />
+            </svg>
+          </div>
+          <h4 className="text-[15px] font-semibold text-slate-900 dark:text-gray-100">{copy.emptyTitle}</h4>
+          <p className="mx-auto mt-2 max-w-xl text-[13px] leading-5 text-slate-500 dark:text-gray-400">
+            {copy.emptyBody}
+          </p>
+          {canManageProjects && (
+            <Button variant="outlined" size="sm" className="mt-5" onClick={onOpenImport}>
+              {copy.import}
+            </Button>
+          )}
+        </section>
+      )}
+
+      {feedback && hasData && (
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
+            <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
+              <h4 className="text-[14px] font-semibold text-slate-900 dark:text-gray-100">{copy.opportunitiesTitle}</h4>
+            </div>
+            {feedback.opportunities.length === 0 ? (
+              <p className="px-4 py-6 text-[13px] leading-5 text-slate-500 dark:text-gray-400">{copy.noOpportunities}</p>
+            ) : (
+              <div className="divide-y divide-black/5 dark:divide-white/10">
+                {feedback.opportunities.map((opportunity) => (
+                  <PerformanceOpportunityCard
+                    key={opportunity.id}
+                    copy={copy}
+                    opportunity={opportunity}
+                    canManageProjects={canManageProjects}
+                    dismissing={dismissingOpportunityId === opportunity.id}
+                    onDismiss={() => onDismiss(opportunity.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <aside className="rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
+            <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
+              <h4 className="text-[14px] font-semibold text-slate-900 dark:text-gray-100">{copy.recentSnapshots}</h4>
+            </div>
+            {feedback.snapshots.length === 0 ? (
+              <p className="px-4 py-5 text-[13px] leading-5 text-slate-500 dark:text-gray-400">{copy.noSnapshots}</p>
+            ) : (
+              <div className="divide-y divide-black/5 dark:divide-white/10">
+                {feedback.snapshots.slice(0, 8).map((snapshot) => (
+                  <PerformanceSnapshotRow key={snapshot.id} copy={copy} snapshot={snapshot} />
+                ))}
+              </div>
+            )}
+          </aside>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function PerformanceSummaryCard({
+  label,
+  value,
+  tone = "default",
+  valueClassName,
+}: {
+  label: string;
+  value: number | string;
+  tone?: "default" | "warning";
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+      <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{label}</p>
+      <p className={clsx(
+        "mt-2 truncate font-semibold tabular-nums text-slate-900 dark:text-gray-100",
+        typeof value === "number" ? "text-[22px]" : "text-[15px]",
+        tone === "warning" && "text-amber-700 dark:text-amber-300",
+        valueClassName,
+      )}>
+        {typeof value === "number" ? formatCompactNumber(value) : value}
+      </p>
+    </div>
+  );
+}
+
+function PerformanceOpportunityCard({
+  copy,
+  opportunity,
+  canManageProjects,
+  dismissing,
+  onDismiss,
+}: {
+  copy: typeof PERFORMANCE_COPY.en;
+  opportunity: PerformanceOpportunity;
+  canManageProjects: boolean;
+  dismissing: boolean;
+  onDismiss: () => void;
+}) {
+  const clicks = metricFromOpportunity(opportunity, "clicks", metricFromOpportunity(opportunity, "current_clicks"));
+  const impressions = metricFromOpportunity(opportunity, "impressions");
+  const ctr = metricFromOpportunity(opportunity, "ctr");
+  const position = metricFromOpportunity(opportunity, "average_position");
+  const previousClicks = metricFromOpportunity(opportunity, "previous_clicks");
+
+  return (
+    <article className="px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className={clsx("inline-flex items-center rounded-lg border px-2.5 py-1 text-[12px] font-semibold", performanceSeverityClasses(opportunity.severity))}>
+              {copy.severity[opportunity.severity as keyof typeof copy.severity] ?? opportunity.severity}
+            </span>
+            <span className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">
+              {performanceTypeLabel(copy, opportunity.type)}
+            </span>
+          </div>
+          <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">{opportunity.reason}</p>
+          <p className="mt-1 text-[13px] leading-5 text-slate-500 dark:text-gray-400">{opportunity.suggested_action}</p>
+        </div>
+        {canManageProjects && (
+          <Button variant="ghost" size="sm" loading={dismissing} onClick={onDismiss}>
+            {copy.dismiss}
+          </Button>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {opportunity.article_title ? (
+          <PerformancePill label={copy.article} value={opportunity.article_title} />
+        ) : (
+          <PerformancePill label={copy.article} value={copy.unmapped} />
+        )}
+        {clicks !== null && <PerformancePill label={copy.clicks} value={formatCompactNumber(clicks)} />}
+        {previousClicks !== null && <PerformancePill label={copy.previousClicks} value={formatCompactNumber(previousClicks)} />}
+        {impressions !== null && <PerformancePill label={copy.impressions} value={formatCompactNumber(impressions)} />}
+        {ctr !== null && <PerformancePill label={copy.ctr} value={formatCtr(ctr)} />}
+        {position !== null && <PerformancePill label={copy.position} value={formatFixedNumber(position)} />}
+      </div>
+
+      <p className="mt-3 truncate text-[12px] text-slate-400 dark:text-gray-500" dir="ltr">
+        {opportunity.url}
+      </p>
+    </article>
+  );
+}
+
+function PerformancePill({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-lg border border-black/5 bg-slate-50 px-2.5 py-1 text-[12px] dark:border-white/10 dark:bg-white/[0.04]">
+      <span className="shrink-0 text-slate-400 dark:text-gray-500">{label}</span>
+      <span className="min-w-0 truncate font-semibold text-slate-700 dark:text-gray-200">{value}</span>
+    </span>
+  );
+}
+
+function PerformanceSnapshotRow({
+  copy,
+  snapshot,
+}: {
+  copy: typeof PERFORMANCE_COPY.en;
+  snapshot: PerformanceSnapshot;
+}) {
+  return (
+    <div className="px-4 py-3">
+      <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100" dir="ltr">
+        {snapshot.url}
+      </p>
+      <p className="mt-1 text-[12px] text-slate-500 dark:text-gray-400">
+        {copy.period}: {formatShortDate(snapshot.date_from)} - {formatShortDate(snapshot.date_to)}
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <PerformanceMiniMetric label={copy.clicks} value={formatCompactNumber(snapshot.clicks)} />
+        <PerformanceMiniMetric label={copy.impressions} value={formatCompactNumber(snapshot.impressions)} />
+        <PerformanceMiniMetric label={copy.ctr} value={formatCtr(snapshot.ctr)} />
+        <PerformanceMiniMetric label={copy.position} value={formatFixedNumber(snapshot.average_position)} />
+      </div>
+    </div>
+  );
+}
+
+function PerformanceMiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-black/5 bg-slate-50 px-2.5 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+      <p className="text-[11px] font-medium text-slate-400 dark:text-gray-500">{label}</p>
+      <p className="mt-1 text-[13px] font-semibold tabular-nums text-slate-900 dark:text-gray-100">{value}</p>
     </div>
   );
 }
