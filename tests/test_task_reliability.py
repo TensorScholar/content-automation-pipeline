@@ -26,6 +26,8 @@ import redis
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================

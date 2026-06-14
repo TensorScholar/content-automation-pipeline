@@ -97,6 +97,7 @@ def _run_heal(scan_input: Path, output_path: Path) -> dict:
 
 @pytest.mark.chaos
 @pytest.mark.integration
+@pytest.mark.slow
 def test_worker_down_and_pending_stale_recovery_within_mttr(tmp_path: Path):
     """
     Chaos proof:
