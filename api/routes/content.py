@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from api.dependencies import (
     get_content_service,
     get_project_repository,
+    get_publishing_service,
     get_redis,
     get_task_result_repository,
 )
@@ -45,6 +46,7 @@ from orchestration.task_persistence import TaskResultRepository, TaskStatus
 from orchestration.task_state import normalize_db_status, reconcile_task_state
 from security import User, get_current_active_user, is_manager_user
 from services.content_service import ContentService
+from services.publishing_service import PublishingService
 
 router = APIRouter(prefix="/content", tags=["Content"])
 
@@ -1071,10 +1073,15 @@ async def publish_to_wordpress(
     project_id: UUID = Query(..., description="Project ID with WordPress configuration"),
     post_status: str = Query(
         "draft",
-        description="WordPress post status: 'draft' (safe default) or 'publish' (goes live immediately)",
-        pattern="^(draft|publish)$"  # AP-2: validation — only allow safe values
+        description="WordPress post status: 'draft' (safe default), 'future', or explicit 'publish'",
+        pattern="^(draft|future|publish)$",
     ),
-    content_service: ContentService = Depends(get_content_service),
+    scheduled_at: Optional[datetime] = Query(
+        None,
+        description="Required future timestamp when post_status='future'",
+    ),
+    dry_run: bool = Query(False, description="Validate publish readiness without calling WordPress"),
+    publishing_service: PublishingService = Depends(get_publishing_service),
     user: User = Depends(get_current_active_user),
 ):
     """
@@ -1083,123 +1090,50 @@ async def publish_to_wordpress(
     Requires WordPress credentials to be configured in the project settings.
     Returns the published post URL and status.
     """
-    from execution.distributer import Distributor
+    return await publishing_service.publish_to_wordpress(
+        article_id=article_id,
+        project_id=project_id,
+        user_id=user.id,
+        publish_status=post_status,
+        scheduled_at=scheduled_at,
+        dry_run=dry_run,
+    )
 
-    try:
-        # Get article
-        article_dict = await content_service.get_article(article_id, include_content=True)
-        if not article_dict:
-            raise HTTPException(status_code=404, detail="Article not found")
 
-        if str(article_dict.get("project_id")) != str(project_id):
-            raise HTTPException(
-                status_code=400,
-                detail="Article does not belong to the selected project",
-            )
+@router.get(
+    "/{article_id}/publish/wordpress/validate",
+    response_model=dict,
+    summary="Validate WordPress publish readiness",
+)
+async def validate_wordpress_publish_readiness(
+    article_id: UUID,
+    project_id: UUID = Query(..., description="Project ID with WordPress configuration"),
+    post_status: str = Query("draft", pattern="^(draft|future|publish)$"),
+    scheduled_at: Optional[datetime] = Query(None),
+    publishing_service: PublishingService = Depends(get_publishing_service),
+    user: User = Depends(get_current_active_user),
+):
+    del user
+    return await publishing_service.validate_publish_readiness(
+        article_id=article_id,
+        project_id=project_id,
+        publish_status=post_status,
+        scheduled_at=scheduled_at,
+    )
 
-        from services.draft_risk_service import DraftRiskService
 
-        risk = DraftRiskService().assess(article_dict)
-        if risk["risk_level"] == "blocked":
-            raise HTTPException(
-                status_code=400,
-                detail="Article is blocked by draft risk checks and cannot be published yet",
-            )
-
-        # Get project with WordPress configuration
-        project = await content_service.projects.get_by_id(project_id)
-
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-
-        if not project.wordpress_url:
-            raise HTTPException(
-                status_code=400,
-                detail="WordPress is not configured for this project"
-            )
-
-        # Publish to WordPress
-        article = content_service._article_dict_to_generated_article(article_dict)
-        distributor = Distributor()
-
-        try:
-            result = await distributor.distribute_to_wordpress(
-                article, project, post_status=post_status  # AP-2: pass caller-controlled status
-            )
-
-            if result.get("status") == "published":
-                action_label = "published live" if post_status == "publish" else "uploaded as draft"
-                return {
-                    "status": "success",
-                    "message": f"Article {action_label} on WordPress successfully",
-                    "wordpress_url": result.get("url"),
-                    "wordpress_post_id": result.get("post_id"),
-                    "post_status": post_status,  # AP-2: confirm what was actually applied
-                    "attempts": result.get("attempts", 1)
-                }
-            elif result.get("status") == "error":
-                # Return structured error response
-                error_reason = result.get("reason", "Unknown error")
-
-                # Categorize error for better client handling
-                if "credentials" in error_reason.lower() or "auth" in error_reason.lower():
-                    status_code = 401
-                elif "timeout" in error_reason.lower():
-                    status_code = 504
-                elif "connection" in error_reason.lower() or "network" in error_reason.lower():
-                    status_code = 503
-                else:
-                    status_code = 500
-
-                raise HTTPException(
-                    status_code=status_code,
-                    detail=error_reason
-                )
-            else:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Unexpected response from distributor: {result}"
-                )
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            error_msg = str(e)
-
-            # Categorize exception types for better error responses
-            if "timeout" in error_msg.lower() or "TimeoutError" in type(e).__name__:
-                logger.error(f"WordPress timeout error: {e}")
-                raise HTTPException(
-                    status_code=504,
-                    detail=f"WordPress connection timeout: {error_msg}"
-                )
-            elif "connection" in error_msg.lower() or "ConnectError" in type(e).__name__:
-                logger.error(f"WordPress connection error: {e}")
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Cannot connect to WordPress: {error_msg}"
-                )
-            elif "401" in error_msg or "authentication" in error_msg.lower():
-                logger.error(f"WordPress authentication error: {e}")
-                raise HTTPException(
-                    status_code=401,
-                    detail="WordPress authentication failed - check credentials"
-                )
-            else:
-                logger.error(f"WordPress publish error: {e}", exc_info=True)
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to publish to WordPress: {error_msg}"
-                )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in WordPress publish endpoint: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error. Check server logs for details."
-        )
+@router.get(
+    "/{article_id}/publish/status",
+    response_model=dict,
+    summary="Get article publishing status",
+)
+async def get_article_publish_status(
+    article_id: UUID,
+    publishing_service: PublishingService = Depends(get_publishing_service),
+    user: User = Depends(get_current_active_user),
+):
+    del user
+    return await publishing_service.get_publish_status(article_id)
 
 
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete article")

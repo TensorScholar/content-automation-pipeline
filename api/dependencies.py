@@ -49,6 +49,7 @@ from intelligence.semantic_analyzer import SemanticAnalyzer
 from knowledge.article_repository import ArticleRepository
 from knowledge.pattern_extractor import PatternExtractor
 from knowledge.project_repository import ProjectRepository
+from knowledge.publishing_repository import PublishingRepository
 from knowledge.rulebook_manager import RulebookManager
 from knowledge.user_repository import UserRepository
 from knowledge.website_analyzer import WebsiteAnalyzer
@@ -62,6 +63,7 @@ from services.content_memory_service import ContentMemoryService
 from services.content_service import ContentService
 from services.project_readiness_service import ProjectReadinessService
 from services.project_service import ProjectService
+from services.publishing_service import PublishingService
 from services.user_service import UserService
 
 _redis_registry: dict[int, RedisClient] = {}
@@ -168,6 +170,11 @@ def get_project_repository() -> ProjectRepository:
 def get_article_repository() -> ArticleRepository:
     """Create ArticleRepository instance."""
     return ArticleRepository(db_manager=get_database())
+
+
+def get_publishing_repository() -> PublishingRepository:
+    """Create PublishingRepository instance."""
+    return PublishingRepository(db_manager=get_database())
 
 
 def get_user_repository() -> UserRepository:
@@ -369,6 +376,15 @@ def get_content_service() -> ContentService:
 def get_content_memory_service() -> ContentMemoryService:
     """Create ContentMemoryService instance."""
     return ContentMemoryService(article_repository=get_article_repository())
+
+
+def get_publishing_service() -> PublishingService:
+    """Create PublishingService instance."""
+    return PublishingService(
+        content_service=get_content_service(),
+        project_repository=get_project_repository(),
+        publishing_repository=get_publishing_repository(),
+    )
 
 
 def get_project_service() -> ProjectService:
