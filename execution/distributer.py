@@ -6,7 +6,9 @@ Handles distribution of generated content to various channels like Telegram, Wor
 """
 
 from datetime import datetime as _dt
+from datetime import timezone
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 import httpx
 from loguru import logger
@@ -14,6 +16,27 @@ from loguru import logger
 from core.exceptions import DistributionError
 from core.models import GeneratedArticle, Project
 from infrastructure.credential_encryption import decrypt_credential
+from infrastructure.redaction import redact_text
+
+
+class WordPressPublishError(DistributionError):
+    """Classified WordPress publishing error safe for API/log surfaces."""
+
+    def __init__(
+        self,
+        safe_message: str,
+        *,
+        category: str = "unknown_error",
+        retryable: bool = False,
+        status_code: int | None = None,
+        retry_count: int = 0,
+    ):
+        super().__init__(safe_message)
+        self.safe_message = redact_text(safe_message)
+        self.category = category
+        self.retryable = retryable
+        self.status_code = status_code
+        self.retry_count = retry_count
 
 
 class Distributor:
@@ -311,8 +334,69 @@ class Distributor:
 
         return tag_ids
 
+    @staticmethod
+    def _wordpress_slug(article: GeneratedArticle) -> str:
+        return f"smarlux-{str(article.id).replace('-', '')[:32]}"
+
+    @staticmethod
+    def _classify_http_status(status_code: int) -> tuple[str, bool]:
+        if status_code in (401,):
+            return "auth_error", False
+        if status_code in (403,):
+            return "permission_error", False
+        if status_code == 404:
+            return "not_found", False
+        if status_code == 429:
+            return "rate_limited", True
+        if 400 <= status_code < 500:
+            return "validation_error", False
+        if 500 <= status_code < 600:
+            return "wordpress_5xx", True
+        return "unknown_error", False
+
+    @staticmethod
+    def _classify_exception(exc: Exception) -> tuple[str, bool]:
+        if isinstance(exc, httpx.TimeoutException):
+            return "timeout", True
+        if isinstance(exc, httpx.NetworkError):
+            return "network_error", True
+        return "unknown_error", True
+
+    @staticmethod
+    def _safe_response_text(response: httpx.Response) -> str:
+        value = getattr(response, "text", "")
+        return value if isinstance(value, str) else str(value)
+
+    async def _find_existing_wordpress_post(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        api_url: str,
+        auth: httpx.BasicAuth,
+        slug: str,
+    ) -> dict[str, Any] | None:
+        """Find a previously created post by deterministic slug before creating."""
+        lookup_url = f"{api_url}?slug={quote(slug)}&status=any&per_page=1"
+        response = await client.get(lookup_url, auth=auth)
+        if response.status_code != 200:
+            return None
+        try:
+            posts = response.json()
+        except Exception:
+            return None
+        if isinstance(posts, list) and posts:
+            first = posts[0]
+            return first if isinstance(first, dict) else None
+        return None
+
     async def distribute_to_wordpress(
-        self, article: GeneratedArticle, project: Project, post_status: str = "draft"
+        self,
+        article: GeneratedArticle,
+        project: Project,
+        post_status: str = "draft",
+        wordpress_post_id: str | int | None = None,
+        idempotency_key: str | None = None,
+        scheduled_at: _dt | None = None,
     ) -> dict[str, Any]:
         """
         Publishes a generated article to a WordPress site using the REST API.
@@ -328,7 +412,10 @@ class Distributor:
         Args:
             article: The generated article object
             project: The project with WordPress credentials
-            post_status: WordPress post status — 'draft' (default) or 'publish'
+            post_status: WordPress post status — 'draft' (default), 'future', or 'publish'
+            wordpress_post_id: Existing remote post ID; when present, update instead of create.
+            idempotency_key: Deterministic publish key used for traceability and duplicate lookup.
+            scheduled_at: Required by caller for 'future' scheduled posts.
 
         Returns:
             dict with status="published" on success or status="error" on failure
@@ -360,15 +447,25 @@ class Distributor:
             article.keywords if article.keywords else [], project, auth
         )
 
+        slug = self._wordpress_slug(article)
         post_data = {
             "title": article.title,
             "content": gutenberg_content,
             "status": post_status,  # AP-1: controlled by caller, defaults to 'draft'
+            "slug": slug,
             "meta": {
                 "_yoast_wpseo_metadesc": article.meta_description or "",
+                "_smarlux_idempotency_key": idempotency_key or "",
             },
             "tags": tag_ids,
         }
+        if post_status == "future" and scheduled_at:
+            scheduled_utc = scheduled_at
+            if scheduled_utc.tzinfo is None:
+                scheduled_utc = scheduled_utc.replace(tzinfo=timezone.utc)
+            else:
+                scheduled_utc = scheduled_utc.astimezone(timezone.utc)
+            post_data["date_gmt"] = scheduled_utc.replace(tzinfo=None).isoformat()
 
         # Retry logic with exponential backoff and jitter
         import asyncio
@@ -385,7 +482,27 @@ class Distributor:
                     limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
                     follow_redirects=True,
                 ) as client:
-                    response = await client.post(api_url, json=post_data, auth=auth)
+                    target_post_id = wordpress_post_id
+                    if not target_post_id and idempotency_key:
+                        existing = await self._find_existing_wordpress_post(
+                            client=client,
+                            api_url=api_url,
+                            auth=auth,
+                            slug=slug,
+                        )
+                        if existing:
+                            target_post_id = existing.get("id")
+                            logger.warning(
+                                f"WordPress duplicate prevention hit | article_id={article.id} | "
+                                f"existing_post_id={target_post_id} | slug={slug}"
+                            )
+
+                    target_url = (
+                        f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{target_post_id}"
+                        if target_post_id
+                        else api_url
+                    )
+                    response = await client.post(target_url, json=post_data, auth=auth)
 
                 response.raise_for_status()
 
@@ -448,18 +565,28 @@ class Distributor:
 
             except httpx.HTTPStatusError as e:
                 last_error = e
-                # Don't retry on 4xx client errors (except 429 rate limit)
-                if 400 <= e.response.status_code < 500 and e.response.status_code != 429:
+                category, retryable = self._classify_http_status(e.response.status_code)
+                safe_error = redact_text(self._safe_response_text(e.response) or str(e))
+                # Don't retry on non-transient client errors.
+                if not retryable:
                     logger.error(
                         f"WordPress API client error (NO RETRY) | article_id={article.id} | "
-                        f"status_code={e.response.status_code} | error={e.response.text}"
+                        f"status_code={e.response.status_code} | category={category} | "
+                        f"error={safe_error}"
                     )
-                    raise DistributionError(f"WordPress API error: {e.response.text}")
+                    raise WordPressPublishError(
+                        f"WordPress API error: {safe_error}",
+                        category=category,
+                        retryable=False,
+                        status_code=e.response.status_code,
+                        retry_count=attempt,
+                    )
 
                 logger.warning(
                     f"WordPress HTTP error (RETRYING) | article_id={article.id} | "
                     f"attempt={attempt + 1}/{self.max_retries} | "
-                    f"status_code={e.response.status_code} | error={str(e)}"
+                    f"status_code={e.response.status_code} | category={category} | "
+                    f"error={redact_text(str(e))}"
                 )
 
                 if attempt < self.max_retries - 1:
@@ -476,10 +603,12 @@ class Distributor:
 
             except httpx.NetworkError as e:
                 last_error = e
+                category, _ = self._classify_exception(e)
                 logger.warning(
                     f"WordPress network error (RETRYING) | article_id={article.id} | "
                     f"attempt={attempt + 1}/{self.max_retries} | "
-                    f"error_type={type(e).__name__} | error={str(e)}"
+                    f"error_type={type(e).__name__} | category={category} | "
+                    f"error={redact_text(str(e))}"
                 )
 
                 if attempt < self.max_retries - 1:
@@ -495,10 +624,12 @@ class Distributor:
 
             except Exception as e:
                 last_error = e
+                category, _ = self._classify_exception(e)
                 logger.error(
                     f"Unexpected WordPress error (RETRYING) | article_id={article.id} | "
                     f"attempt={attempt + 1}/{self.max_retries} | "
-                    f"error_type={type(e).__name__} | error={str(e)}",
+                    f"error_type={type(e).__name__} | category={category} | "
+                    f"error={redact_text(str(e))}",
                     exc_info=True,
                 )
 
@@ -517,8 +648,16 @@ class Distributor:
         logger.error(
             f"WordPress upload FAILED - retries exhausted | article_id={article.id} | "
             f"project_id={project.id} | max_retries={self.max_retries} | "
-            f"last_error_type={type(last_error).__name__} | last_error={str(last_error)}"
+            f"last_error_type={type(last_error).__name__} | last_error={redact_text(str(last_error))}"
         )
-        raise DistributionError(
-            f"WordPress distribution failed after {self.max_retries} attempts: {str(last_error)}"
+        category = "unknown_error"
+        if isinstance(last_error, httpx.HTTPStatusError):
+            category, _ = self._classify_http_status(last_error.response.status_code)
+        elif isinstance(last_error, Exception):
+            category, _ = self._classify_exception(last_error)
+        raise WordPressPublishError(
+            f"WordPress distribution failed after {self.max_retries} attempts: {redact_text(str(last_error))}",
+            category=category,
+            retryable=False,
+            retry_count=max(self.max_retries - 1, 0),
         )

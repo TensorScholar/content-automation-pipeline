@@ -79,7 +79,7 @@ class WorkflowEvent(BaseModel):
 class ContentAgentConfig(BaseModel):
     """Configuration for content agent behavior."""
 
-    enable_auto_distribution: bool = True
+    enable_auto_distribution: bool = False
     require_manual_approval: bool = False
     max_generation_retries: int = 2
     enable_pattern_inference: bool = True
@@ -777,25 +777,28 @@ class ContentAgent:
         """
         Distributes the article to all configured channels for the project.
         """
-        from execution.distributer import Distributor
-
         if not self.config.enable_auto_distribution:
             return [], []
 
-        distributor = Distributor()
         channels = []
         results = []
 
         # 1. WordPress Distribution
+        # Phase 3A: ContentAgent does not own the publishing audit/idempotency
+        # repository, so it must not call the WordPress side-effect directly.
+        # API/service publishing paths route through PublishingService instead.
         if project.wordpress_url:
-            try:
-                logger.info(f"Distributing article {article.id} to WordPress")
-                wp_res = await distributor.distribute_to_wordpress(article, project)
-                channels.append("wordpress")
-                results.append(wp_res)
-            except Exception as e:
-                logger.error(f"WordPress distribution failed: {e}")
-                results.append({"channel": "wordpress", "status": "failed", "error": str(e)})
+            logger.warning(
+                "Skipping ContentAgent WordPress auto-distribution because safe publishing "
+                f"requires PublishingService audit and idempotency controls | article_id={article.id}"
+            )
+            results.append(
+                {
+                    "channel": "wordpress",
+                    "status": "skipped",
+                    "reason": "safe_publishing_service_required",
+                }
+            )
 
         return channels, results
 

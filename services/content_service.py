@@ -31,7 +31,6 @@ from fastapi import HTTPException, status
 from loguru import logger
 
 from core.enums import DistributionChannel
-from core.exceptions import DistributionError
 from core.models import ContentGenerationRequest, GeneratedArticle, QualityMetrics
 from execution.distributer import Distributor
 from knowledge.article_repository import ArticleRepository
@@ -104,37 +103,34 @@ class ContentService:
     async def _distribute_to_wordpress(
         self, article: GeneratedArticle, project_id: UUID
     ) -> Dict[str, Any]:
-        """Send generated article to WordPress without breaking the pipeline on failure."""
-        # Project lookup should bubble up errors if it fails systemically
-        project = await self.projects.get_by_id(project_id)
-
-        if not project:
-            logger.warning(f"Project {project_id} not found; skipping WordPress distribution")
-            return {"status": "skipped", "reason": "project_not_found"}
-
-        distributor = Distributor()
-
+        """Safely upload generated article to WordPress as a draft."""
         try:
-            result = await distributor.distribute_to_wordpress(article, project)
-            if result.get("status") == "published":
-                distributed_at = datetime.now(timezone.utc)
-                channels = [DistributionChannel.WORDPRESS]
-                article.distributed_at = distributed_at
-                article.distribution_channels = channels
-                await self.articles.update_distribution_status(
-                    article.id, distributed_at, [channel.value for channel in channels]
-                )
+            publishing_service = self._publishing_service()
+            result = await publishing_service.publish_to_wordpress(
+                article_id=article.id,
+                project_id=project_id,
+                user_id=None,
+                publish_status="draft",
+            )
             logger.info(
-                "WordPress distribution completed | article_id=%s | status=%s",
+                "Safe WordPress draft distribution completed | article_id=%s | status=%s",
                 article.id,
                 result.get("status"),
             )
             return result
-        except DistributionError as e:
+        except HTTPException as e:
             logger.error(f"WordPress distribution failed for article {article.id}: {e}")
-            return {"status": "error", "reason": str(e)}
-        # We removed the broad Exception catch here.
-        # Unexpected errors should propagate or be handled by the caller (workflow).
+            return {"status": "error", "reason": e.detail}
+
+    def _publishing_service(self):
+        from knowledge.publishing_repository import PublishingRepository
+        from services.publishing_service import PublishingService
+
+        return PublishingService(
+            content_service=self,
+            project_repository=self.projects,
+            publishing_repository=PublishingRepository(self.articles.db),
+        )
 
     @staticmethod
     def _coerce_keywords(value: Any) -> list[str]:
@@ -1179,11 +1175,15 @@ class ContentService:
 
                 elif channel == "wordpress":
                     if project:
-                        result = await distributor.distribute_to_wordpress(
-                            generated_article, project
+                        publishing_service = self._publishing_service()
+                        result = await publishing_service.publish_to_wordpress(
+                            article_id=generated_article.id,
+                            project_id=UUID(str(project.id)),
+                            user_id=None,
+                            publish_status="draft",
                         )
                         delivery_confirmations["wordpress"] = result
-                        if result.get("status") == "published":
+                        if result.get("status") == "success":
                             successful_channels.append("wordpress")
                     else:
                         delivery_confirmations["wordpress"] = {
