@@ -66,11 +66,23 @@ generated_articles_table = Table(
     Column("generation_time", Float),
     Column("distributed_at", DateTime),
     Column("distribution_channels", JSON),
+    Column("publish_status", String(40), nullable=False, server_default="not_published"),
+    Column("wordpress_post_id", String(64)),
+    Column("wordpress_post_url", String(1000)),
+    Column("wordpress_post_status", String(40)),
+    Column("wordpress_published_at", DateTime),
+    Column("publish_idempotency_key", String(160)),
+    Column("publish_error_category", String(100)),
+    Column("publish_error_message", Text),
+    Column("publish_attempt_count", Integer, nullable=False, server_default="0"),
+    Column("publish_updated_at", DateTime),
     Column("created_at", DateTime, default=func.now(), index=True),
     Column("updated_at", DateTime, default=func.now(), onupdate=func.now()),
     # Composite indexes for common query patterns
     Index("idx_articles_project_created", "project_id", "created_at"),
     Index("idx_articles_project_distributed", "project_id", "distributed_at"),
+    Index("idx_articles_publish_status", "project_id", "publish_status"),
+    Index("idx_articles_wordpress_post", "project_id", "wordpress_post_id"),
     # Full-text search index for title and content (PostgreSQL GIN index)
     # This enables fast ILIKE and full-text searches on articles
     Index(
@@ -88,6 +100,46 @@ generated_articles_table = Table(
         "keywords",
         postgresql_using="gin",
     ),
+)
+
+
+publishing_attempts_table = Table(
+    "publishing_attempts",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column(
+        "article_id",
+        PG_UUID,
+        ForeignKey("generated_articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column(
+        "project_id",
+        PG_UUID,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column("user_id", PG_UUID, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("target_site_url", String(500)),
+    Column("requested_publish_mode", String(40), nullable=False),
+    Column("final_wordpress_status", String(40)),
+    Column("wordpress_post_id", String(64)),
+    Column("wordpress_post_url", String(1000)),
+    Column("idempotency_key", String(160), nullable=False, index=True),
+    Column("started_at", DateTime, nullable=False, server_default=func.now()),
+    Column("finished_at", DateTime),
+    Column("success", Boolean, nullable=False, server_default="false"),
+    Column("error_category", String(100)),
+    Column("error_message", Text),
+    Column("retry_count", Integer, nullable=False, server_default="0"),
+    Column("task_id", String(255)),
+    Column("correlation_id", String(255)),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    Index("idx_publishing_attempts_article_started", "article_id", "started_at"),
+    Index("idx_publishing_attempts_project_started", "project_id", "started_at"),
+    Index("idx_publishing_attempts_idempotency", "article_id", "idempotency_key"),
 )
 
 # Article Revisions Table
