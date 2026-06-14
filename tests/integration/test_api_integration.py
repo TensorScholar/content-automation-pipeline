@@ -26,16 +26,13 @@ class TestHealthEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] in ["healthy", "degraded"]
-        assert "components" in data
+        assert "dependencies" in data
 
     @pytest.mark.asyncio
     async def test_system_health_detailed(self, test_client: AsyncClient):
-        """Test that /system/health returns detailed health info."""
+        """Test that /system/health is protected."""
         response = await test_client.get("/system/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert "database" in data
-        assert "redis" in data
+        assert response.status_code == 401
 
 
 class TestAuthEndpoints:
@@ -47,8 +44,8 @@ class TestAuthEndpoints:
     ):
         """Test that login with wrong credentials fails."""
         response = await test_client.post(
-            "/api/auth/login",
-            json={"email": "nonexistent@test.com", "password": "wrongpassword"},
+            "/auth/token",
+            data={"username": "nonexistent@test.com", "password": "wrongpassword"},
         )
         assert response.status_code in [401, 422]
 
@@ -67,7 +64,7 @@ class TestAuthEndpoints:
             )
 
             response = await test_client.post(
-                "/api/auth/register",
+                "/auth/register",
                 json={
                     "email": "test@example.com",
                     "password": "SecurePassword123!",
@@ -84,7 +81,7 @@ class TestProjectEndpoints:
     @pytest.mark.asyncio
     async def test_list_projects_requires_auth(self, test_client: AsyncClient):
         """Test that listing projects requires authentication."""
-        response = await test_client.get("/api/projects")
+        response = await test_client.get("/projects")
         assert response.status_code == 401
 
     @pytest.mark.asyncio
@@ -112,7 +109,7 @@ class TestProjectEndpoints:
                 )
 
                 response = await test_client.post(
-                    "/api/projects",
+                    "/projects",
                     json=project_data,
                     headers=auth_headers,
                 )
@@ -127,7 +124,7 @@ class TestContentEndpoints:
     async def test_generate_content_requires_auth(self, test_client: AsyncClient):
         """Test that content generation requires authentication."""
         response = await test_client.post(
-            "/api/content/generate",
+            "/content/generate/async",
             json={
                 "project_id": str(uuid4()),
                 "topic": "Test Topic",
@@ -146,7 +143,7 @@ class TestContentEndpoints:
             mock_user.return_value = MagicMock(id=str(uuid4()))
 
             response = await test_client.get(
-                f"/api/content/{non_existent_id}",
+                f"/content/{non_existent_id}",
                 headers=auth_headers,
             )
             # Should be 404 or 401 depending on auth
@@ -182,8 +179,8 @@ class TestErrorHandling:
     async def test_validation_error_returns_422(self, test_client: AsyncClient):
         """Test that invalid data returns 422."""
         response = await test_client.post(
-            "/api/auth/login",
-            json={"invalid": "data"},  # Missing required fields
+            "/auth/token",
+            data={"invalid": "data"},  # Missing required fields
         )
         assert response.status_code == 422
 

@@ -134,7 +134,7 @@ async def test_client():
     from api.main import app
 
     # Disable rate limiting for tests
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(app=app, base_url="http://localhost") as client:
         yield client
 
 

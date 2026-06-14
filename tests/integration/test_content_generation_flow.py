@@ -40,25 +40,54 @@ class TestContentGenerationWorkflow:
     @pytest.mark.asyncio
     async def test_content_planning_generates_outline(self, mock_llm_client):
         """Test that content planning generates a valid outline."""
-        with patch(
-            "execution.content_planner.get_llm_client",
-            return_value=mock_llm_client,
-        ):
-            # Mock the planner response
-            mock_llm_client.generate.return_value.content = '''
-            {
-                "title": "Test Article",
-                "sections": [
-                    {"heading": "Introduction", "key_points": ["point1"]},
-                    {"heading": "Main Content", "key_points": ["point2"]},
-                    {"heading": "Conclusion", "key_points": ["point3"]}
-                ],
-                "meta_description": "A test article"
-            }
-            '''
+        from core.models import Project
+        from execution.content_planner import ContentPlanner
 
-            # The planner should parse this and create a valid plan
-            assert mock_llm_client.generate.return_value.content is not None
+        context_synthesizer = MagicMock()
+        context_synthesizer.synthesize_context = AsyncMock(return_value=MagicMock())
+        model_router = MagicMock()
+        model_router.route = AsyncMock(return_value=MagicMock(selected_model="test-model"))
+        article_repository = MagicMock()
+        article_repository.save_content_plan = AsyncMock()
+        mock_llm_client.complete = AsyncMock(
+            return_value=MagicMock(
+                content="""
+                {
+                    "title": "Test Article",
+                    "sections": [
+                        {"heading": "Introduction", "key_points": ["point1"]},
+                        {"heading": "Main Content", "key_points": ["point2"]},
+                        {"heading": "Conclusion", "key_points": ["point3"]}
+                    ],
+                    "meta_description": "A complete test article description for planner validation."
+                }
+                """
+            )
+        )
+
+        planner = ContentPlanner(
+            decision_engine=MagicMock(),
+            context_synthesizer=context_synthesizer,
+            model_router=model_router,
+            llm_client=mock_llm_client,
+            article_repository=article_repository,
+            metrics_collector=MagicMock(),
+        )
+
+        plan = await planner.create_content_plan(
+            project=Project(name="Integration Test Project"),
+            topic="Test Article Topic",
+            keywords=[],
+        )
+
+        assert plan.outline.title == "Test Article"
+        assert [section.heading for section in plan.outline.sections] == [
+            "Introduction",
+            "Main Content",
+            "Conclusion",
+        ]
+        mock_llm_client.complete.assert_awaited_once()
+        article_repository.save_content_plan.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_parallel_section_generation(self, mock_llm_client):

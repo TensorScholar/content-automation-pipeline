@@ -655,10 +655,15 @@ def test_chaos_intermittent_network():
         wordpress_app_password="test pass 1234"
     )
 
-    call_count = [0]
+    http_call_count = [0]
+    publish_attempt_count = [0]
 
     async def intermittent_network(*args, **kwargs):
-        call_count[0] += 1
+        http_call_count[0] += 1
+        url = str(args[0]) if args else ""
+        is_publish_attempt = url.rstrip("/").endswith("/wp-json/wp/v2/posts")
+        if is_publish_attempt:
+            publish_attempt_count[0] += 1
 
         # 50% chance of failure
         if random.random() < 0.5:
@@ -687,9 +692,10 @@ def test_chaos_intermittent_network():
                 f"Unexpected status: {result['status']}"
 
             # Property: Should have attempted multiple times
-            assert call_count[0] >= 1, "Should have attempted at least once"
-            assert call_count[0] <= distributor.max_retries, \
-                f"Should not exceed max retries: {call_count[0]} > {distributor.max_retries}"
+            assert http_call_count[0] >= 1, "Should have attempted at least once"
+            assert publish_attempt_count[0] <= distributor.max_retries, \
+                "Should not exceed max publish retries: " \
+                f"{publish_attempt_count[0]} > {distributor.max_retries}"
 
     try:
         asyncio.run(test())

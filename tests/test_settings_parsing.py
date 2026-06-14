@@ -61,7 +61,10 @@ def test_development_llm_provider_can_autodetect_available_provider(monkeypatch)
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("GOOGLE_API_KEY", "")
     monkeypatch.setenv("LLM_GEMINI_API_KEY", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("LLM_ANTHROPIC_API_KEY", "")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("LLM_OPENAI_API_KEY", "")
 
     settings = Settings()
 
