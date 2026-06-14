@@ -33,7 +33,7 @@ def cache_key_builder(*args, **kwargs) -> str:
         "kwargs": {k: str(v) for k, v in sorted(kwargs.items()) if not callable(v)},
     }
     key_string = json.dumps(key_data, sort_keys=True)
-    return hashlib.md5(key_string.encode()).hexdigest()
+    return hashlib.md5(key_string.encode(), usedforsecurity=False).hexdigest()
 
 
 async def invalidate_query_cache(
