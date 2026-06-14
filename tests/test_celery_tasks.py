@@ -19,11 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Mock celery before importing tasks
-sys.modules['celery'] = MagicMock()
-sys.modules['celery.exceptions'] = MagicMock()
-sys.modules['orchestration.celery_app'] = MagicMock()
-
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
