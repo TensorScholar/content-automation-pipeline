@@ -114,12 +114,16 @@ class ArticleRepository:
         Returns:
             Created article data
         """
-        query = generated_articles_table.insert().values(article_data)
-        result = await self.db.execute(query)
+        query = (
+            generated_articles_table.insert()
+            .values(article_data)
+            .returning(generated_articles_table)
+        )
+        async with self.db.session() as session:
+            result = await session.execute(query)
+            created = result.mappings().one()
 
-        # Fetch the created article
-        created_id = result.get("id") or article_data.get("id")
-        return await self.get_by_id(created_id)
+        return dict(created)
 
     async def update(self, article_id: UUID, updates: Dict[str, Any]) -> Dict[str, Any]:
         """
