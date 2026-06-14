@@ -288,6 +288,12 @@ class PublishingService:
         if publish_status not in ALLOWED_PUBLISH_STATUSES:
             errors.append({"code": "invalid_status", "message": "Invalid WordPress publish status"})
 
+        if publish_status in {"future", "publish"} and article.get("review_status") != "approved":
+            errors.append({
+                "code": "review_required",
+                "message": "Manager approval is required before scheduled or public publishing",
+            })
+
         from services.draft_risk_service import DraftRiskService
 
         risk = DraftRiskService().assess(article)

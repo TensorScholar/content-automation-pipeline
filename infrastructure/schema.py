@@ -76,6 +76,11 @@ generated_articles_table = Table(
     Column("publish_error_message", Text),
     Column("publish_attempt_count", Integer, nullable=False, server_default="0"),
     Column("publish_updated_at", DateTime),
+    Column("review_status", String(40), nullable=False, server_default="pending_review"),
+    Column("review_note", Text),
+    Column("reviewed_by", PG_UUID, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("reviewed_at", DateTime),
+    Column("review_updated_at", DateTime),
     Column("created_at", DateTime, default=func.now(), index=True),
     Column("updated_at", DateTime, default=func.now(), onupdate=func.now()),
     # Composite indexes for common query patterns
@@ -83,6 +88,7 @@ generated_articles_table = Table(
     Index("idx_articles_project_distributed", "project_id", "distributed_at"),
     Index("idx_articles_publish_status", "project_id", "publish_status"),
     Index("idx_articles_wordpress_post", "project_id", "wordpress_post_id"),
+    Index("idx_articles_review_status", "project_id", "review_status"),
     # Full-text search index for title and content (PostgreSQL GIN index)
     # This enables fast ILIKE and full-text searches on articles
     Index(

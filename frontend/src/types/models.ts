@@ -145,6 +145,30 @@ export interface ArticleDetail {
   seo_analysis?: SeoAnalysis;
 }
 
+export type ArticleReviewStatus = "pending_review" | "approved" | "changes_requested" | "rejected" | string;
+export type ArticleReviewAction = "approve" | "reject" | "request_changes";
+
+export interface ArticleReviewChecklistItem {
+  id: string;
+  label: string;
+  passed: boolean;
+  blocking: boolean;
+}
+
+export interface ArticleReviewState {
+  article_id: string;
+  status: ArticleReviewStatus;
+  note?: string | null;
+  reviewed_by?: string | null;
+  reviewer_name?: string | null;
+  reviewed_at?: string | null;
+  updated_at?: string | null;
+  can_approve: boolean;
+  blocking_reasons: string[];
+  checklist: ArticleReviewChecklistItem[];
+  risk_level?: string;
+}
+
 export interface DraftRiskIssue {
   id: string;
   severity: "blocking" | "warning" | "info" | string;

@@ -44,6 +44,7 @@ def _article_dict(project_id: UUID | None = None) -> dict:
         "total_tokens_used": 100,
         "total_cost": 0.01,
         "generation_time": 1.0,
+        "review_status": "pending_review",
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
@@ -242,6 +243,7 @@ async def test_invalid_publish_status_is_rejected_before_wordpress_call():
 @pytest.mark.asyncio
 async def test_scheduled_publish_requires_future_timestamp():
     service, article, project, publishing_repo, distributor = _service()
+    article["review_status"] = "approved"
 
     with pytest.raises(HTTPException):
         await service.publish_to_wordpress(
@@ -254,6 +256,24 @@ async def test_scheduled_publish_requires_future_timestamp():
 
     assert distributor.calls == []
     assert publishing_repo.preflight_failures
+
+
+@pytest.mark.asyncio
+async def test_public_publish_requires_manager_approval():
+    service, article, project, publishing_repo, distributor = _service()
+
+    with pytest.raises(HTTPException) as exc:
+        await service.publish_to_wordpress(
+            article_id=article["id"],
+            project_id=project.id,
+            user_id=uuid4(),
+            publish_status="publish",
+        )
+
+    assert exc.value.status_code == 400
+    assert distributor.calls == []
+    assert publishing_repo.preflight_failures
+    assert "Manager approval" in publishing_repo.preflight_failures[0]["error_message"]
 
 
 @pytest.mark.asyncio

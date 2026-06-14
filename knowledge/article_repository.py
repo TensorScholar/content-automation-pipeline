@@ -26,6 +26,7 @@ from infrastructure.schema import (
     content_plans_table,
     generated_articles_table,
     projects_table,
+    users_table,
 )
 from optimization.query_cache import cached_query
 
@@ -146,6 +147,65 @@ class ArticleRepository:
         await self.db.execute(query)
 
         return await self.get_by_id(article_id)
+
+    async def get_review_state(self, article_id: UUID) -> Optional[Dict[str, Any]]:
+        """Return durable review state with a safe reviewer display label."""
+        query = (
+            select(
+                generated_articles_table.c.id,
+                generated_articles_table.c.project_id,
+                generated_articles_table.c.review_status,
+                generated_articles_table.c.review_note,
+                generated_articles_table.c.reviewed_by,
+                generated_articles_table.c.reviewed_at,
+                generated_articles_table.c.review_updated_at,
+                users_table.c.full_name.label("reviewer_full_name"),
+                users_table.c.email.label("reviewer_email"),
+            )
+            .select_from(
+                generated_articles_table.outerjoin(
+                    users_table,
+                    generated_articles_table.c.reviewed_by == users_table.c.id,
+                )
+            )
+            .where(generated_articles_table.c.id == article_id)
+        )
+        row = await self.db.fetch_one(query)
+        return dict(row) if row else None
+
+    async def set_review_state(
+        self,
+        *,
+        article_id: UUID,
+        review_status: str,
+        reviewer_id: UUID,
+        note: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Atomically store the current review decision for an article."""
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        async with self.db.transaction() as session:
+            existing = await session.execute(
+                select(generated_articles_table.c.id)
+                .where(generated_articles_table.c.id == article_id)
+                .with_for_update()
+            )
+            if existing.scalar_one_or_none() is None:
+                return None
+
+            await session.execute(
+                update(generated_articles_table)
+                .where(generated_articles_table.c.id == article_id)
+                .values(
+                    review_status=review_status,
+                    review_note=note,
+                    reviewed_by=reviewer_id,
+                    reviewed_at=now,
+                    review_updated_at=now,
+                    updated_at=now,
+                )
+            )
+
+        return await self.get_review_state(article_id)
 
     async def delete(self, article_id: UUID) -> bool:
         """

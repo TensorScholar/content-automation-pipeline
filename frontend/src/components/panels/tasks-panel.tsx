@@ -3,14 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { ApiError, apiRequest } from "@/lib/api";
-import { TaskHistoryItem, TaskStatusResponse, ArticleDetail, DraftRiskAssessment } from "@/types/models";
+import {
+  TaskHistoryItem,
+  TaskStatusResponse,
+  ArticleDetail,
+  DraftRiskAssessment,
+  ArticleReviewAction,
+  ArticleReviewState,
+} from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
+import { StatusBadge as UiStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
 
 interface TasksPanelProps {
   token: string;
+  canReview?: boolean;
 }
 
 interface QualityMetricsResponse {
@@ -64,7 +73,105 @@ const RISK_COPY = {
   },
 };
 
-export function TasksPanel({ token }: TasksPanelProps) {
+const REVIEW_COPY = {
+  en: {
+    title: "Review",
+    subtitle: "Manager decision before scheduled or public publishing.",
+    checklist: "Quality checklist",
+    pending_review: "Pending review",
+    approved: "Approved",
+    changes_requested: "Changes requested",
+    rejected: "Rejected",
+    approve: "Approve",
+    reject: "Reject",
+    request_changes: "Request changes",
+    noteLabel: "Decision note",
+    notePlaceholder: "Add concise feedback for the author or operator.",
+    noteRequired: "Feedback is required for this decision.",
+    noDecision: "No manager decision yet.",
+    reviewedBy: "Reviewed by",
+    blockedTitle: "Approval blocked",
+    approveBlocked: "Resolve blocking checklist items before approval.",
+    liveBlocked: "Public publishing requires manager approval.",
+    reviewUpdated: "Review decision saved.",
+    reviewError: "Could not update review decision.",
+    loading: "Loading review state...",
+    unavailable: "Review status is unavailable.",
+    checks: {
+      title: "Title",
+      content: "Article body",
+      publish_risk: "Publish risk",
+      metadata: "Search metadata",
+      keywords: "Keywords",
+    },
+  },
+  fa: {
+    title: "بازبینی",
+    subtitle: "تصمیم مدیر پیش از زمان‌بندی یا انتشار عمومی.",
+    checklist: "چک‌لیست کیفیت",
+    pending_review: "در انتظار بازبینی",
+    approved: "تأیید شده",
+    changes_requested: "نیازمند اصلاح",
+    rejected: "رد شده",
+    approve: "تأیید",
+    reject: "رد",
+    request_changes: "درخواست اصلاح",
+    noteLabel: "یادداشت تصمیم",
+    notePlaceholder: "بازخورد کوتاه برای نویسنده یا اپراتور بنویسید.",
+    noteRequired: "برای این تصمیم، بازخورد لازم است.",
+    noDecision: "هنوز تصمیم مدیری ثبت نشده است.",
+    reviewedBy: "بازبینی توسط",
+    blockedTitle: "تأیید مسدود است",
+    approveBlocked: "قبل از تأیید، موارد مسدودکننده چک‌لیست را رفع کنید.",
+    liveBlocked: "انتشار عمومی نیازمند تأیید مدیر است.",
+    reviewUpdated: "تصمیم بازبینی ذخیره شد.",
+    reviewError: "امکان ثبت تصمیم بازبینی وجود نداشت.",
+    loading: "در حال بارگذاری وضعیت بازبینی...",
+    unavailable: "وضعیت بازبینی در دسترس نیست.",
+    checks: {
+      title: "عنوان",
+      content: "متن مقاله",
+      publish_risk: "ریسک انتشار",
+      metadata: "متادیتای جستجو",
+      keywords: "کلمات کلیدی",
+    },
+  },
+  ar: {
+    title: "المراجعة",
+    subtitle: "قرار المدير قبل الجدولة أو النشر العام.",
+    checklist: "قائمة الجودة",
+    pending_review: "بانتظار المراجعة",
+    approved: "تمت الموافقة",
+    changes_requested: "تعديلات مطلوبة",
+    rejected: "مرفوض",
+    approve: "موافقة",
+    reject: "رفض",
+    request_changes: "طلب تعديلات",
+    noteLabel: "ملاحظة القرار",
+    notePlaceholder: "اكتب ملاحظات موجزة للكاتب أو المشغل.",
+    noteRequired: "الملاحظات مطلوبة لهذا القرار.",
+    noDecision: "لا يوجد قرار إداري بعد.",
+    reviewedBy: "راجعه",
+    blockedTitle: "الموافقة محظورة",
+    approveBlocked: "أصلح عناصر القائمة الحاجبة قبل الموافقة.",
+    liveBlocked: "النشر العام يتطلب موافقة المدير.",
+    reviewUpdated: "تم حفظ قرار المراجعة.",
+    reviewError: "تعذر تحديث قرار المراجعة.",
+    loading: "جارٍ تحميل حالة المراجعة...",
+    unavailable: "حالة المراجعة غير متاحة.",
+    checks: {
+      title: "العنوان",
+      content: "نص المقال",
+      publish_risk: "مخاطر النشر",
+      metadata: "بيانات البحث",
+      keywords: "الكلمات المفتاحية",
+    },
+  },
+};
+
+type ReviewCopy = (typeof REVIEW_COPY)["en"];
+
+export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
   const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [tasks, setTasks] = useState<TaskHistoryItem[]>([]);
@@ -89,6 +196,12 @@ export function TasksPanel({ token }: TasksPanelProps) {
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetricsResponse | null>(null);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [qualityError, setQualityError] = useState<string | null>(null);
+  const [reviewState, setReviewState] = useState<ArticleReviewState | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewAction, setReviewAction] = useState<Exclude<ArticleReviewAction, "approve"> | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   const loadTasks = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -223,18 +336,27 @@ export function TasksPanel({ token }: TasksPanelProps) {
       setQualityMetrics(null);
       setQualityLoading(false);
       setQualityError(null);
+      setReviewState(null);
+      setReviewLoading(false);
+      setReviewError(null);
       return;
     }
     const controller = new AbortController();
     const load = async () => {
       setRiskLoading(true);
+      setReviewLoading(true);
+      setReviewError(null);
       try {
-        const [articleResult, riskResult] = await Promise.allSettled([
+        const [articleResult, riskResult, reviewResult] = await Promise.allSettled([
           apiRequest<ArticleDetail>(`/content/${articleId}`, {
             token,
             signal: controller.signal,
           }),
           apiRequest<DraftRiskAssessment>(`/content/${articleId}/risk-assessment`, {
+            token,
+            signal: controller.signal,
+          }),
+          apiRequest<ArticleReviewState>(`/content/${articleId}/review`, {
             token,
             signal: controller.signal,
           }),
@@ -249,18 +371,27 @@ export function TasksPanel({ token }: TasksPanelProps) {
           setDetailArticle(null);
         }
         setRiskAssessment(riskResult.status === "fulfilled" ? riskResult.value : null);
+        if (reviewResult.status === "fulfilled") {
+          setReviewState(reviewResult.value);
+        } else {
+          setReviewState(null);
+          setReviewError(REVIEW_COPY[locale].unavailable);
+        }
       } catch {
         if (!controller.signal.aborted) {
           setDetailArticle(null);
           setRiskAssessment(null);
+          setReviewState(null);
+          setReviewError(REVIEW_COPY[locale].unavailable);
         }
       } finally {
         if (!controller.signal.aborted) setRiskLoading(false);
+        if (!controller.signal.aborted) setReviewLoading(false);
       }
     };
     void load();
     return () => controller.abort();
-  }, [liveStatus?.result?.article_id, token]);
+  }, [liveStatus?.result?.article_id, locale, token]);
 
   useEffect(() => {
     const articleId = detailArticle?.id;
@@ -353,6 +484,10 @@ export function TasksPanel({ token }: TasksPanelProps) {
       setWpResult(RISK_COPY[locale].blockedPublish);
       return;
     }
+    if (status === "publish" && reviewState?.status !== "approved") {
+      setWpResult(REVIEW_COPY[locale].liveBlocked);
+      return;
+    }
     setWpPublishing(true);
     setWpResult(null);
     try {
@@ -370,6 +505,32 @@ export function TasksPanel({ token }: TasksPanelProps) {
     }
   };
 
+  const submitReview = async (action: ArticleReviewAction, note?: string) => {
+    if (!detailArticle) return;
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      const updated = await apiRequest<ArticleReviewState, { action: ArticleReviewAction; note?: string }>(
+        `/content/${detailArticle.id}/review`,
+        {
+          method: "POST",
+          token,
+          body: { action, note },
+        }
+      );
+      setReviewState(updated);
+      setReviewAction(null);
+      setReviewNote("");
+      showToast("success", REVIEW_COPY[locale].reviewUpdated);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.detail : REVIEW_COPY[locale].reviewError;
+      setReviewError(message);
+      showToast("error", message);
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
   const filterTabs: Array<{ key: FilterTab; label: string; count: number }> = [
     { key: "all", label: t("common.all"), count: kpis.total },
     { key: "SUCCESS", label: t("common.success"), count: kpis.success },
@@ -383,6 +544,7 @@ export function TasksPanel({ token }: TasksPanelProps) {
         ? "لا توجد بيانات سيو محفوظة لهذه المقالة بعد."
         : "No SEO data is stored for this article yet.";
   const riskCopy = RISK_COPY[locale];
+  const reviewCopy = REVIEW_COPY[locale];
 
   /* ════════════════════════════════════════════════════════════════════════
      Master-Detail Layout: Smooth Dynamic Drawers and Logical Properties Only
@@ -481,6 +643,57 @@ export function TasksPanel({ token }: TasksPanelProps) {
         </>
       }>
         <p className="text-[14px] text-gray-600 dark:text-gray-300">{t("tasks.confirmDeleteTask") || "Are you sure you want to permanently delete this task data?"}</p>
+      </Modal>
+
+      <Modal
+        open={Boolean(reviewAction)}
+        onClose={() => {
+          if (!reviewSubmitting) {
+            setReviewAction(null);
+            setReviewNote("");
+          }
+        }}
+        title={reviewAction ? reviewCopy[reviewAction] : reviewCopy.title}
+        footer={
+          <>
+            <Button
+              variant="outlined"
+              disabled={reviewSubmitting}
+              onClick={() => {
+                setReviewAction(null);
+                setReviewNote("");
+              }}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant={reviewAction === "reject" ? "danger" : "primary"}
+              loading={reviewSubmitting}
+              disabled={!reviewNote.trim()}
+              onClick={() => reviewAction && void submitReview(reviewAction, reviewNote)}
+            >
+              {reviewAction ? reviewCopy[reviewAction] : t("common.confirm")}
+            </Button>
+          </>
+        }
+      >
+        <label className="block">
+          <span className="text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+            {reviewCopy.noteLabel}
+          </span>
+          <textarea
+            value={reviewNote}
+            onChange={(event) => setReviewNote(event.target.value)}
+            className="mt-2 min-h-[112px] w-full resize-none rounded-xl border border-black/8 bg-white px-3 py-2.5 text-[14px] leading-6 text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:placeholder:text-gray-500"
+            placeholder={reviewCopy.notePlaceholder}
+            maxLength={2000}
+          />
+        </label>
+        {!reviewNote.trim() && (
+          <p className="mt-2 text-[12px] font-medium text-amber-700 dark:text-amber-300">
+            {reviewCopy.noteRequired}
+          </p>
+        )}
       </Modal>
 
       {/* ── Search Bar ── */}
@@ -648,6 +861,24 @@ export function TasksPanel({ token }: TasksPanelProps) {
                           <span className="block text-[18px] font-bold text-teal-600 mt-1">{detailArticle.cost_usd ? `$${detailArticle.cost_usd.toFixed(3)}` : "—"}</span>
                         </div>
                       </div>
+
+                      <ReviewPanel
+                        canReview={canReview}
+                        reviewState={reviewState}
+                        loading={reviewLoading}
+                        error={reviewError}
+                        copy={reviewCopy}
+                        onApprove={() => void submitReview("approve")}
+                        onRequestChanges={() => {
+                          setReviewAction("request_changes");
+                          setReviewNote("");
+                        }}
+                        onReject={() => {
+                          setReviewAction("reject");
+                          setReviewNote("");
+                        }}
+                        submitting={reviewSubmitting}
+                      />
 
                       {/* Inner Sub-Navigation (Segmented) */}
                       <div className="inline-flex w-full rounded-md bg-gray-100 p-1 dark:bg-white/10">
@@ -834,8 +1065,21 @@ export function TasksPanel({ token }: TasksPanelProps) {
                             <h4 className="text-[14px] font-bold text-blue-900 dark:text-blue-200 mb-3">{t("tasks.wpPublish") || "WordPress Publish"}</h4>
                             <div className="flex gap-3">
                               <Button variant="outlined" size="sm" loading={wpPublishing} disabled={riskAssessment?.risk_level === "blocked"} onClick={() => void onWpPublish("draft")}>{t("tasks.wpDraft") || "Draft"}</Button>
-                              <Button variant="primary" size="sm" loading={wpPublishing} disabled={riskAssessment?.risk_level === "blocked"} onClick={() => void onWpPublish("publish")}>{t("tasks.wpLive") || "Publish Live"}</Button>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                loading={wpPublishing}
+                                disabled={riskAssessment?.risk_level === "blocked" || reviewState?.status !== "approved"}
+                                onClick={() => void onWpPublish("publish")}
+                              >
+                                {t("tasks.wpLive") || "Publish Live"}
+                              </Button>
                             </div>
+                            {reviewState?.status !== "approved" && (
+                              <p className="mt-3 text-[12px] font-medium text-amber-700 dark:text-amber-300">
+                                {reviewCopy.liveBlocked}
+                              </p>
+                            )}
                             {wpResult && <p className={clsx("mt-3 text-[12px] font-medium", wpResult.includes("error") || wpResult.includes("خطا") ? "text-red-600 dark:text-red-300" : "text-blue-600 dark:text-blue-300")}>{wpResult}</p>}
                           </div>
                         </div>
@@ -872,6 +1116,167 @@ function StatusBadge({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+function ReviewPanel({
+  canReview,
+  reviewState,
+  loading,
+  error,
+  copy,
+  onApprove,
+  onRequestChanges,
+  onReject,
+  submitting,
+}: {
+  canReview: boolean;
+  reviewState: ArticleReviewState | null;
+  loading: boolean;
+  error: string | null;
+  copy: ReviewCopy;
+  onApprove: () => void;
+  onRequestChanges: () => void;
+  onReject: () => void;
+  submitting: boolean;
+}) {
+  if (loading) {
+    return (
+      <section className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+        <div className="h-4 w-28 rounded bg-gray-100 dark:bg-white/10" />
+        <div className="mt-4 grid gap-2">
+          <div className="h-8 rounded-lg bg-gray-100 dark:bg-white/10" />
+          <div className="h-8 rounded-lg bg-gray-100 dark:bg-white/10" />
+        </div>
+      </section>
+    );
+  }
+
+  if (error || !reviewState) {
+    return (
+      <section className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-[13px] font-medium text-amber-800 dark:text-amber-200">
+        {error || copy.unavailable}
+      </section>
+    );
+  }
+
+  const statusLabel = reviewLabel(reviewState.status, copy);
+  const approveBlocked = !reviewState.can_approve;
+
+  return (
+    <section className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="text-[14px] font-bold text-gray-900 dark:text-gray-100">{copy.title}</h4>
+            <UiStatusBadge variant={reviewVariant(reviewState.status)} dot={false}>
+              {statusLabel}
+            </UiStatusBadge>
+          </div>
+          <p className="mt-1 text-[12px] leading-5 text-gray-500 dark:text-gray-300">{copy.subtitle}</p>
+        </div>
+        <div className="text-end text-[12px] text-gray-500 dark:text-gray-300">
+          {reviewState.reviewer_name ? (
+            <>
+              <span className="block font-medium text-gray-700 dark:text-gray-200">{copy.reviewedBy}</span>
+              <span>{reviewState.reviewer_name}</span>
+            </>
+          ) : (
+            <span>{copy.noDecision}</span>
+          )}
+        </div>
+      </div>
+
+      {reviewState.note && (
+        <p className="mt-3 rounded-lg border border-black/5 bg-gray-50 px-3 py-2 text-[12px] leading-5 text-gray-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-200">
+          {reviewState.note}
+        </p>
+      )}
+
+      <div className="mt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h5 className="text-[12px] font-bold text-gray-800 dark:text-gray-100">{copy.checklist}</h5>
+          {approveBlocked && (
+            <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+              {copy.blockedTitle}
+            </span>
+          )}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {reviewState.checklist.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-2 rounded-lg border border-black/5 bg-gray-50 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
+            >
+              <span
+                className={clsx(
+                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                  item.passed
+                    ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-200"
+                    : item.blocking
+                      ? "bg-red-500/12 text-red-700 dark:text-red-200"
+                      : "bg-amber-500/12 text-amber-700 dark:text-amber-200"
+                )}
+              >
+                {item.passed ? "✓" : "!"}
+              </span>
+              <span className="min-w-0 text-[12px] font-medium text-gray-700 dark:text-gray-200">
+                {copy.checks[item.id as keyof ReviewCopy["checks"]] ?? item.label}
+              </span>
+            </div>
+          ))}
+        </div>
+        {approveBlocked && (
+          <p className="mt-2 text-[12px] leading-5 text-amber-700 dark:text-amber-300">
+            {copy.approveBlocked}
+          </p>
+        )}
+      </div>
+
+      {canReview && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            loading={submitting}
+            disabled={submitting || approveBlocked || reviewState.status === "approved"}
+            onClick={onApprove}
+          >
+            {copy.approve}
+          </Button>
+          <Button
+            size="sm"
+            variant="outlined"
+            disabled={submitting}
+            onClick={onRequestChanges}
+          >
+            {copy.request_changes}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={submitting}
+            onClick={onReject}
+          >
+            {copy.reject}
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function reviewVariant(status: string) {
+  if (status === "approved") return "success";
+  if (status === "rejected") return "error";
+  if (status === "changes_requested") return "warning";
+  return "neutral";
+}
+
+function reviewLabel(status: string, copy: ReviewCopy) {
+  if (status === "approved") return copy.approved;
+  if (status === "rejected") return copy.rejected;
+  if (status === "changes_requested") return copy.changes_requested;
+  return copy.pending_review;
 }
 
 /* ─── Helper Functions ─── */

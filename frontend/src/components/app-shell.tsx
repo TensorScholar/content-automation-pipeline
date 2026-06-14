@@ -328,7 +328,7 @@ export function AppShell({ token, user }: AppShellProps) {
               />
             )}
             {page === "studio" && <ContentStudioPanel token={token} selectedProjectId={selectedProjectId} />}
-            {page === "tasks" && <TasksPanel token={token} />}
+            {page === "tasks" && <TasksPanel token={token} canReview={isAdmin} />}
             {page === "users" && isAdmin && <UsersPanel token={token} isAdmin={isAdmin} currentUserId={user.id} />}
             {page === "monitoring" && isAdmin && <MonitoringPanel token={token} />}
           </ErrorBoundary>

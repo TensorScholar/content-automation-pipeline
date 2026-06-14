@@ -16,7 +16,7 @@ import json
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
@@ -75,6 +75,13 @@ class ContentRevisionRequest(BaseModel):
     feedback: str = Field(..., min_length=10, description="Revision feedback")
     sections_to_revise: Optional[List[str]] = Field(None, description="Specific sections")
     priority: str = Field("high", pattern="^(low|medium|high|critical)$")
+
+
+class ArticleReviewRequest(BaseModel):
+    """Manager decision for the current article review."""
+
+    action: Literal["approve", "reject", "request_changes"]
+    note: Optional[str] = Field(None, max_length=2000)
 
 
 class ContentQualityMetrics(BaseModel):
@@ -941,6 +948,44 @@ async def get_article(
         include_content: If false, returns metadata only (faster)
     """
     return await content_service.get_article(article_id, include_content)
+
+
+@router.get(
+    "/{article_id}/review",
+    response_model=dict,
+    summary="Get article review status",
+)
+async def get_article_review(
+    article_id: UUID,
+    content_service: ContentService = Depends(get_content_service),
+    user: User = Depends(get_current_active_user),
+):
+    del user
+    return await content_service.get_article_review(article_id)
+
+
+@router.post(
+    "/{article_id}/review",
+    response_model=dict,
+    summary="Record article review decision",
+)
+async def review_article(
+    article_id: UUID,
+    request: ArticleReviewRequest,
+    content_service: ContentService = Depends(get_content_service),
+    user: User = Depends(get_current_active_user),
+):
+    if not is_manager_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager access is required to review articles",
+        )
+    return await content_service.review_article(
+        article_id=article_id,
+        action=request.action,
+        reviewer_id=UUID(str(user.id)),
+        note=request.note,
+    )
 
 
 @router.get(

@@ -501,6 +501,111 @@ class ContentService:
 
         return article
 
+    async def get_article_review(self, article_id: UUID) -> Dict[str, Any]:
+        """Return current review state and a deterministic readiness checklist."""
+        from services.draft_risk_service import DraftRiskService
+
+        article = await self.get_article(article_id, include_content=True)
+        review = await self.articles.get_review_state(article_id)
+        if not review:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+
+        risk = DraftRiskService().assess(article)
+        content = re.sub(r"<[^>]+>", " ", str(article.get("content") or ""))
+        content = re.sub(r"\s+", " ", content).strip()
+        checklist = [
+            {
+                "id": "title",
+                "label": "Title is present",
+                "passed": bool(str(article.get("title") or "").strip()),
+                "blocking": True,
+            },
+            {
+                "id": "content",
+                "label": "Content is ready for review",
+                "passed": len(content) >= 100,
+                "blocking": True,
+            },
+            {
+                "id": "publish_risk",
+                "label": "No blocking publish risks",
+                "passed": not risk["blocking_issues"],
+                "blocking": True,
+            },
+            {
+                "id": "metadata",
+                "label": "Search metadata is present",
+                "passed": bool(str(article.get("meta_description") or "").strip()),
+                "blocking": False,
+            },
+            {
+                "id": "keywords",
+                "label": "Keywords are attached",
+                "passed": bool(article.get("keywords")),
+                "blocking": False,
+            },
+        ]
+        blocking_reasons = [
+            item["label"] for item in checklist if item["blocking"] and not item["passed"]
+        ]
+        reviewer_name = review.get("reviewer_full_name") or review.get("reviewer_email")
+
+        return {
+            "article_id": str(article_id),
+            "status": review.get("review_status") or "pending_review",
+            "note": review.get("review_note"),
+            "reviewed_by": str(review["reviewed_by"]) if review.get("reviewed_by") else None,
+            "reviewer_name": reviewer_name,
+            "reviewed_at": review.get("reviewed_at"),
+            "updated_at": review.get("review_updated_at"),
+            "can_approve": not blocking_reasons,
+            "blocking_reasons": blocking_reasons,
+            "checklist": checklist,
+            "risk_level": risk["risk_level"],
+        }
+
+    async def review_article(
+        self,
+        *,
+        article_id: UUID,
+        action: str,
+        reviewer_id: UUID,
+        note: Optional[str],
+    ) -> Dict[str, Any]:
+        """Persist a manager review decision without triggering regeneration."""
+        action_to_status = {
+            "approve": "approved",
+            "reject": "rejected",
+            "request_changes": "changes_requested",
+        }
+        if action not in action_to_status:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid review action")
+
+        normalized_note = (note or "").strip() or None
+        if action in {"reject", "request_changes"} and not normalized_note:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Review feedback is required for this action",
+            )
+
+        current = await self.get_article_review(article_id)
+        if action == "approve" and not current["can_approve"]:
+            reasons = ", ".join(current["blocking_reasons"]) or "blocking checks"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Article cannot be approved until these checks pass: {reasons}",
+            )
+
+        updated = await self.articles.set_review_state(
+            article_id=article_id,
+            review_status=action_to_status[action],
+            reviewer_id=reviewer_id,
+            note=normalized_note,
+        )
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+        return await self.get_article_review(article_id)
+
     async def request_article_revision(
         self,
         article_id: UUID,
