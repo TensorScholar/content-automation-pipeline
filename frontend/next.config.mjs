@@ -5,6 +5,7 @@ const staticExport = process.env.TAURI_STATIC_EXPORT === "1";
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  devIndicators: false,
   ...(staticExport
     ? {
         output: "export"
