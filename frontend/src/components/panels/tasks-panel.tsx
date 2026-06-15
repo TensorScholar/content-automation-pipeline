@@ -550,16 +550,16 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
      Master-Detail Layout: Smooth Dynamic Drawers and Logical Properties Only
      ════════════════════════════════════════════════════════════════════════ */
   return (
-    <section className="macos-content-scope animate-fade-in relative flex min-h-[calc(100vh-96px)] flex-col space-y-4 bg-transparent p-3 md:p-4" dir="auto">
+    <section className="macos-content-scope animate-fade-in relative flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden bg-transparent p-3 md:p-4" dir="auto">
 
       {/* ── Apple-Style Header & Toolbar ── */}
       <div className="flex flex-col justify-between gap-4 pb-1 md:flex-row md:items-start">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <h2 className="text-[20px] font-semibold text-gray-900 dark:text-gray-100">{t("tasks.title") || "Task History"}</h2>
           <p className="mt-1 text-[13px] text-gray-500 dark:text-gray-300">{t("tasks.subtitle") || "Review, export, and monitor pipeline progress."}</p>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-black/5 bg-white/[0.95] p-1.5 dark:border-white/10 dark:bg-surface md:mt-0 md:w-auto">
+        <div className="flex min-w-0 w-full flex-wrap items-center gap-2 rounded-xl border border-black/5 bg-white/[0.95] p-1.5 dark:border-white/10 dark:bg-surface md:mt-0 md:w-auto">
           {/* iOS Toggle Switch for Auto Refresh */}
           <div className="flex items-center gap-3 px-3">
             <span className="text-[13px] font-semibold text-gray-700 dark:text-gray-200">{t("tasks.autoRefresh") || "Auto-refresh"}</span>
@@ -604,7 +604,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
       </div>
 
       {/* Interactive KPI Filter Chips */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             { key: "all", label: t("tasks.kpiTotal") || "Total", value: kpis.total, text: "text-slate-900 dark:text-gray-100", icon: <svg className="w-5 h-5 text-slate-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg> },
             { key: "SUCCESS", label: t("tasks.kpiSuccess") || "Success", value: kpis.success, text: "text-emerald-700 dark:text-emerald-300", icon: <svg className="w-5 h-5 text-emerald-500 dark:text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
@@ -714,43 +714,62 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 
       {/* ── Dynamic Master-Detail Layout Wrapper ── */}
       <div className={clsx(
-        "grid w-full flex-1 gap-4 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
-        selectedTaskId ? "grid-cols-1 xl:grid-cols-[1fr_450px]" : "grid-cols-1"
+        "grid min-h-0 min-w-0 w-full flex-1 gap-4 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
+        selectedTaskId ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(340px,430px)]" : "grid-cols-1"
       )}>
 
         {/* Master: Data Table */}
-        <div className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
-          <div className="flex-1 overflow-auto rounded-xl">
-            <table className="w-full text-start border-collapse">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
+          <div className="min-h-0 flex-1 overflow-auto rounded-xl">
+            <table
+              className={clsx(
+                "w-full text-start border-collapse",
+                selectedTaskId ? "table-fixed" : "min-w-[640px]"
+              )}
+            >
               <thead className="sticky top-0 z-10 border-b border-gray-200/80 bg-gray-50 dark:border-white/10 dark:bg-surface-alt">
                 <tr className="text-[12px] font-semibold text-slate-400 dark:text-gray-400">
-                  <th className="px-6 py-5 text-start font-bold w-1/2">{t("tasks.topic") || "Topic"}</th>
-                  <th className="px-6 py-5 text-start font-bold w-1/4">{t("tasks.status") || "Status"}</th>
-                  <th className="px-6 py-5 text-start font-bold w-1/4">{t("tasks.created") || "Date"}</th>
-                  <th className="px-6 py-5 text-end font-bold sr-only w-16">{t("users.action") || "Action"}</th>
+                  <th className={clsx("text-start font-bold", selectedTaskId ? "w-auto px-4 py-4" : "w-1/2 px-6 py-5")}>
+                    {t("tasks.topic") || "Topic"}
+                  </th>
+                  <th className={clsx("text-start font-bold", selectedTaskId ? "w-28 px-4 py-4" : "w-1/4 px-6 py-5")}>
+                    {t("tasks.status") || "Status"}
+                  </th>
+                  {!selectedTaskId && (
+                    <>
+                      <th className="w-1/4 px-6 py-5 text-start font-bold">{t("tasks.created") || "Date"}</th>
+                      <th className="sr-only w-16 px-6 py-5 text-end font-bold">{t("users.action") || "Action"}</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/10">
                 {loading ? (
                   [1, 2, 3, 4, 5].map((i) => (
                     <tr key={i} className="animate-pulse">
-                      <td className="px-6 py-5">
+                      <td className={selectedTaskId ? "px-4 py-4" : "px-6 py-5"}>
                         <div className="h-5 bg-slate-100 dark:bg-white/10 rounded-md w-3/4 mb-2"></div>
                         <div className="h-3 bg-slate-50 dark:bg-white/10 rounded-md w-1/3"></div>
                       </td>
-                      <td className="px-6 py-5"><div className="h-7 w-24 bg-slate-100 dark:bg-white/10 rounded-full"></div></td>
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10"></div>
-                          <div className="h-4 w-20 bg-slate-100 dark:bg-white/10 rounded-md"></div>
-                        </div>
+                      <td className={selectedTaskId ? "px-4 py-4" : "px-6 py-5"}>
+                        <div className="h-7 w-20 max-w-full rounded-full bg-slate-100 dark:bg-white/10"></div>
                       </td>
-                      <td className="px-6 py-5 text-end"><div className="h-8 w-8 bg-slate-100 dark:bg-white/10 rounded-full ms-auto"></div></td>
+                      {!selectedTaskId && (
+                        <>
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10"></div>
+                              <div className="h-4 w-20 bg-slate-100 dark:bg-white/10 rounded-md"></div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 text-end"><div className="h-8 w-8 bg-slate-100 dark:bg-white/10 rounded-full ms-auto"></div></td>
+                        </>
+                      )}
                     </tr>
                   ))
                 ) : filtered.length === 0 ? (
                   <tr className="hover:bg-transparent">
-                    <td colSpan={4} className="px-6 py-24 text-center">
+                    <td colSpan={selectedTaskId ? 2 : 4} className="px-6 py-24 text-center">
                       <svg className="mx-auto w-16 h-16 text-gray-200 dark:text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                       </svg>
@@ -770,26 +789,47 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                         )}
                         onClick={() => { setSelectedTaskId(task.task_id); setDetailArticle(null); setDetailTab("content"); setContentView("reader"); setWpResult(null); }}
                       >
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className={clsx("text-[14px] font-semibold truncate max-w-sm", isSelected ? "text-teal-900 dark:text-teal-200" : "text-gray-900 dark:text-gray-100")}>
-                              {task.topic || task.task_name || task.task_id.slice(0, 12)}
-                            </span>
-                            <code className="text-[11px] text-gray-400 dark:text-gray-300 mt-0.5 truncate max-w-sm" dir="ltr">#{task.task_id}</code>
+                        <td className={selectedTaskId ? "px-4 py-4" : "px-6 py-4"}>
+                          <div className="flex min-w-0 items-start gap-2">
+                            <div className="flex min-w-0 flex-1 flex-col">
+                              <span className={clsx("truncate text-[14px] font-semibold", isSelected ? "text-teal-900 dark:text-teal-200" : "text-gray-900 dark:text-gray-100")}>
+                                {task.topic || task.task_name || task.task_id.slice(0, 12)}
+                              </span>
+                              <code className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-300" dir="ltr">#{task.task_id}</code>
+                              {selectedTaskId && (
+                                <span className="mt-1 truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                                  {formatDate(task.created_at)}
+                                </span>
+                              )}
+                            </div>
+                            {selectedTaskId && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(task.task_id); }}
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-gray-300 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                                title={t("common.delete") || "Delete"}
+                              >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            )}
                           </div>
                         </td>
-                        <td className="px-6 py-4"><StatusBadge status={statusUpper} /></td>
-                        <td className="px-6 py-4 text-[13px] text-gray-500 dark:text-gray-400 font-medium">{formatDate(task.created_at)}</td>
-                        <td className="px-6 py-4 text-end">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(task.task_id); }}
-                            className="w-8 h-8 inline-flex items-center justify-center rounded-full text-gray-400 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                            title={t("common.delete") || "Delete"}
-                          >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                          </button>
-                        </td>
+                        <td className={selectedTaskId ? "px-4 py-4 align-top" : "px-6 py-4"}><StatusBadge status={statusUpper} /></td>
+                        {!selectedTaskId && (
+                          <>
+                            <td className="px-6 py-4 text-[13px] text-gray-500 dark:text-gray-400 font-medium">{formatDate(task.created_at)}</td>
+                            <td className="px-6 py-4 text-end">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(task.task_id); }}
+                                className="w-8 h-8 inline-flex items-center justify-center rounded-full text-gray-400 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                                title={t("common.delete") || "Delete"}
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })
@@ -801,8 +841,8 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 
         {/* Detail: Slide-over Context Panel */}
         {selectedTaskId && (
-          <aside className="animate-slide-in-end sticky top-4 flex h-[calc(100vh-168px)] min-w-0 flex-col rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
-            <div className="p-6 border-b border-black/5 dark:border-white/10 flex items-center justify-between">
+          <aside className="animate-slide-in-end flex min-h-0 max-h-full min-w-0 flex-col rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface lg:sticky lg:top-0">
+            <div className="flex items-center justify-between border-b border-black/5 p-5 dark:border-white/10 lg:p-6">
               <h3 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">{t("tasks.detail") || "Task Analysis"}</h3>
               <div className="flex gap-2">
                 {streamActive && <span className="flex items-center gap-1.5 text-[12px] font-bold text-emerald-500 tracking-wider uppercase"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live</span>}
@@ -812,7 +852,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
               </div>
             </div>
 
-            <div className="p-6 flex-1 overflow-y-auto space-y-6">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 lg:p-6">
               {/* Status Block */}
               {liveStatus ? (
                 <div className="space-y-4">
@@ -847,7 +887,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                   {liveStatus.state === "SUCCESS" && detailArticle && (
                     <div className="space-y-6">
                       {/* Metric Chips */}
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-3">
                         <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-center dark:border-white/10 dark:bg-surface-alt">
                           <span className="block text-[11px] font-medium text-gray-400 dark:text-gray-300">{t("tasks.wordCount") || "Words"}</span>
                           <span className="block text-[18px] font-bold text-gray-900 dark:text-gray-100 mt-1">{detailArticle.word_count ?? "—"}</span>
@@ -896,7 +936,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                       {/* Content Views */}
                       {detailTab === "content" && (
                         <div className="flex flex-col gap-3">
-                          <div className="flex gap-2 mb-2">
+                          <div className="mb-2 flex flex-wrap gap-2">
                             {(["reader", "raw", "edit"] as ContentView[]).map(cv => (
                               <button key={cv} onClick={() => setContentView(cv)} className={clsx("text-[12px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors", contentView === cv ? "bg-teal-50 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300" : "text-gray-400 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/[0.06]")}>
                                 {cv === "reader" ? t("tasks.readerMode") || "Reader" : cv === "raw" ? t("tasks.rawHtml") || "Raw" : t("tasks.editMode") || "Edit"}

@@ -301,7 +301,7 @@ export function AppShell({ token, user }: AppShellProps) {
       {/* Responsive toggle overlay logic handled natively */}
 
       {/* ═══ MAIN CONTENT AREA (Offset by Sidebar width + Margin Geometry) ═══ */}
-      <div className="macos-main-material relative m-0 flex min-h-0 flex-1 flex-col overflow-hidden border-s border-black/5 transition-all duration-300 dark:border-white/10 lg:m-3 lg:ms-0 lg:mt-2 lg:rounded-[18px]">
+      <div className="macos-main-material relative m-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-s border-black/5 transition-all duration-300 dark:border-white/10 lg:m-3 lg:ms-0 lg:mt-2 lg:rounded-[18px]">
         {/* ── Header Utilities ─ */}
         <header className="relative z-50 flex h-12 shrink-0 items-center justify-end border-b border-black/5 bg-white px-3 dark:border-white/10 dark:bg-surface lg:px-4">
           <div className="flex items-center gap-2">
@@ -314,7 +314,7 @@ export function AppShell({ token, user }: AppShellProps) {
         </header>
 
         {/* ── Panel Content ── */}
-        <main className={clsx("min-h-0 flex-1 overflow-auto", page !== "studio" && "px-3 pb-4 pt-3 lg:px-4 lg:pb-4 lg:pt-3")}>
+        <main className={clsx("min-h-0 flex-1 overflow-x-hidden overflow-y-auto", page !== "studio" && "px-3 pb-4 pt-3 lg:px-4 lg:pb-4 lg:pt-3")}>
           <ErrorBoundary resetKey={page}>
             {page === "dashboard" && <DashboardPanel token={token} projects={projects} isAdmin={isAdmin} onNavigate={navigate as unknown as (page: string) => void} />}
             {page === "projects" && (

@@ -608,7 +608,7 @@ export function ProjectsPanel({
      STATE B: MASTER-DETAIL (1+ Projects)
      ═══════════════════════════════════════════════════════════════ */
   return (
-    <section className="macos-content-scope animate-fade-in flex h-[calc(100vh-96px)] overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
+    <section className="macos-content-scope animate-fade-in flex h-[calc(100vh-96px)] min-w-0 overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
 
       {/* Delete confirmation modal */}
       <Modal
@@ -682,7 +682,7 @@ export function ProjectsPanel({
       </Modal>
 
       {/* ── LEFT COLUMN (MASTER: macOS style sidebar list) ── */}
-      <aside className="relative z-10 flex w-[30%] min-w-[300px] flex-col border-inline-end border-black/5 bg-[#f1f1f3] dark:border-white/10 dark:bg-surface-alt">
+      <aside className="relative z-10 flex w-[30%] min-w-[280px] max-w-[360px] shrink-0 flex-col border-inline-end border-black/5 bg-[#f1f1f3] dark:border-white/10 dark:bg-surface-alt">
         <header className="flex h-12 shrink-0 items-center justify-between border-block-end border-black/5 bg-[#f7f7f9] px-4 dark:border-white/10 dark:bg-surface-alt">
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.title")}</h2>
           <div className="flex items-center gap-1.5">
@@ -810,14 +810,14 @@ export function ProjectsPanel({
           // View/Edit Mode
           <>
             <header className="flex flex-col border-block-end border-black/5 dark:border-white/10 shrink-0">
-              <div className="flex items-start justify-between px-6 pb-4 pt-6">
-                <div>
-                  <h2 className="mb-1.5 text-[18px] font-semibold leading-none tracking-tight text-slate-900 dark:text-gray-100">{selectedProject.name}</h2>
-                  <p className="text-[13px] font-medium text-slate-500 dark:text-gray-400" dir="ltr">{selectedProject.domain || ""}</p>
+              <div className="flex min-w-0 items-start justify-between gap-4 px-6 pb-4 pt-6">
+                <div className="min-w-0 flex-1">
+                  <h2 className="mb-1.5 truncate text-[18px] font-semibold leading-none tracking-tight text-slate-900 dark:text-gray-100">{selectedProject.name}</h2>
+                  <p className="truncate text-[13px] font-medium text-slate-500 dark:text-gray-400" dir="ltr">{selectedProject.domain || ""}</p>
                 </div>
 
                 {/* ── Polished Kebab Kenu ── */}
-                {canManageProjects && <div className="relative" ref={kebabRef}>
+                {canManageProjects && <div className="relative shrink-0" ref={kebabRef}>
                   <button
                     onClick={() => setKebabOpen(!kebabOpen)}
                     className={clsx(
@@ -843,7 +843,7 @@ export function ProjectsPanel({
               </div>
 
               {/* TABS (Zero layout shift: inactive has transparent border) */}
-              <div className="no-scrollbar flex gap-6 overflow-x-auto px-6 pt-2">
+              <div className="flex min-w-0 flex-wrap gap-2 px-6 pb-4 pt-2">
                 {[
                   { id: "readiness", label: readinessCopy.tab },
                   { id: "general", label: t("projects.tabGeneral") },
@@ -855,10 +855,10 @@ export function ProjectsPanel({
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as ProjectTab)}
                     className={clsx(
-                      "pb-3 text-[13px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] border-block-end-[2px]",
+                      "min-w-0 rounded-lg border px-3 py-2 text-center text-[12px] font-bold uppercase leading-4 tracking-normal transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
                       activeTab === tab.id
-                        ? "border-teal-600 text-teal-600 dark:border-teal-300 dark:text-teal-200"
-                        : "border-transparent text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-gray-100"
+                        ? "border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-300/40 dark:bg-teal-400/10 dark:text-teal-100"
+                        : "border-black/5 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
                     )}
                   >
                     {tab.label}
@@ -867,7 +867,7 @@ export function ProjectsPanel({
               </div>
             </header>
 
-            <div className="relative flex-1 overflow-y-auto p-6">
+            <div className="relative min-w-0 flex-1 overflow-y-auto p-6">
               {activeTab === "readiness" && (
                 <ReadinessTab
                   copy={readinessCopy}
@@ -1028,8 +1028,8 @@ function ReadinessTab({
       </section>
 
       {readiness && (
-        <section className="grid gap-4 xl:grid-cols-[1fr_260px]">
-          <div className="rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
+        <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="min-w-0 rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
             <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
               <h4 className="text-[14px] font-semibold text-slate-900 dark:text-gray-100">{copy.allChecks}</h4>
             </div>
@@ -1051,7 +1051,7 @@ function ReadinessTab({
             </div>
           </div>
 
-          <aside className="space-y-4">
+          <aside className="min-w-0 space-y-4">
             <div className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-surface-alt">
               <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.blockers}</h4>
               <p className="mt-2 text-[20px] font-semibold tabular-nums text-slate-900 dark:text-gray-100">

@@ -653,28 +653,28 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const selectedModelUnavailable = llmUnavailable || selectedActiveProviderUnavailable;
 
   return (
-    <section className="animate-fade-in relative flex min-h-[calc(100vh-96px)] w-full justify-center">
+    <section className="animate-fade-in relative flex h-full min-h-0 min-w-0 w-full justify-center overflow-hidden">
 
       {/* ── Dynamic Layout Wrapper ── */}
       <div className={clsx(
-        "grid w-full gap-4 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
-        taskStatus || batchStatus ? "grid-cols-1 xl:grid-cols-[1fr_360px] max-w-7xl" : "grid-cols-1"
+        "grid h-full min-h-0 min-w-0 w-full gap-4 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
+        taskStatus || batchStatus ? "grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] max-w-7xl" : "grid-cols-1"
       )}>
 
         {/* ── LAYER 2: THE FIXED CANVAS (The "Page") ── */}
-        <article className="relative m-4 flex h-[calc(100vh-104px)] w-full flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
+        <article className="relative m-4 flex h-[calc(100%-2rem)] min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
 
           {/* Apple Segmented Tab Control Header (Fixed) */}
-          <div className="z-10 flex shrink-0 items-center justify-between border-b border-black/5 bg-gray-50 p-4 dark:border-white/10 dark:bg-surface-alt">
+          <div className="z-10 flex min-w-0 shrink-0 items-center justify-between border-b border-black/5 bg-gray-50 p-4 dark:border-white/10 dark:bg-surface-alt">
 
-            <div className="inline-flex w-full rounded-md bg-slate-200 p-1 dark:bg-white/10 sm:w-auto">
+            <div className="inline-flex max-w-full flex-wrap rounded-md bg-slate-200 p-1 dark:bg-white/10 sm:w-auto">
               {tabEntries.map((entry) => (
                 <button
                   type="button"
                   key={entry.key}
                   onClick={() => setActiveTab(entry.key)}
                   className={clsx(
-                    "flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 sm:flex-none",
+                    "flex-1 rounded-md px-3 py-1.5 text-center text-[13px] font-medium leading-5 transition-colors duration-150 sm:flex-none",
                     activeTab === entry.key
                       ? "bg-white text-slate-900 dark:bg-white/15 dark:text-gray-100"
                       : "bg-transparent text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200"
@@ -687,7 +687,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
           </div>
 
-          <div className="flex-1 overflow-y-auto w-full">
+          <div className="min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto">
             {selectedProjectId && (activeTab === "generate" || activeTab === "bulk") && (
               <div className="px-4 pt-4 lg:px-5">
                 <div className={clsx(
@@ -720,11 +720,11 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
             )}
 
             {activeTab === "generate" && (
-              <form onSubmit={onSubmitGenerate} className="flex min-h-full flex-col p-4 lg:p-5">
+              <form onSubmit={onSubmitGenerate} className="flex min-h-full min-w-0 flex-col p-4 lg:p-5">
 
-                <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+                <div className="mx-auto flex min-w-0 w-full max-w-5xl flex-col gap-4">
                   {/* ── LAYER 3: THE INTERNAL BOXES (The Form Cards) ── */}
-                  <div className="grid grid-cols-12 gap-4">
+                  <div className="grid min-w-0 grid-cols-12 gap-4">
 
                     {/* BOX 1: Core Identity */}
                     <div className="col-span-12 flex flex-col gap-4 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt lg:col-span-6">
