@@ -30,6 +30,26 @@ interface DashboardPanelProps {
 }
 
 type Tone = "neutral" | "good" | "warning";
+type TelemetryAvailability = "loading" | "available" | "unavailable";
+type HealthState = "loading" | "healthy" | "degraded" | "unhealthy" | "unavailable";
+
+function authoritativeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function classifyHealth(
+  payload: HealthPayload | null,
+  availability: TelemetryAvailability
+): HealthState {
+  if (availability === "loading") return "loading";
+  if (availability !== "available" || typeof payload?.status !== "string") return "unavailable";
+
+  const status = payload.status.trim().toLowerCase();
+  if (status === "healthy") return "healthy";
+  if (status === "degraded") return "degraded";
+  if (status === "unhealthy") return "unhealthy";
+  return "unavailable";
+}
 
 function toneClasses(tone: Tone) {
   if (tone === "good") return "bg-emerald-500";
@@ -113,11 +133,17 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
   const { t, locale } = useI18n();
   const [performance, setPerformance] = useState<PerformancePayload | null>(null);
   const [health, setHealth] = useState<HealthPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [performanceAvailability, setPerformanceAvailability] = useState<TelemetryAvailability>("loading");
+  const [healthAvailability, setHealthAvailability] = useState<TelemetryAvailability>("loading");
 
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
+      setPerformance(null);
+      setHealth(null);
+      setPerformanceAvailability("loading");
+      setHealthAvailability("loading");
+
       try {
         const [perfResult, healthResult] = await Promise.allSettled([
           isAdmin
@@ -126,14 +152,20 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
           apiRequest<HealthPayload>("/system/health", { token, signal: controller.signal }),
         ]);
         if (controller.signal.aborted) return;
-        setPerformance(perfResult.status === "fulfilled" ? perfResult.value : null);
-        setHealth(healthResult.status === "fulfilled" ? healthResult.value : null);
+
+        const performanceAvailable = isAdmin && perfResult.status === "fulfilled" && perfResult.value !== null;
+        setPerformance(performanceAvailable ? perfResult.value : null);
+        setPerformanceAvailability(performanceAvailable ? "available" : "unavailable");
+
+        const healthAvailable = healthResult.status === "fulfilled" && healthResult.value !== null;
+        setHealth(healthAvailable ? healthResult.value : null);
+        setHealthAvailability(healthAvailable ? "available" : "unavailable");
       } catch {
         if (controller.signal.aborted) return;
         setPerformance(null);
         setHealth(null);
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        setPerformanceAvailability("unavailable");
+        setHealthAvailability("unavailable");
       }
     };
 
@@ -170,12 +202,32 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
   const wordpressConnected = useMemo(() => projects.filter((p) => Boolean(p.wordpress_url)).length, [projects]);
 
   const daily = performance?.metrics?.daily_costs;
-  const todayCost = daily?.total_cost_usd ?? 0;
-  const todayArticles = daily?.article_count ?? 0;
-  const threshold = daily?.threshold_usd ?? 10;
-  const percent = threshold > 0 ? Math.min(100, (todayCost / threshold) * 100) : 0;
-  const isHealthy = health?.status?.toLowerCase().includes("healthy") ?? true;
-  const healthLabel = isHealthy ? t("dashboard.systemHealthy") : t("dashboard.systemUnhealthy");
+  const todayCost = performanceAvailability === "available"
+    ? authoritativeNumber(daily?.total_cost_usd)
+    : null;
+  const todayArticles = performanceAvailability === "available"
+    ? authoritativeNumber(daily?.article_count)
+    : null;
+  const threshold = performanceAvailability === "available"
+    ? authoritativeNumber(daily?.threshold_usd)
+    : null;
+  const percent = todayCost !== null && threshold !== null && threshold > 0
+    ? Math.min(100, (todayCost / threshold) * 100)
+    : null;
+  const healthState = classifyHealth(health, healthAvailability);
+  const healthLabel = healthState === "healthy"
+    ? t("dashboard.systemHealthy")
+    : healthState === "degraded"
+      ? t("dashboard.systemDegraded")
+      : healthState === "unhealthy"
+        ? t("dashboard.systemUnhealthy")
+        : t("dashboard.unavailable");
+  const healthTone: Tone = healthState === "healthy"
+    ? "good"
+    : healthState === "degraded" || healthState === "unhealthy"
+      ? "warning"
+      : "neutral";
+  const loading = performanceAvailability === "loading" || healthAvailability === "loading";
 
   const hasProject = projects.length > 0;
   const hasWp = wordpressConnected > 0;
@@ -194,6 +246,15 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
         description: t("dashboard.nextCreateProjectDesc"),
         cta: t("dashboard.actionCreateProject"),
         page: "projects",
+      };
+    }
+
+    if (todayArticles === null) {
+      return {
+        title: t("dashboard.nextContinueTitle"),
+        description: t("dashboard.nextContinueDesc"),
+        cta: t("dashboard.actionContinue"),
+        page: "studio",
       };
     }
 
@@ -254,9 +315,13 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
     {
       key: "generate",
       label: t("dashboard.pipelineGenerate"),
-      state: todayArticles > 0 ? "done" : "pending",
+      state: todayArticles === null ? "unverified" : todayArticles > 0 ? "done" : "pending",
       context: pipelineCopy.activity,
-      status: todayArticles > 0 ? pipelineCopy.complete : pipelineCopy.pending,
+      status: todayArticles === null
+        ? t("dashboard.unavailable")
+        : todayArticles > 0
+          ? pipelineCopy.complete
+          : pipelineCopy.pending,
     },
   ];
 
@@ -302,12 +367,12 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
         </div>
       </header>
 
-      {percent >= 95 && (
+      {percent !== null && percent >= 95 && (
         <div className="rounded-md border-s-2 border-s-red-500 bg-red-50/80 px-3 py-2 text-[12px] font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300" role="alert">
           {t("dashboard.costWarning95")}
         </div>
       )}
-      {percent >= 80 && percent < 95 && (
+      {percent !== null && percent >= 80 && percent < 95 && (
         <div className="rounded-md border-s-2 border-s-amber-500 bg-amber-50/80 px-3 py-2 text-[12px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" role="alert">
           {t("dashboard.costWarning80")}
         </div>
@@ -329,16 +394,20 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
         />
         <StatusTile
           label={t("dashboard.statusToday")}
-          value={formatNumber(todayArticles)}
-          detail={t("dashboard.articlesToday")}
-          tone={todayArticles > 0 ? "good" : "neutral"}
+          value={todayArticles === null ? "—" : formatNumber(todayArticles)}
+          detail={todayArticles === null ? t("dashboard.metricsUnavailable") : t("dashboard.articlesToday")}
+          tone={todayArticles !== null && todayArticles > 0 ? "good" : "neutral"}
         />
         <StatusTile
           label={t("dashboard.statusSystem")}
           value={healthLabel}
-          detail={health?.version ? `v${health.version}` : t("dashboard.lastUpdated")}
+          detail={healthState === "unavailable"
+            ? t("dashboard.healthUnavailable")
+            : health?.version
+              ? `v${health.version}`
+              : t("dashboard.lastUpdated")}
           kind="status"
-          tone={isHealthy ? "good" : "warning"}
+          tone={healthTone}
         />
       </div>
 
@@ -438,39 +507,51 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
               <div className="min-w-0">
                 <p className="text-[12px] font-medium text-ink-secondary">{t("dashboard.costTitle")}</p>
                 <p className="mt-1 text-[24px] font-semibold leading-none tracking-normal text-ink tabular-nums" dir="ltr">
-                  {formatCurrency(todayCost)}
+                  {todayCost === null ? "—" : formatCurrency(todayCost)}
                 </p>
               </div>
               <span
                 className={`inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium ${
-                  isHealthy ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  healthState === "healthy"
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    : healthState === "degraded" || healthState === "unhealthy"
+                      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                      : "bg-black/5 text-ink-tertiary dark:bg-white/10"
                 }`}
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${isHealthy ? "bg-emerald-500" : "bg-amber-400"}`} aria-hidden />
+                <span className={`h-1.5 w-1.5 rounded-full ${toneClasses(healthTone)}`} aria-hidden />
                 {healthLabel}
               </span>
             </div>
-            <ProgressBar
-              value={Math.max(percent, todayCost > 0 ? 1.5 : 0)}
-              showLabel
-              label={t("dashboard.ofCap", {
-                percent: formatPercent(percent),
-                cap: formatNumber(threshold),
-              })}
-            />
+            {percent === null || threshold === null ? (
+              <p className="py-2 text-[12px] font-medium text-ink-tertiary">
+                {t("dashboard.metricsUnavailable")}
+              </p>
+            ) : (
+              <ProgressBar
+                value={Math.max(percent, todayCost !== null && todayCost > 0 ? 1.5 : 0)}
+                showLabel
+                label={t("dashboard.ofCap", {
+                  percent: formatPercent(percent),
+                  cap: formatNumber(threshold),
+                })}
+              />
+            )}
           </section>
 
           <section className="smx-panel p-5">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-[14px] font-semibold text-ink">{t("dashboard.budgetStatus")}</h3>
               <span className="text-[12px] text-ink-tertiary tabular-nums">
-                {formatPercent(percent)}%
+                {percent === null ? "—" : `${formatPercent(percent)}%`}
               </span>
             </div>
             <div className="smx-panel-subtle grid grid-cols-2 overflow-hidden">
               <div className="border-e border-black/5 p-3 dark:border-white/10">
                 <p className="text-[11px] text-ink-tertiary">{t("dashboard.articlesToday")}</p>
-                <p className="mt-1 text-[20px] font-semibold text-ink tabular-nums">{formatNumber(todayArticles)}</p>
+                <p className="mt-1 text-[20px] font-semibold text-ink tabular-nums">
+                  {todayArticles === null ? "—" : formatNumber(todayArticles)}
+                </p>
               </div>
               <div className="p-3">
                 <p className="text-[11px] text-ink-tertiary">{t("dashboard.totalProjects")}</p>
