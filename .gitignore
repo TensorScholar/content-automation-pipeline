@@ -123,6 +123,7 @@ temp/
 
 # Generated presentation/export artifacts
 presentation-screenshots/
+artifacts/ui-review/
 *.tmp
 *.bak
 *.backup

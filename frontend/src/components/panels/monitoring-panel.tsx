@@ -3,6 +3,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { apiRequest } from "@/lib/api";
+import { formatModelDisplayName } from "@/lib/model-display";
 import { LlmOptionsResponse } from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,12 @@ const INCIDENT_COPY = {
     open: "Open",
     critical: "Critical",
     warning: "Warning",
+    workerTitle: "Generation jobs cannot start right now.",
+    workerDetail: "No active Celery workers were detected.",
+    workerType: "Processing worker",
+    genericTitle: "An operational incident needs attention.",
+    genericDetail: "Review the technical details for more information.",
+    technicalDetails: "Technical details",
   },
   fa: {
     title: "صندوق رخدادها",
@@ -64,6 +71,12 @@ const INCIDENT_COPY = {
     open: "باز",
     critical: "بحرانی",
     warning: "هشدار",
+    workerTitle: "کارهای تولید محتوا فعلاً قابل شروع نیستند.",
+    workerDetail: "هیچ پردازشگر Celery فعالی شناسایی نشد.",
+    workerType: "پردازشگر",
+    genericTitle: "یک رخداد عملیاتی نیازمند بررسی است.",
+    genericDetail: "برای اطلاعات بیشتر، جزئیات فنی را بررسی کنید.",
+    technicalDetails: "جزئیات فنی",
   },
   ar: {
     title: "صندوق الحوادث",
@@ -72,6 +85,12 @@ const INCIDENT_COPY = {
     open: "مفتوح",
     critical: "حرج",
     warning: "تحذير",
+    workerTitle: "لا يمكن بدء مهام إنشاء المحتوى حالياً.",
+    workerDetail: "لم يتم العثور على أي عامل Celery نشط.",
+    workerType: "عامل المعالجة",
+    genericTitle: "توجد حادثة تشغيلية تحتاج إلى المراجعة.",
+    genericDetail: "راجع التفاصيل التقنية لمزيد من المعلومات.",
+    technicalDetails: "التفاصيل التقنية",
   },
 };
 
@@ -83,7 +102,11 @@ const LLM_COPY = {
     missing: "Missing key",
     selectable: "Selectable models",
     noModels: "No model is currently usable.",
+    activeProvider: "Active provider",
+    providerInventory: "Provider inventory",
     managerDetail: "Manager detail",
+    technicalDetails: "Technical details",
+    timeout: "The AI provider health check timed out.",
   },
   fa: {
     title: "دسترسی ارائه‌دهنده هوش مصنوعی",
@@ -92,7 +115,11 @@ const LLM_COPY = {
     missing: "کلید موجود نیست",
     selectable: "مدل‌های قابل انتخاب",
     noModels: "هیچ مدلی در حال حاضر قابل استفاده نیست.",
+    activeProvider: "ارائه‌دهنده فعال",
+    providerInventory: "فهرست فنی ارائه‌دهندگان",
     managerDetail: "جزئیات مدیر",
+    technicalDetails: "جزئیات فنی",
+    timeout: "زمان بررسی سلامت ارائه‌دهنده هوش مصنوعی به پایان رسید.",
   },
   ar: {
     title: "حالة مزود الذكاء الاصطناعي",
@@ -101,11 +128,34 @@ const LLM_COPY = {
     missing: "المفتاح مفقود",
     selectable: "النماذج المتاحة",
     noModels: "لا يوجد نموذج قابل للاستخدام حالياً.",
+    activeProvider: "المزود النشط",
+    providerInventory: "قائمة المزودين التقنية",
     managerDetail: "تفاصيل المدير",
+    technicalDetails: "التفاصيل التقنية",
+    timeout: "انتهت مهلة فحص صحة مزود الذكاء الاصطناعي.",
+  },
+};
+
+const HEALTH_DETAIL_COPY = {
+  en: {
+    noWorkers: "No active processing workers",
+    awaiting: "Awaiting response",
+    activeWorkers: (count: string) => `${count} active`,
+  },
+  fa: {
+    noWorkers: "هیچ پردازشگر فعالی وجود ندارد",
+    awaiting: "در انتظار پاسخ",
+    activeWorkers: (count: string) => `${count} پردازشگر فعال`,
+  },
+  ar: {
+    noWorkers: "لا يوجد عامل معالجة نشط",
+    awaiting: "في انتظار الاستجابة",
+    activeWorkers: (count: string) => `${count} عامل نشط`,
   },
 };
 
 type HealthTone = "good" | "warning" | "critical" | "neutral";
+type HealthStatusCopy = { title: string; detail: string; technicalDetail?: string };
 
 function localeForNumbers(locale: string) {
   if (locale === "fa") return "fa-IR";
@@ -128,15 +178,17 @@ function parseStatusTone(rawStatus: string): HealthTone {
   return "neutral";
 }
 
-function getStatusCopy(rawStatus: string, t: (key: any, vars?: Record<string, string | number>) => string) {
+function getStatusCopy(rawStatus: string, locale: keyof typeof HEALTH_DETAIL_COPY, t: (key: any, vars?: Record<string, string | number>) => string): HealthStatusCopy {
   const normalized = rawStatus.toLowerCase();
+  const detailCopy = HEALTH_DETAIL_COPY[locale];
+  const activeWorkerMatch = rawStatus.match(/(\d+)\s+workers?\(s\)\s+are available|(\d+)\s+workers?\s+are available|(\d+)\s+workers?\s+active/i);
+  const activeWorkerCount = activeWorkerMatch?.[1] ?? activeWorkerMatch?.[2] ?? activeWorkerMatch?.[3];
 
   if (normalized.includes("healthy")) {
-    const workerMatch = rawStatus.match(/\((\d+)\s+workers?\s+active\)/i);
-    if (workerMatch) {
+    if (activeWorkerCount) {
       return {
         title: t("monitoring.healthy") || "Healthy",
-        detail: `${workerMatch[1]} active`,
+        detail: detailCopy.activeWorkers(activeWorkerCount),
       };
     }
 
@@ -146,10 +198,17 @@ function getStatusCopy(rawStatus: string, t: (key: any, vars?: Record<string, st
     };
   }
 
+  if (activeWorkerCount) {
+    return {
+      title: t("monitoring.healthy") || "Healthy",
+      detail: detailCopy.activeWorkers(activeWorkerCount),
+    };
+  }
+
   if (normalized.includes("degraded: no active workers")) {
     return {
       title: t("monitoring.degraded") || "Degraded",
-      detail: "No active workers",
+      detail: detailCopy.noWorkers,
     };
   }
 
@@ -170,34 +229,38 @@ function getStatusCopy(rawStatus: string, t: (key: any, vars?: Record<string, st
   if (normalized.includes("unhealthy:")) {
     return {
       title: t("monitoring.down") || "Down",
-      detail: rawStatus.split(":").slice(1).join(":").trim() || (t("monitoring.error") || "Error"),
+      detail: t("monitoring.error") || "Error",
+      technicalDetail: rawStatus.split(":").slice(1).join(":").trim(),
     };
   }
 
   if (normalized === "unknown") {
     return {
       title: t("monitoring.statusUnknown") || "Unknown",
-      detail: "Awaiting response",
+      detail: detailCopy.awaiting,
     };
   }
 
   return {
-    title: rawStatus,
+    title: t("monitoring.statusUnknown") || "Unknown",
     detail: t("monitoring.lastCheck") || "Last Check",
+    technicalDetail: rawStatus,
   };
 }
 
 function HealthCard({
   label,
   rawStatus,
+  locale,
   t,
 }: {
   label: string;
   rawStatus: string;
+  locale: keyof typeof HEALTH_DETAIL_COPY;
   t: (key: any, vars?: Record<string, string | number>) => string;
 }) {
   const tone = parseStatusTone(rawStatus);
-  const { title, detail } = getStatusCopy(rawStatus, t);
+  const { title, detail, technicalDetail } = getStatusCopy(rawStatus, locale, t);
 
   return (
     <article className="smx-panel min-w-0 p-4">
@@ -218,6 +281,12 @@ function HealthCard({
         {title}
       </p>
       <p className="mt-1.5 truncate text-[12px] font-medium text-ink-secondary">{detail}</p>
+      {technicalDetail ? (
+        <details className="mt-2 text-[11px] leading-4 text-ink-tertiary">
+          <summary className="cursor-pointer">{locale === "fa" ? "جزئیات فنی" : locale === "ar" ? "التفاصيل التقنية" : "Technical details"}</summary>
+          <p className="mt-1 break-words" dir="auto">{technicalDetail}</p>
+        </details>
+      ) : null}
     </article>
   );
 }
@@ -259,9 +328,11 @@ function MetricStat({
 function IncidentInbox({
   incidents,
   copy,
+  locale,
 }: {
   incidents: Incident[];
   copy: typeof INCIDENT_COPY.en;
+  locale: keyof typeof INCIDENT_COPY;
 }) {
   return (
     <section className="smx-panel overflow-hidden">
@@ -277,6 +348,28 @@ function IncidentInbox({
         <div className="divide-y divide-black/5 dark:divide-white/10">
           {incidents.map((incident) => {
             const isCritical = incident.severity === "critical";
+            const rawIncidentText = `${incident.source} ${incident.user_message} ${incident.manager_detail}`;
+            const isWorkerIncident = /worker|celery|generation jobs cannot start/i.test(rawIncidentText);
+            const localizedIncident = locale === "en"
+              ? {
+                  source: incident.source,
+                  title: incident.user_message,
+                  detail: incident.manager_detail,
+                  technicalDetail: null,
+                }
+              : isWorkerIncident
+                ? {
+                    source: copy.workerType,
+                    title: copy.workerTitle,
+                    detail: copy.workerDetail,
+                    technicalDetail: null,
+                  }
+                : {
+                    source: copy.warning,
+                    title: copy.genericTitle,
+                    detail: copy.genericDetail,
+                    technicalDetail: rawIncidentText,
+                  };
             return (
               <article key={incident.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -292,13 +385,19 @@ function IncidentInbox({
                     {isCritical ? copy.critical : copy.warning}
                   </span>
                   <span className="text-[11px] font-medium uppercase tracking-normal text-ink-tertiary">
-                    {incident.source}
+                    {localizedIncident.source}
                   </span>
                 </div>
-                <p className="mt-2 text-[13px] font-medium leading-5 text-ink">{incident.user_message}</p>
+                <p className="mt-2 text-[13px] font-medium leading-5 text-ink">{localizedIncident.title}</p>
                 <p className="mt-1 text-[12px] leading-5 text-ink-secondary">
-                  {copy.detail}: {incident.manager_detail}
+                  {copy.detail}: {localizedIncident.detail}
                 </p>
+                {localizedIncident.technicalDetail ? (
+                  <details className="mt-2 text-[11px] leading-5 text-ink-tertiary">
+                    <summary className="cursor-pointer">{copy.technicalDetails}</summary>
+                    <p className="mt-1 break-words" dir="ltr">{localizedIncident.technicalDetail}</p>
+                  </details>
+                ) : null}
               </article>
             );
           })}
@@ -318,6 +417,12 @@ function LlmProviderAccess({
   const providers = Array.isArray(options?.providers) ? options.providers : [];
   const selectableModels = Array.isArray(options?.selectable_models) ? options.selectable_models : [];
   const selectableCount = selectableModels.length;
+  const activeProvider = providers.find(
+    (provider) => provider.active || provider.provider === options?.active_provider
+  );
+  const managerDetail = options?.manager_detail?.toLowerCase().includes("llm ping timed out")
+    ? copy.timeout
+    : options?.manager_detail;
 
   return (
     <section className="smx-panel overflow-hidden">
@@ -325,7 +430,7 @@ function LlmProviderAccess({
         <div className="min-w-0">
           <h3 className="text-[14px] font-semibold text-ink">{copy.title}</h3>
           <p className="mt-1 truncate text-[12px] text-ink-secondary">
-            {options ? `${copy.active}: ${options.active_model}` : copy.noModels}
+            {options ? `${copy.active}: ${formatModelDisplayName(options.active_model)}` : copy.noModels}
           </p>
         </div>
         <span className="rounded-md border border-black/5 bg-black/[0.03] px-2 py-1 text-[11px] font-medium text-ink-secondary dark:border-white/10 dark:bg-white/[0.05]">
@@ -333,42 +438,62 @@ function LlmProviderAccess({
         </span>
       </div>
 
-      {options?.manager_detail ? (
-        <p className="border-b border-black/5 px-4 py-3 text-[12px] leading-5 text-ink-secondary dark:border-white/10">
-          {copy.managerDetail}: {options.manager_detail}
-        </p>
+      {managerDetail ? (
+        <details className="border-b border-black/5 px-4 py-3 text-[12px] leading-5 text-ink-secondary dark:border-white/10">
+          <summary className="cursor-pointer font-medium text-ink-secondary">{copy.technicalDetails}</summary>
+          <p className="mt-2" dir="auto">{copy.managerDetail}: {managerDetail}</p>
+        </details>
       ) : null}
 
-      {providers.length === 0 ? (
+      {!activeProvider ? (
         <p className="px-4 py-6 text-[13px] text-ink-tertiary">{copy.noModels}</p>
       ) : (
-        <div className="grid gap-0 divide-y divide-black/5 dark:divide-white/10">
-          {providers.map((provider) => {
-            const models = Array.isArray(provider.models) ? provider.models : [];
-
-            return (
-              <article key={provider.provider} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-ink">{provider.label}</p>
-                  <p className="mt-1 truncate text-[12px] text-ink-secondary">
-                    {models.map((model) => model.label).join(", ") || provider.provider}
-                  </p>
-                </div>
-                <span
-                  className={clsx(
-                    "inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold",
-                    provider.configured
-                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                  )}
-                >
-                  {provider.configured ? copy.configured : copy.missing}
-                </span>
-              </article>
-            );
-          })}
-        </div>
+        <article className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-ink">{activeProvider.label}</p>
+            <p className="mt-1 truncate text-[12px] text-ink-secondary">
+              {formatModelDisplayName(options?.active_model)}
+            </p>
+          </div>
+          <span className="inline-flex h-6 items-center rounded-md bg-emerald-500/10 px-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+            {copy.activeProvider}
+          </span>
+        </article>
       )}
+
+      {providers.length > 0 ? (
+        <details className="border-t border-black/5 dark:border-white/10">
+          <summary className="cursor-pointer px-4 py-3 text-[12px] font-medium text-ink-secondary">
+            {copy.providerInventory}
+          </summary>
+          <div className="divide-y divide-black/5 border-t border-black/5 dark:divide-white/10 dark:border-white/10">
+            {providers.map((provider) => {
+              const models = Array.isArray(provider.models) ? provider.models : [];
+
+              return (
+                <article key={provider.provider} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-ink">{provider.label}</p>
+                    <p className="mt-1 truncate text-[12px] text-ink-secondary">
+                      {models.map((model) => formatModelDisplayName(model.model)).join(", ") || provider.label}
+                    </p>
+                  </div>
+                  <span
+                    className={clsx(
+                      "inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold",
+                      provider.configured
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    )}
+                  >
+                    {provider.configured ? copy.configured : copy.missing}
+                  </span>
+                </article>
+              );
+            })}
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }
@@ -511,7 +636,7 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {depCards.map((card) => (
-              <HealthCard key={card.key} label={card.label} rawStatus={card.rawStatus} t={t} />
+              <HealthCard key={card.key} label={card.label} rawStatus={card.rawStatus} locale={locale} t={t} />
             ))}
           </div>
 
@@ -563,7 +688,7 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
 
           <LlmProviderAccess options={llmOptions} copy={llmCopy} />
 
-          <IncidentInbox incidents={incidents} copy={incidentCopy} />
+          <IncidentInbox incidents={incidents} copy={incidentCopy} locale={locale} />
 
           {GRAFANA_URL ? (
             <section className="smx-panel overflow-hidden">

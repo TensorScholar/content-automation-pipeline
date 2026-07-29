@@ -431,13 +431,14 @@ def test_generate_schema_markup_basic(distributor, sample_article):
     assert "https://example.com/article" in schema
 
 
-def test_generate_schema_markup_with_faq(distributor, sample_article):
-    """Test schema.org markup generation with FAQ detection."""
+def test_generate_schema_markup_does_not_infer_faq_from_heading(distributor, sample_article):
+    """FAQ markup must not be claimed without structured question/answer data."""
     sample_article.content += "\n<h2>سوالات متداول</h2>\n<p>پرسش و پاسخ</p>"
 
     schema = distributor.generate_schema_markup(sample_article, "https://example.com/article")
 
-    assert '"@type": ["Article", "FAQPage"]' in schema or '"FAQPage"' in schema
+    assert '"@type": "Article"' in schema
+    assert "FAQPage" not in schema
 
 
 def test_generate_schema_markup_keywords(distributor, sample_article):

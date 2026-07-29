@@ -1,15 +1,13 @@
 # Content Automation Pipeline 🚀
 
-> **🎉 SYSTEM STATUS: 100% PRODUCTION READY**
+> **SYSTEM STATUS: STAGING ONLY**
 >
-> **Gold Standard Verified**:
-> - ✅ **Robust**: Resilient to ReDoS (Fuzzing Tested)
-> - ✅ **Reliable**: Fault-tolerant Workers (Auto-Retry + Acks Late)
-> - ✅ **Scalable**: HNSW Vector Search + Async Architecture
-> - ✅ **Secure**: HTTPS/TLS + JWT Auth + Session Management
-> - ✅ **Optimized**: Database Indexes + Multi-layer Caching + Performance Monitoring
+> This build is under production-readiness validation. It is not approved for
+> public production traffic or unattended public publishing. See the
+> [authoritative release status](docs/release-status.md) for the required gates.
 
-Automated content generation factory with Streamlit Dashboard, FastAPI backend, and multi-provider LLM support.
+Automated content generation system with a Next.js frontend, optional Tauri
+desktop shell, FastAPI backend, and multi-provider LLM support.
 
 **Recent Updates (2026-01):**
 - ✅ Security hardening: Network error handling, XSS prevention, session fixation fixes
@@ -33,9 +31,10 @@ Automated content generation factory with Streamlit Dashboard, FastAPI backend, 
 
 ## 🏗️ Architecture Audit Report
 
-**Overall Status**: 🟢 **Production Ready** (With minor scalability notes)
+**Overall Status**: 🟡 **Staging Candidate** (Production approval not granted)
 
-This system has been audited against strict production criteria:
+The system includes the following production-oriented foundations, which still
+require release-candidate verification before production approval:
 1. **Resilience & Robustness**: ✅ **Excellent**
    - Certified via Aggressive Property-Based Testing and Fuzzing.
    - Crash Resistance: Intelligence layer proven to handle 1MB+ malicious payloads without hanging.
@@ -47,7 +46,7 @@ This system has been audited against strict production criteria:
    - **Vector Search**: Uses `HNSW` indexing (via `pgvector`) for O(log n) performance.
    - **DB Indexing**: Explicit indices on all query columns (Postgres).
 4. **Redundancy**: ⚠️ **Medium (Configurable)**
-   - Single Points of Failure: Default Docker config runs 1 replica. Scale via `docker-compose up --scale worker=2`.
+   - Single Points of Failure: Default Docker config runs 1 replica. Scale via `docker compose up --scale worker=2`.
 
 ---
 
@@ -60,7 +59,7 @@ This system has been audited against strict production criteria:
 ```bash
 # Docker deployment (simplest)
 cp .env.example .env  # Configure your API keys
-docker-compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d --build
 
 # Or systemd deployment (production recommended)
 # See DEPLOYMENT.md for full guide
@@ -111,19 +110,20 @@ echo "SECRET_KEY=$SECRET_KEY" >> .env
 ## 🖥️ Dashboard User Guide
 
 ### 1. Accessing the Dashboard
-- **URL**: `http://localhost:8501` (Dev) or `https://your-domain.com` (Prod)
+- **Web URL**: `http://localhost:3001` in development.
+- **Desktop**: Run the optional Tauri shell from `frontend/` with `npm run tauri:dev`.
 - **Login**: Use administrative credentials.
 
-### 2. Managing Projects (Projects Tab)
+### 2. Managing Projects (Projects)
 - **Create**: Click "Create Project", enter details (Name, Domain, Audience).
 - **Edit/Delete**: Use the expander below each project card to modify settings.
 
-### 3. Generating Content (Smart Writer Tab)
+### 3. Generating Content (Content Studio)
 1.  **Context**: Use the wizard to input Topic and Keywords.
 2.  **Strategy**: Select Tone (e.g., Professional, witty) and Length.
 3.  **Generate**: Click "Generate content plan". The system will queue the task.
 
-### 4. Tracking Tasks (Task Tracking Tab)
+### 4. Tracking Tasks (Task History)
 - **Status**: Monitor progress (Pending -> Processing -> Completed).
 - **View Content**: Once completed, click the "View Article" button to see the result, metrics, and cost.
 - **Search**: Use the task ID or history list to find past generations.
@@ -136,15 +136,15 @@ echo "SECRET_KEY=$SECRET_KEY" >> .env
 
 ## System Status
 
-✅ **Passed All Verification Gates**:
-- **Code Quality**: Linting + Type Checking
-- **Reliability**: Property-Based Testing (Hypothesis)
-- **Resilience**: 1MB+ Payload Fuzzing
-- **Performance**: <30ms Response Latency for core logic
+The repository includes code-quality, reliability, resilience, security, and
+performance checks. These checks have not yet been accepted as complete GA
+release evidence for one clean, immutable release candidate. Production remains
+blocked on the gates in [docs/release-status.md](docs/release-status.md).
 
 ## Features
 
-- **Streamlit Dashboard**: Complete UI for Project management, Article generation, and Task tracking with security hardening
+- **Next.js Frontend**: Project management, article generation, task tracking,
+  and monitoring, with optional Tauri desktop packaging
 - **Intelligent Context**: RAG pipeline with `pgvector` (HNSW) and `sentence-transformers`
 - **Fault-Tolerant Scheduling**: Celery workers with Redis-backed persistence and automated cleanup tasks
 - **Unified LLM Gateway**: Automatic failover between Anthropic and OpenAI with cost tracking
@@ -184,6 +184,9 @@ Two GitHub Actions workflows run automatically:
 ```bash
 # Install dependencies
 poetry install
+cd frontend
+npm ci
+cd ..
 
 # Configure environment
 cp .env.example .env
@@ -196,22 +199,20 @@ cp .env.example .env
 
 # Initialize database
 poetry run python scripts/setup/setup_database.py
-
-# Seed best practices knowledge base (optional)
-poetry run python scripts/seed_best_practices.py
-
-# Run diagnostic tests to verify setup
-poetry run python scripts/diagnostic_test.py
 ```
 
 ### Running
 
 ```bash
-# Development server
+# API development server
 poetry run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
+# Frontend development server (separate terminal)
+cd frontend
+npm run dev
+
 # Production (Docker)
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ## Architecture
@@ -404,20 +405,11 @@ result = await llm_client.generate(
 ## Testing
 
 ```bash
-# Run comprehensive diagnostic tests (recommended first step)
-poetry run python scripts/diagnostic_test.py
-
 # Run all pytest tests
 poetry run pytest
 
-# Unit tests only
-poetry run pytest tests/unit/
-
 # Integration tests
 poetry run pytest tests/integration/
-
-# Production readiness checks
-poetry run pytest tests/production_readiness/
 
 # Load testing (requires running API)
 locust -f tests/locustfile.py --host=http://localhost:8000
@@ -628,7 +620,8 @@ alembic downgrade -1
 1. Add provider client initialization in `UnifiedLLMClient._initialize_providers()`
 2. Implement provider-specific method (e.g., `_call_newprovider()`)
 3. Add routing logic in `generate()` method
-4. Update tests in `tests/unit/test_llm_client.py`
+4. Update the provider and settings tests, including
+   `tests/test_llm_provider_fallback.py` and `tests/test_settings_parsing.py`
 
 ## License
 See [LICENSE](LICENSE) file.

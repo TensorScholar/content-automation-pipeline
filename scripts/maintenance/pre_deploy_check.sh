@@ -152,7 +152,15 @@ fi
 echo -e "\n${BLUE}[5/5] Running Security Tests...${NC}"
 
 if command -v poetry &> /dev/null; then
-    if poetry run pytest tests/production_readiness/test_04_security.py -v --tb=short 2>/dev/null; then
+    SECURITY_TESTS=(
+        tests/test_phase2_security_cost.py
+        tests/test_access_control.py
+        tests/test_access_control_roles.py
+        tests/test_semantic_sanitization.py
+        tests/test_rate_limiter_auth_identity.py
+        tests/test_settings_parsing.py
+    )
+    if poetry run pytest "${SECURITY_TESTS[@]}" -q --tb=short; then
         echo -e "${GREEN}✓${NC} Security tests passed"
     else
         echo -e "${YELLOW}⚠${NC} Security tests skipped or failed (check manually)"

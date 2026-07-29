@@ -38,6 +38,7 @@ PROVIDER_LABELS = {
     "anthropic": "Anthropic",
     "openai": "OpenAI",
     "gemini": "Google Gemini",
+    "openai_compatible": "OpenAI-compatible API",
     "local": "Local LLM",
 }
 
@@ -66,6 +67,8 @@ def infer_provider(model: str) -> str | None:
         return "anthropic"
     if value.startswith("gemini/") or value.startswith("gemini-"):
         return "gemini"
+    if value.startswith("compatible/"):
+        return "openai_compatible"
     if value.startswith("local-") or value.startswith("ollama/"):
         return "local"
     return None
@@ -74,6 +77,10 @@ def infer_provider(model: str) -> str | None:
 def normalize_model_name(model: str) -> str:
     """Strip provider prefixes for display, pricing, and catalog matching."""
     value = model.strip()
+    if value.lower().startswith("compatible/"):
+        # This prefix is part of the app-level routing contract and must reach
+        # request validation unchanged when a user selects the model.
+        return value
     if "/" in value:
         return value.split("/", 1)[1]
     return value
@@ -103,6 +110,8 @@ def has_provider_credentials(provider: str) -> bool:
             or os.getenv("GOOGLE_API_KEY")
             or os.getenv("LLM_GEMINI_API_KEY")
         )
+    if normalized == "openai_compatible":
+        return bool(settings.llm.openai_compatible_base_url and settings.llm.openai_compatible_api_key)
     if normalized == "local":
         return bool(os.getenv("LOCAL_LLM_URL"))
     return False
@@ -147,6 +156,15 @@ def _configured_models_for_provider(provider: str) -> list[str]:
             settings.llm.primary_model if active_provider == "openai" else None,
             settings.llm.fallback_model if infer_provider(settings.llm.fallback_model or "") == "openai" else None,
         ]
+    elif provider == "openai_compatible":
+        configured = [
+            settings.llm.openai_compatible_model,
+            os.getenv("LLM_OPENAI_COMPATIBLE_FALLBACK_MODEL"),
+            settings.llm.primary_model if active_provider == "openai_compatible" else None,
+            settings.llm.fallback_model
+            if infer_provider(settings.llm.fallback_model or "") == "openai_compatible"
+            else None,
+        ]
     else:
         configured = [
             settings.llm.primary_model if active_provider == "local" else None,
@@ -165,7 +183,7 @@ def get_llm_provider_options() -> list[LLMProviderOption]:
     active_provider = infer_provider(settings.llm.primary_model) or "unknown"
 
     providers: list[LLMProviderOption] = []
-    for provider in ("gemini", "anthropic", "openai", "local"):
+    for provider in ("gemini", "anthropic", "openai", "openai_compatible", "local"):
         configured = has_provider_credentials(provider)
         catalog_by_model = {
             model: (label, recommended)
@@ -174,7 +192,8 @@ def get_llm_provider_options() -> list[LLMProviderOption]:
         models: list[LLMModelOption] = []
 
         for model in _configured_models_for_provider(provider):
-            label, recommended = catalog_by_model.get(model, (model, False))
+            display_model = model.removeprefix("compatible/")
+            label, recommended = catalog_by_model.get(model, (display_model, False))
             models.append(
                 LLMModelOption(
                     provider=provider,
@@ -216,7 +235,7 @@ def validate_model_available(model: str | None) -> tuple[bool, str | None]:
 
     provider = infer_provider(model)
     if provider is None:
-        return False, f"Unsupported LLM model '{model}'. Use a Gemini, Anthropic, OpenAI, or local model."
+        return False, f"Unsupported LLM model '{model}'. Use a Gemini, Anthropic, OpenAI, OpenAI-compatible, or local model."
 
     if not has_provider_credentials(provider):
         return (
@@ -247,7 +266,10 @@ def build_llm_warnings() -> list[str]:
             f"Fallback model '{fallback}' is configured, but {PROVIDER_LABELS.get(fallback_provider, fallback_provider)} has no API key."
         )
 
-    if not any(has_provider_credentials(provider) for provider in ("gemini", "anthropic", "openai", "local")):
+    if not any(
+        has_provider_credentials(provider)
+        for provider in ("gemini", "anthropic", "openai", "openai_compatible", "local")
+    ):
         warnings.append("No LLM provider is configured. Content generation will fail until an API key or local endpoint is available.")
 
     return warnings

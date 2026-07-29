@@ -1,0 +1,91 @@
+{
+  "version": "phase2-v1",
+  "case_count": 40,
+  "language_distribution": {
+    "fa": 24,
+    "en": 8,
+    "ar": 8
+  },
+  "rubric": {
+    "version": "article-quality-rubric-v1",
+    "score_scale": {
+      "minimum": 0,
+      "maximum": 100
+    },
+    "dimensions": [
+      {"id":"factual_source_fidelity","weight":20},
+      {"id":"search_intent_coverage","weight":15},
+      {"id":"language_locale_fit","weight":15},
+      {"id":"depth_usefulness","weight":15},
+      {"id":"structure_readability","weight":10},
+      {"id":"seo_naturalness","weight":10},
+      {"id":"instruction_adherence","weight":5},
+      {"id":"originality_repetition","weight":5},
+      {"id":"safety_compliance","weight":5}
+    ],
+    "hard_blockers": [
+      "fabricated_evidence",
+      "unsupported_high_impact_claim",
+      "wrong_or_broken_language",
+      "empty_truncated_or_malformed",
+      "prompt_or_secret_leakage",
+      "unsafe_content",
+      "severe_repetition_or_keyword_stuffing",
+      "missing_mandatory_requirement"
+    ],
+    "human_review": {
+      "required_fields": [
+        "case_id",
+        "reviewer_id",
+        "review_round",
+        "dimension_scores",
+        "hard_blockers",
+        "accepted",
+        "notes"
+      ],
+      "allowed_decisions": ["accept", "reject", "needs_adjudication"]
+    }
+  },
+  "cases": [
+    {"id":"fa-001","language":"fa","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"راهنمای داخلی بررسی اتصال مدل هوش مصنوعی برای تیم محتوا","required_sections":["مقدمه","مراحل بررسی","جمع بندی"],"required_keywords":["اتصال مدل هوش مصنوعی"]},
+    {"id":"fa-002","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"راهنمای ایجاد پیش نویس مقاله در وردپرس","required_sections":["پیش نیازها","مراحل اجرا","خطاهای رایج"],"required_keywords":["پیش نویس وردپرس"]},
+    {"id":"fa-003","language":"fa","intent":"commercial","risk":"low","source_mode":"provided","target_words":1100,"topic":"راهنمای انتخاب نرم افزار مدیریت پروژه برای تیم کوچک","required_sections":["معیارهای انتخاب","مقایسه گزینه ها","جمع بندی"],"required_keywords":["نرم افزار مدیریت پروژه"]},
+    {"id":"fa-004","language":"fa","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"چک لیست سئو داخلی برای مقاله های فارسی","required_sections":["مقدمه","چک لیست","اشتباهات رایج"],"required_keywords":["سئو داخلی"]},
+    {"id":"fa-005","language":"fa","intent":"comparison","risk":"low","source_mode":"provided","target_words":1200,"topic":"مقایسه روش های تولید محتوای داخلی و برون سپاری","required_sections":["معیارهای مقایسه","مزایا و محدودیت ها","پیشنهاد نهایی"],"required_keywords":["تولید محتوا"]},
+    {"id":"fa-006","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"نحوه تدوین تقویم محتوایی ماهانه","required_sections":["تعریف هدف","برنامه ریزی هفتگی","اندازه گیری نتیجه"],"required_keywords":["تقویم محتوایی"]},
+    {"id":"fa-007","language":"fa","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"اصول نوشتن توضیحات محصول برای فروشگاه اینترنتی","required_sections":["ویژگی های متن خوب","ساختار پیشنهادی","نمونه کاربرد"],"required_keywords":["توضیحات محصول"]},
+    {"id":"fa-008","language":"fa","intent":"commercial","risk":"low","source_mode":"provided","target_words":1100,"topic":"راهنمای انتخاب بسته بندی پایدار برای کسب و کار کوچک","required_sections":["معیارهای پایداری","هزینه و تامین","اقدام بعدی"],"required_keywords":["بسته بندی پایدار"]},
+    {"id":"fa-009","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"راهنمای تنظیم لحن برند در شبکه های اجتماعی","required_sections":["شناخت مخاطب","قواعد لحن","بازبینی محتوا"],"required_keywords":["لحن برند"]},
+    {"id":"fa-010","language":"fa","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"بهترین روش های مدیریت بازخورد مشتری","required_sections":["دریافت بازخورد","دسته بندی","پاسخ گویی"],"required_keywords":["بازخورد مشتری"]},
+    {"id":"fa-011","language":"fa","intent":"comparison","risk":"low","source_mode":"provided","target_words":1100,"topic":"مقایسه گزارش های هفتگی و ماهانه عملکرد محتوا","required_sections":["هدف گزارش","شاخص ها","انتخاب دوره"],"required_keywords":["گزارش عملکرد محتوا"]},
+    {"id":"fa-012","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"راهنمای آماده سازی مقاله برای بازبینی مدیر","required_sections":["پیش از ارسال","چک لیست بازبینی","مدیریت اصلاحات"],"required_keywords":["بازبینی مقاله"]},
+    {"id":"fa-013","language":"fa","intent":"informational","risk":"high","source_mode":"provided","target_words":1000,"topic":"چگونه اطلاعات مالی را در گزارش کسب و کار با احتیاط بیان کنیم","required_sections":["محدودیت داده","بیان عدم قطعیت","بازبینی تخصصی"],"required_keywords":["اطلاعات مالی"]},
+    {"id":"fa-014","language":"fa","intent":"informational","risk":"high","source_mode":"provided","target_words":1000,"topic":"اصول نگارش محتوای عمومی سلامت بدون ادعای درمان","required_sections":["دامنه محتوا","منابع معتبر","ارجاع به متخصص"],"required_keywords":["محتوای سلامت"]},
+    {"id":"fa-015","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":900,"topic":"راهنمای پاسخ به پرسش های متداول مشتریان","required_sections":["انتخاب پرسش","نوشتن پاسخ","به روزرسانی"],"required_keywords":["پرسش های متداول"]},
+    {"id":"fa-016","language":"fa","intent":"commercial","risk":"low","source_mode":"provided","target_words":1100,"topic":"راهنمای انتخاب ابزار تحلیل وب برای تیم بازاریابی","required_sections":["نیازهای تیم","معیارهای ارزیابی","برنامه اجرا"],"required_keywords":["ابزار تحلیل وب"]},
+    {"id":"fa-017","language":"fa","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"اصول امنیت رمز عبور برای کارکنان دورکار","required_sections":["تهدیدهای رایج","روش های امن","اقدام فوری"],"required_keywords":["امنیت رمز عبور"]},
+    {"id":"fa-018","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"نحوه مستندسازی فرایند تولید محتوا","required_sections":["هدف مستند","مراحل فرایند","مالکیت وظایف"],"required_keywords":["فرایند تولید محتوا"]},
+    {"id":"fa-019","language":"fa","intent":"comparison","risk":"low","source_mode":"provided","target_words":1100,"topic":"مقایسه خبرنامه ایمیلی و پیامک برای اطلاع رسانی مشتریان","required_sections":["مخاطب","هزینه و سرعت","انتخاب کانال"],"required_keywords":["خبرنامه ایمیلی"]},
+    {"id":"fa-020","language":"fa","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"چرا ساختار تیترها برای خوانایی مقاله مهم است","required_sections":["نقش تیترها","ساختار پیشنهادی","کنترل نهایی"],"required_keywords":["ساختار تیترها"]},
+    {"id":"fa-021","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"راهنمای نوشتن خلاصه اجرایی برای مدیران","required_sections":["هدف خلاصه","اطلاعات ضروری","بازنویسی"],"required_keywords":["خلاصه اجرایی"]},
+    {"id":"fa-022","language":"fa","intent":"informational","risk":"high","source_mode":"provided","target_words":1000,"topic":"اصول عمومی نگارش محتوای حقوقی برای مخاطب غیرمتخصص","required_sections":["مرز مشاوره حقوقی","زبان ساده","ارجاع به وکیل"],"required_keywords":["محتوای حقوقی"]},
+    {"id":"fa-023","language":"fa","intent":"commercial","risk":"low","source_mode":"provided","target_words":1100,"topic":"راهنمای انتخاب سامانه پشتیبانی مشتری","required_sections":["نیازهای عملیاتی","معیارهای انتخاب","گام بعدی"],"required_keywords":["سامانه پشتیبانی مشتری"]},
+    {"id":"fa-024","language":"fa","intent":"tutorial","risk":"low","source_mode":"none","target_words":900,"topic":"چگونه یک مقاله قدیمی را برای انتشار مجدد به روز کنیم","required_sections":["ممیزی محتوا","اصلاحات ضروری","کنترل انتشار"],"required_keywords":["به روزرسانی مقاله"]},
+    {"id":"en-001","language":"en","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"How an internal content team verifies an AI provider connection","required_sections":["Purpose","Verification steps","Escalation path"],"required_keywords":["AI provider connection"]},
+    {"id":"en-002","language":"en","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"How to prepare a WordPress draft for manager review","required_sections":["Prerequisites","Draft workflow","Review checklist"],"required_keywords":["WordPress draft"]},
+    {"id":"en-003","language":"en","intent":"comparison","risk":"low","source_mode":"provided","target_words":1100,"topic":"Comparing in-house and outsourced content production","required_sections":["Evaluation criteria","Tradeoffs","Recommendation"],"required_keywords":["content production"]},
+    {"id":"en-004","language":"en","intent":"commercial","risk":"low","source_mode":"provided","target_words":1100,"topic":"Choosing analytics software for a small marketing team","required_sections":["Team needs","Selection criteria","Implementation plan"],"required_keywords":["analytics software"]},
+    {"id":"en-005","language":"en","intent":"informational","risk":"high","source_mode":"provided","target_words":1000,"topic":"Writing public health content without treatment claims","required_sections":["Scope","Source handling","Professional referral"],"required_keywords":["public health content"]},
+    {"id":"en-006","language":"en","intent":"tutorial","risk":"low","source_mode":"none","target_words":900,"topic":"Building a monthly editorial calendar","required_sections":["Goals","Weekly planning","Measurement"],"required_keywords":["editorial calendar"]},
+    {"id":"en-007","language":"en","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"Password security practices for remote teams","required_sections":["Threats","Safe practices","Immediate actions"],"required_keywords":["password security"]},
+    {"id":"en-008","language":"en","intent":"comparison","risk":"low","source_mode":"provided","target_words":1100,"topic":"Comparing email newsletters and SMS customer updates","required_sections":["Audience","Cost and speed","Channel choice"],"required_keywords":["email newsletter"]},
+    {"id":"ar-001","language":"ar","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"دليل التحقق من اتصال مزود الذكاء الاصطناعي لفريق المحتوى","required_sections":["الهدف","خطوات التحقق","مسار التصعيد"],"required_keywords":["اتصال مزود الذكاء الاصطناعي"]},
+    {"id":"ar-002","language":"ar","intent":"tutorial","risk":"low","source_mode":"none","target_words":1000,"topic":"دليل إعداد مسودة ووردبريس لمراجعة المدير","required_sections":["المتطلبات","خطوات المسودة","قائمة المراجعة"],"required_keywords":["مسودة ووردبريس"]},
+    {"id":"ar-003","language":"ar","intent":"comparison","risk":"low","source_mode":"provided","target_words":1100,"topic":"مقارنة إنتاج المحتوى الداخلي والاستعانة بمصادر خارجية","required_sections":["معايير المقارنة","المزايا والقيود","التوصية"],"required_keywords":["إنتاج المحتوى"]},
+    {"id":"ar-004","language":"ar","intent":"commercial","risk":"low","source_mode":"provided","target_words":1100,"topic":"اختيار برنامج تحليلات لفريق تسويق صغير","required_sections":["احتياجات الفريق","معايير الاختيار","خطة التنفيذ"],"required_keywords":["برنامج تحليلات"]},
+    {"id":"ar-005","language":"ar","intent":"informational","risk":"high","source_mode":"provided","target_words":1000,"topic":"كتابة محتوى صحي عام دون ادعاءات علاجية","required_sections":["النطاق","المصادر","الإحالة إلى المختص"],"required_keywords":["محتوى صحي"]},
+    {"id":"ar-006","language":"ar","intent":"tutorial","risk":"low","source_mode":"none","target_words":900,"topic":"بناء تقويم تحريري شهري","required_sections":["الأهداف","التخطيط الأسبوعي","القياس"],"required_keywords":["تقويم تحريري"]},
+    {"id":"ar-007","language":"ar","intent":"informational","risk":"low","source_mode":"none","target_words":900,"topic":"ممارسات أمان كلمات المرور للفرق البعيدة","required_sections":["التهديدات","الممارسات الآمنة","الإجراءات الفورية"],"required_keywords":["أمان كلمات المرور"]},
+    {"id":"ar-008","language":"ar","intent":"comparison","risk":"low","source_mode":"provided","target_words":1100,"topic":"مقارنة الرسائل البريدية والرسائل النصية لتحديث العملاء","required_sections":["الجمهور","التكلفة والسرعة","اختيار القناة"],"required_keywords":["رسائل بريدية"]}
+  ]
+}

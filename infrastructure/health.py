@@ -8,11 +8,16 @@ Provides unified health status for Kubernetes probes and monitoring.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _naive_utc_now() -> datetime:
+    """Return UTC without tzinfo for backward-compatible health payloads."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class HealthStatus(str, Enum):
@@ -31,7 +36,7 @@ class ComponentHealth:
     latency_ms: float = 0.0
     message: str = ""
     details: Dict[str, Any] = field(default_factory=dict)
-    checked_at: datetime = field(default_factory=datetime.utcnow)
+    checked_at: datetime = field(default_factory=_naive_utc_now)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary for API responses."""
@@ -52,7 +57,7 @@ class SystemHealth:
     components: List[ComponentHealth]
     version: str = "1.0.0"
     uptime_seconds: float = 0.0
-    checked_at: datetime = field(default_factory=datetime.utcnow)
+    checked_at: datetime = field(default_factory=_naive_utc_now)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary for API responses."""
@@ -74,7 +79,7 @@ class HealthChecker:
     """
 
     def __init__(self):
-        self._start_time = datetime.utcnow()
+        self._start_time = _naive_utc_now()
         self._checks: Dict[str, Callable] = {}
         self._timeout_seconds: float = 5.0
 
@@ -199,7 +204,7 @@ class HealthChecker:
 
     def _get_uptime(self) -> float:
         """Get application uptime in seconds."""
-        return (datetime.utcnow() - self._start_time).total_seconds()
+        return (_naive_utc_now() - self._start_time).total_seconds()
 
     @staticmethod
     def _aggregate_status(components: List[ComponentHealth]) -> HealthStatus:
@@ -303,9 +308,11 @@ async def check_redis_health() -> ComponentHealth:
 
         # Check memory utilization if available
         used_memory = stats.get("used_memory_mb", 0)
-        peak_memory = stats.get("used_memory_peak_mb", 0)
+        max_memory = stats.get("max_memory_mb", 0)
 
-        if peak_memory > 0 and used_memory / peak_memory > 0.9:
+        # Redis's peak is historical usage, not a capacity limit. Only report
+        # memory pressure when the server has an explicit maxmemory setting.
+        if max_memory > 0 and used_memory / max_memory > 0.9:
             status = HealthStatus.DEGRADED
             message = f"High memory utilization: {used_memory:.1f}MB"
         else:
@@ -319,6 +326,7 @@ async def check_redis_health() -> ComponentHealth:
             details={
                 "hit_rate": stats.get("hit_rate", 0),
                 "used_memory_mb": used_memory,
+                "max_memory_mb": max_memory,
                 "total_commands": stats.get("total_commands", 0),
             },
         )
@@ -334,7 +342,7 @@ async def check_redis_health() -> ComponentHealth:
 async def check_celery_health() -> ComponentHealth:
     """Check Celery worker health."""
     try:
-        from orchestration.celery_app import celery_app
+        from orchestration.celery_app import app as celery_app
 
         # Inspect active workers
         inspector = celery_app.control.inspect()

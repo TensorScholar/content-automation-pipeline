@@ -1,7 +1,10 @@
+import httpx
+import litellm
 import pytest
 
 from core.exceptions import LLMConnectionError
 from infrastructure.llm_client import LLMResponse, ModelProvider, TokenUsage, UnifiedLLMClient
+from infrastructure.llm_options import infer_provider, normalize_model_name
 
 
 class StubFallbackClient(UnifiedLLMClient):
@@ -43,7 +46,12 @@ def clean_llm_env(monkeypatch):
         "LLM_FALLBACK_MODEL",
         "LLM_OPENAI_FALLBACK_MODEL",
         "LLM_ANTHROPIC_FALLBACK_MODEL",
+        "LLM_OPENAI_COMPATIBLE_MODEL",
+        "LLM_OPENAI_COMPATIBLE_FALLBACK_MODEL",
         "LLM_LOCAL_FALLBACK_MODEL",
+        "LLM_ENABLE_LOCAL_FALLBACK",
+        "OPENAI_COMPATIBLE_BASE_URL",
+        "OPENAI_COMPATIBLE_API_KEY",
         "LOCAL_LLM_URL",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -100,3 +108,93 @@ async def test_generate_does_not_recursively_fallback_after_fallback_failure(mon
         )
 
     assert client.calls == ["claude-haiku-4-5", "gpt-4o-mini"]
+
+
+@pytest.mark.asyncio
+async def test_generate_falls_back_to_configured_openai_compatible_provider(monkeypatch):
+    monkeypatch.setenv(
+        "LLM_OPENAI_COMPATIBLE_MODEL", "compatible/google/gemini-2.5-flash-lite"
+    )
+    client = StubFallbackClient(
+        fail_models={"claude-haiku-4-5"},
+        available_providers={ModelProvider.OPENAI_COMPATIBLE},
+    )
+
+    response = await client.generate(
+        model="claude-haiku-4-5",
+        prompt="Write a launch checklist",
+        max_tokens=100,
+    )
+
+    assert response.provider == ModelProvider.OPENAI_COMPATIBLE
+    assert response.model == "compatible/google/gemini-2.5-flash-lite"
+    assert client.calls == ["claude-haiku-4-5", "compatible/google/gemini-2.5-flash-lite"]
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_connection_failure_preserves_error_category(monkeypatch):
+    client = UnifiedLLMClient(cache_manager=None, metrics_collector=None)
+    client._openai_compatible_base_url = "https://provider.invalid/v1"
+    client._openai_compatible_api_key = "test-key"
+
+    async def fail_connection(**kwargs):
+        raise litellm.APIConnectionError(
+            message="Connection refused",
+            llm_provider="openai",
+            model="google/gemini-2.5-flash-lite",
+            request=httpx.Request("POST", "https://provider.invalid/v1/chat/completions"),
+        )
+
+    monkeypatch.setattr("infrastructure.llm_client.acompletion", fail_connection)
+
+    with pytest.raises(LLMConnectionError) as exc_info:
+        await client._call_llm.__wrapped__(
+            client,
+            model="compatible/google/gemini-2.5-flash-lite",
+            prompt="test",
+            temperature=0.1,
+            max_tokens=10,
+            top_p=1.0,
+            stop_sequences=None,
+        )
+
+    assert exc_info.value.error_code == "llm_unavailable"
+
+
+def test_openai_compatible_model_uses_underlying_model_pricing_key():
+    client = UnifiedLLMClient(cache_manager=None, metrics_collector=None)
+
+    assert client._determine_provider("compatible/google/gemini-2.5-flash-lite") == (
+        ModelProvider.OPENAI_COMPATIBLE
+    )
+    assert client._pricing_key("compatible/google/gemini-2.5-flash-lite") == "gemini-2.5-flash-lite"
+
+
+def test_openai_compatible_model_keeps_its_routing_prefix_for_selection():
+    model = "compatible/google/gemini-2.5-flash-lite"
+
+    assert infer_provider(model) == "openai_compatible"
+    assert normalize_model_name(model) == model
+
+
+def test_local_fallback_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.setenv("LLM_LOCAL_FALLBACK_MODEL", "local-qwen-turbo")
+    client = StubFallbackClient(
+        fail_models=set(),
+        available_providers={ModelProvider.LOCAL},
+    )
+
+    assert client._fallback_candidates("compatible/google/gemini-2.5-flash-lite") == []
+
+
+def test_local_fallback_can_be_explicitly_enabled(monkeypatch):
+    monkeypatch.setenv("LLM_LOCAL_FALLBACK_MODEL", "local-qwen-turbo")
+    monkeypatch.setenv("LLM_ENABLE_LOCAL_FALLBACK", "true")
+    client = StubFallbackClient(
+        fail_models=set(),
+        available_providers={ModelProvider.LOCAL},
+    )
+
+    assert client._fallback_candidates("compatible/google/gemini-2.5-flash-lite") == [
+        "local-qwen-turbo"
+    ]

@@ -76,30 +76,35 @@ function StatusTile({
 }
 
 function StepRow({
-  index,
   label,
-  done,
-  formatNumber,
+  state,
+  context,
+  status,
 }: {
-  index: number;
   label: string;
-  done: boolean;
-  formatNumber: (value: number) => string;
+  state: "done" | "pending" | "unverified";
+  context: string;
+  status: string;
 }) {
+  const done = state === "done";
   return (
     <li className="flex min-h-11 items-center gap-3 border-t border-black/5 px-4 first:border-t-0 dark:border-white/10">
       <span
         className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold ${
           done
             ? "bg-brand text-white"
-            : "border border-black/10 text-ink-tertiary dark:border-white/10"
+            : state === "unverified"
+              ? "border border-amber-400/50 text-amber-700 dark:text-amber-300"
+              : "border border-black/10 text-ink-tertiary dark:border-white/10"
         }`}
       >
-        {done ? "✓" : formatNumber(index)}
+        {done ? "✓" : state === "unverified" ? "?" : "–"}
       </span>
-      <span className={`truncate text-[13px] ${done ? "text-ink-tertiary line-through" : "text-ink-secondary"}`}>
-        {label}
-      </span>
+      <div className="min-w-0 flex-1">
+        <span className={`block truncate text-[13px] ${done ? "text-ink-tertiary line-through" : "text-ink-secondary"}`}>{label}</span>
+      </div>
+      <span className="shrink-0 text-[11px] font-medium text-ink-tertiary">{context}</span>
+      <span className="shrink-0 text-[11px] font-semibold text-ink-secondary">{status}</span>
     </li>
   );
 }
@@ -176,6 +181,11 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
   const hasWp = wordpressConnected > 0;
   const recentProjects = projects.slice(0, 4);
   const overflowCount = Math.max(0, projects.length - recentProjects.length);
+  const pipelineCopy = locale === "fa"
+    ? { subtitle: "وضعیت هر مورد مستقل و بر پایه داده‌های موجود نمایش داده می‌شود.", required: "الزامی", optional: "اختیاری", activity: "فعالیت", complete: "کامل", pending: "تکمیل نشده", unverified: "بررسی نشده" }
+    : locale === "ar"
+      ? { subtitle: "تُعرض حالة كل عنصر بشكل مستقل وفقاً للبيانات المتاحة.", required: "مطلوب", optional: "اختياري", activity: "نشاط", complete: "مكتمل", pending: "غير مكتمل", unverified: "غير متحقق" }
+      : { subtitle: "Each item is shown independently from the available project data.", required: "Required", optional: "Optional", activity: "Activity", complete: "Complete", pending: "Not complete", unverified: "Not verified" };
 
   const nextAction = useMemo(() => {
     if (!hasProject) {
@@ -183,15 +193,6 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
         title: t("dashboard.nextCreateProjectTitle"),
         description: t("dashboard.nextCreateProjectDesc"),
         cta: t("dashboard.actionCreateProject"),
-        page: "projects",
-      };
-    }
-
-    if (!hasWp) {
-      return {
-        title: t("dashboard.nextConnectWpTitle"),
-        description: t("dashboard.nextConnectWpDesc"),
-        cta: t("dashboard.actionConnectWordpress"),
         page: "projects",
       };
     }
@@ -205,6 +206,15 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
       };
     }
 
+    if (!hasWp) {
+      return {
+        title: t("dashboard.nextConnectWpTitle"),
+        description: t("dashboard.nextConnectWpDesc"),
+        cta: t("dashboard.actionConnectWordpress"),
+        page: "projects",
+      };
+    }
+
     return {
       title: t("dashboard.nextReviewTitle"),
       description: t("dashboard.nextReviewDesc"),
@@ -213,13 +223,42 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
     };
   }, [hasProject, hasWp, t, todayArticles]);
 
-  const pipelineSteps = [
-    { key: "project", label: t("dashboard.pipelineProject"), done: hasProject },
-    { key: "wordpress", label: t("dashboard.pipelineWordpress"), done: hasWp },
-    { key: "rules", label: t("dashboard.pipelineRules"), done: false },
-    { key: "generate", label: t("dashboard.pipelineGenerate"), done: todayArticles > 0 },
+  const pipelineSteps: Array<{
+    key: string;
+    label: string;
+    state: "done" | "pending" | "unverified";
+    context: string;
+    status: string;
+  }> = [
+    {
+      key: "project",
+      label: t("dashboard.pipelineProject"),
+      state: hasProject ? "done" : "pending",
+      context: pipelineCopy.required,
+      status: hasProject ? pipelineCopy.complete : pipelineCopy.pending,
+    },
+    {
+      key: "wordpress",
+      label: t("dashboard.pipelineWordpress"),
+      state: hasWp ? "done" : "pending",
+      context: pipelineCopy.optional,
+      status: hasWp ? pipelineCopy.complete : pipelineCopy.pending,
+    },
+    {
+      key: "rules",
+      label: t("dashboard.pipelineRules"),
+      state: "unverified",
+      context: pipelineCopy.required,
+      status: pipelineCopy.unverified,
+    },
+    {
+      key: "generate",
+      label: t("dashboard.pipelineGenerate"),
+      state: todayArticles > 0 ? "done" : "pending",
+      context: pipelineCopy.activity,
+      status: todayArticles > 0 ? pipelineCopy.complete : pipelineCopy.pending,
+    },
   ];
-  const completedSteps = pipelineSteps.filter((step) => step.done).length;
 
   if (loading) {
     return (
@@ -322,23 +361,17 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
             <div className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <h3 className="truncate text-[14px] font-semibold text-ink">{t("dashboard.pipelineTitle")}</h3>
-                <p className="mt-1 truncate text-[12px] text-ink-tertiary">{t("dashboard.pipelineSubtitle")}</p>
+                <p className="mt-1 truncate text-[12px] text-ink-tertiary">{pipelineCopy.subtitle}</p>
               </div>
-              <span className="shrink-0 text-[12px] text-ink-tertiary tabular-nums">
-                {formatNumber(completedSteps)}/{formatNumber(4)}
-              </span>
-            </div>
-            <div className="px-4 pb-3">
-              <ProgressBar value={(completedSteps / 4) * 100} />
             </div>
             <ul>
-              {pipelineSteps.map((step, index) => (
+              {pipelineSteps.map((step) => (
                 <StepRow
                   key={step.key}
-                  index={index + 1}
                   label={step.label}
-                  done={step.done}
-                  formatNumber={formatNumber}
+                  state={step.state}
+                  context={step.context}
+                  status={step.status}
                 />
               ))}
             </ul>

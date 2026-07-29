@@ -24,6 +24,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -42,6 +43,7 @@ generated_articles_table = Table(
     "generated_articles",
     metadata,
     Column("id", PG_UUID, primary_key=True),
+    Column("generation_task_id", String(255)),
     Column(
         "project_id",
         PG_UUID,
@@ -90,6 +92,12 @@ generated_articles_table = Table(
     Index("idx_articles_publish_status", "project_id", "publish_status"),
     Index("idx_articles_wordpress_post", "project_id", "wordpress_post_id"),
     Index("idx_articles_review_status", "project_id", "review_status"),
+    Index(
+        "uq_generated_articles_generation_task_id",
+        "generation_task_id",
+        unique=True,
+        postgresql_where=text("generation_task_id IS NOT NULL"),
+    ),
     # Full-text search index for title and content (PostgreSQL GIN index)
     # This enables fast ILIKE and full-text searches on articles
     Index(
@@ -107,6 +115,35 @@ generated_articles_table = Table(
         "keywords",
         postgresql_using="gin",
     ),
+)
+
+
+# Durable hand-off for side effects that may only occur after an article is
+# committed. The task/article pair is unique per event type, making Celery
+# redelivery safe without relying on Redis state.
+generation_outbox_events_table = Table(
+    "generation_outbox_events",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column("task_id", String(255), nullable=False, index=True),
+    Column(
+        "article_id",
+        PG_UUID,
+        ForeignKey("generated_articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column("event_type", String(80), nullable=False),
+    Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", String(32), nullable=False, server_default="pending"),
+    Column("attempt_count", Integer, nullable=False, server_default="0"),
+    Column("last_error", Text),
+    Column("available_at", DateTime),
+    Column("completed_at", DateTime),
+    Column("created_at", DateTime, default=func.now(), nullable=False),
+    Column("updated_at", DateTime, default=func.now(), onupdate=func.now(), nullable=False),
+    UniqueConstraint("task_id", "event_type", name="uq_generation_outbox_task_event"),
+    Index("idx_generation_outbox_pending", "status", "available_at"),
 )
 
 

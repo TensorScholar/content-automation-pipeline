@@ -70,6 +70,7 @@ const READINESS_COPY = {
     lastChecked: "Last checked",
     failed: "Readiness check failed.",
     openRulebook: "Open content rules",
+    openWordPress: "Configure WordPress",
   },
   fa: {
     tab: "بررسی آماده‌سازی",
@@ -92,6 +93,7 @@ const READINESS_COPY = {
     lastChecked: "آخرین بررسی",
     failed: "بررسی آمادگی ناموفق بود.",
     openRulebook: "باز کردن قوانین محتوا",
+    openWordPress: "تنظیم اتصال وردپرس",
   },
   ar: {
     tab: "فحص الجاهزية",
@@ -114,8 +116,156 @@ const READINESS_COPY = {
     lastChecked: "آخر فحص",
     failed: "فشل فحص الجاهزية.",
     openRulebook: "فتح قواعد المحتوى",
+    openWordPress: "إعداد اتصال ووردبريس",
   },
 };
+
+type ReadinessLocale = keyof typeof READINESS_COPY;
+
+const READINESS_ITEM_COPY = {
+  en: {
+    labels: {
+      projectProfile: "Project profile",
+      contentRules: "Content rules",
+      wordpressPublishing: "WordPress publishing",
+      aiProvider: "AI provider",
+      redis: "Redis broker/cache",
+      workerQueue: "Worker queue",
+      dailyBudget: "Daily budget",
+      recentFailures: "Recent failures",
+    },
+    projectConfigured: "Project identity is configured.",
+    noRulebook: "No content rulebook is configured.",
+    addRules: "Add brand voice, SEO, and editorial rules for more consistent output.",
+    wordpressMissing: "WordPress is not connected. Content generation remains available, but WordPress publishing is unavailable.",
+    configureWordPress: "Complete the WordPress connection before publishing.",
+    providerConfigured: "AI provider credentials are configured.",
+    localProvider: "Configured provider: Local LLM.",
+    redisReachable: "Redis is reachable.",
+    activeWorkers: (count: string) => `${count} worker${count === "1" ? "" : "s"} are available.`,
+    noWorkers: "No active workers were detected.",
+    startWorker: "Start at least one processing worker before generation.",
+    budgetWithinLimit: "Daily AI cost is within the configured limit.",
+    llmTimeout: "The AI provider health check timed out.",
+    noRecentFailures: "No recent project task failures detected.",
+    domainMissing: "Project domain is missing.",
+    addDomain: "Add a domain to improve analysis, SEO context, and publishing readiness.",
+    rulebookConfigured: "Content rulebook is configured.",
+  },
+  fa: {
+    labels: {
+      projectProfile: "مشخصات پروژه",
+      contentRules: "قوانین محتوا",
+      wordpressPublishing: "انتشار در وردپرس",
+      aiProvider: "ارائه‌دهنده هوش مصنوعی",
+      redis: "کارگزار و حافظه موقت Redis",
+      workerQueue: "صف پردازش",
+      dailyBudget: "بودجه روزانه",
+      recentFailures: "خطاهای اخیر",
+    },
+    projectConfigured: "هویت پروژه تنظیم شده است.",
+    noRulebook: "هنوز قوانین محتوایی برای پروژه تنظیم نشده است.",
+    addRules: "برای خروجی منسجم‌تر، لحن برند و قواعد سئو و ویرایشی را اضافه کنید.",
+    wordpressMissing: "وردپرس متصل نیست. تولید محتوا فعال می‌ماند، اما انتشار در وردپرس در دسترس نیست.",
+    configureWordPress: "پیش از انتشار، اتصال وردپرس را تکمیل کنید.",
+    providerConfigured: "اعتبارنامه ارائه‌دهنده هوش مصنوعی تنظیم شده است.",
+    localProvider: "ارائه‌دهنده تنظیم‌شده: مدل محلی.",
+    redisReachable: "اتصال Redis برقرار است.",
+    activeWorkers: (count: string) => `${new Intl.NumberFormat("fa-IR").format(Number(count))} پردازشگر فعال شناسایی شد.`,
+    noWorkers: "هیچ پردازشگر فعالی شناسایی نشد.",
+    startWorker: "پیش از تولید محتوا، حداقل یک پردازشگر را فعال کنید.",
+    budgetWithinLimit: "هزینه روزانه هوش مصنوعی در محدوده بودجه تنظیم‌شده است.",
+    llmTimeout: "زمان بررسی سلامت ارائه‌دهنده هوش مصنوعی به پایان رسید.",
+    noRecentFailures: "هیچ خطای اخیر در پردازش‌های پروژه ثبت نشده است.",
+    domainMissing: "دامنه پروژه تنظیم نشده است.",
+    addDomain: "برای بهبود تحلیل، زمینه سئو و آمادگی انتشار، دامنه پروژه را اضافه کنید.",
+    rulebookConfigured: "قوانین محتوای پروژه تنظیم شده است.",
+  },
+  ar: {
+    labels: {
+      projectProfile: "ملف المشروع",
+      contentRules: "قواعد المحتوى",
+      wordpressPublishing: "النشر إلى ووردبريس",
+      aiProvider: "مزود الذكاء الاصطناعي",
+      redis: "وسيط وذاكرة Redis",
+      workerQueue: "قائمة انتظار المعالجة",
+      dailyBudget: "الميزانية اليومية",
+      recentFailures: "الإخفاقات الأخيرة",
+    },
+    projectConfigured: "تم إعداد هوية المشروع.",
+    noRulebook: "لم يتم إعداد قواعد محتوى للمشروع.",
+    addRules: "أضف صوت العلامة وقواعد تحسين البحث والتحرير للحصول على مخرجات أكثر اتساقاً.",
+    wordpressMissing: "ووردبريس غير متصل. يظل إنشاء المحتوى متاحاً، لكن النشر إلى ووردبريس غير متاح.",
+    configureWordPress: "أكمل اتصال ووردبريس قبل النشر.",
+    providerConfigured: "تم إعداد بيانات اعتماد مزود الذكاء الاصطناعي.",
+    localProvider: "المزود المُعد: نموذج محلي.",
+    redisReachable: "اتصال Redis متاح.",
+    activeWorkers: (count: string) => `${new Intl.NumberFormat("ar").format(Number(count))} عامل معالجة نشط متاح.`,
+    noWorkers: "لم يتم العثور على أي عامل معالجة نشط.",
+    startWorker: "شغّل عامل معالجة واحداً على الأقل قبل إنشاء المحتوى.",
+    budgetWithinLimit: "تكلفة الذكاء الاصطناعي اليومية ضمن الحد المحدد.",
+    llmTimeout: "انتهت مهلة فحص صحة مزود الذكاء الاصطناعي.",
+    noRecentFailures: "لم يتم تسجيل أي إخفاقات حديثة في مهام المشروع.",
+    domainMissing: "نطاق المشروع غير مُعد.",
+    addDomain: "أضف نطاقاً لتحسين التحليل وسياق السيو وجاهزية النشر.",
+    rulebookConfigured: "تم إعداد قواعد محتوى المشروع.",
+  },
+} as const;
+
+function readinessItemKind(id: string, label: string) {
+  const value = `${id} ${label}`.toLowerCase();
+  if (/wordpress/.test(value)) return "wordpressPublishing" as const;
+  if (/content.*rule|rulebook/.test(value)) return "contentRules" as const;
+  if (/project.*profile|project.*identity/.test(value)) return "projectProfile" as const;
+  if (/ai.*provider|llm.*provider/.test(value)) return "aiProvider" as const;
+  if (/redis/.test(value)) return "redis" as const;
+  if (/worker|celery|queue/.test(value)) return "workerQueue" as const;
+  if (/daily.*budget|budget/.test(value)) return "dailyBudget" as const;
+  if (/recent.*failure|failure/.test(value)) return "recentFailures" as const;
+  return null;
+}
+
+function localizeReadinessLabel(id: string, label: string, locale: ReadinessLocale) {
+  const kind = readinessItemKind(id, label);
+  return kind ? READINESS_ITEM_COPY[locale].labels[kind] : label;
+}
+
+function localizeReadinessText(value: string, locale: ReadinessLocale) {
+  const normalized = value.trim().toLowerCase();
+  const copy = READINESS_ITEM_COPY[locale];
+  if (normalized.includes("project identity is configured")) return copy.projectConfigured;
+  if (normalized.includes("no content rulebook is configured")) return copy.noRulebook;
+  if (normalized.includes("add brand voice") && normalized.includes("editorial rules")) return copy.addRules;
+  if (normalized.includes("wordpress is missing") || normalized.includes("wordpress is not connected")) return copy.wordpressMissing;
+  if (normalized.includes("complete the wordpress integration") || normalized.includes("complete the wordpress connection")) return copy.configureWordPress;
+  if (normalized.includes("ai provider credentials are configured")) return copy.providerConfigured;
+  if (normalized.includes("configured providers: local llm") || normalized.includes("configured provider: local llm")) return copy.localProvider;
+  if (normalized.includes("redis is reachable")) return copy.redisReachable;
+  const activeWorkerMatch = normalized.match(/(\d+)\s+workers?\(s\)\s+are available|(\d+)\s+workers?\s+are available|(\d+)\s+workers?\s+active/);
+  const activeWorkerCount = activeWorkerMatch?.[1] ?? activeWorkerMatch?.[2] ?? activeWorkerMatch?.[3];
+  if (activeWorkerCount) return copy.activeWorkers(activeWorkerCount);
+  if (normalized.includes("no active celery workers") || normalized.includes("no active workers")) return copy.noWorkers;
+  if (normalized.includes("start at least one worker before generation")) return copy.startWorker;
+  if (normalized.includes("daily cost is within the configured threshold")) return copy.budgetWithinLimit;
+  if (normalized.includes("llm ping timed out") || normalized.includes("ai provider ping timed out")) return copy.llmTimeout;
+  if (normalized.includes("no recent project task failures detected")) return copy.noRecentFailures;
+  if (normalized.includes("project domain is missing")) return copy.domainMissing;
+  if (normalized.includes("add a domain to improve analysis")) return copy.addDomain;
+  if (normalized.includes("content rulebook is configured")) return copy.rulebookConfigured;
+  return value;
+}
+
+function formatReadinessDate(value: string, locale: ReadinessLocale) {
+  const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
+  try {
+    return new Intl.DateTimeFormat(localeName, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
 
 const PERFORMANCE_COPY = {
   en: {
@@ -125,7 +275,8 @@ const PERFORMANCE_COPY = {
     refresh: "Refresh",
     import: "Import CSV",
     importTitle: "Import performance snapshot",
-    importSubtitle: "Paste a CSV export with url, clicks, impressions, ctr, average_position, date_from, and date_to columns.",
+    importSubtitle: "Paste a CSV export containing the following columns.",
+    importColumns: "url, clicks, impressions, ctr, average_position, date_from, date_to",
     importPlaceholder: "url,clicks,impressions,ctr,average_position,date_from,date_to\nhttps://example.com/article,24,3200,0.75%,11.4,2026-05-01,2026-05-31",
     importEmpty: "Paste CSV data before importing.",
     importSuccess: "Performance snapshot imported.",
@@ -168,7 +319,8 @@ const PERFORMANCE_COPY = {
     refresh: "بروزرسانی",
     import: "ورود CSV",
     importTitle: "ورود اسنپ‌شات عملکرد",
-    importSubtitle: "CSV شامل ستون‌های url, clicks, impressions, ctr, average_position, date_from, date_to را وارد کنید.",
+    importSubtitle: "یک خروجی CSV با ستون‌های زیر وارد کنید.",
+    importColumns: "url, clicks, impressions, ctr, average_position, date_from, date_to",
     importPlaceholder: "url,clicks,impressions,ctr,average_position,date_from,date_to\nhttps://example.com/article,24,3200,0.75%,11.4,2026-05-01,2026-05-31",
     importEmpty: "قبل از ورود، داده CSV را وارد کنید.",
     importSuccess: "اسنپ‌شات عملکرد وارد شد.",
@@ -211,7 +363,8 @@ const PERFORMANCE_COPY = {
     refresh: "تحديث",
     import: "استيراد CSV",
     importTitle: "استيراد لقطة أداء",
-    importSubtitle: "الصق ملف CSV يحتوي أعمدة url و clicks و impressions و ctr و average_position و date_from و date_to.",
+    importSubtitle: "ألصق ملف CSV يحتوي على الأعمدة التالية.",
+    importColumns: "url, clicks, impressions, ctr, average_position, date_from, date_to",
     importPlaceholder: "url,clicks,impressions,ctr,average_position,date_from,date_to\nhttps://example.com/article,24,3200,0.75%,11.4,2026-05-01,2026-05-31",
     importEmpty: "الصق بيانات CSV قبل الاستيراد.",
     importSuccess: "تم استيراد لقطة الأداء.",
@@ -252,6 +405,26 @@ const PERFORMANCE_COPY = {
 function extractError(error: unknown): string {
   if (error instanceof ApiError) return error.detail;
   return "Unexpected error";
+}
+
+const PROJECT_ERROR_COPY = {
+  en: {
+    timeout: "The project readiness check did not respond in time. Please try again or check service health.",
+  },
+  fa: {
+    timeout: "بررسی آمادگی پروژه در زمان مجاز پاسخ نداد. لطفاً دوباره تلاش کنید یا وضعیت سرویس‌ها را بررسی کنید.",
+  },
+  ar: {
+    timeout: "لم يستجب فحص جاهزية المشروع ضمن المهلة. يرجى المحاولة مرة أخرى أو التحقق من حالة الخدمات.",
+  },
+} as const;
+
+function localizeProjectError(error: string, locale: ReadinessLocale): string {
+  const normalized = error.trim().toLowerCase();
+  if (normalized.includes("request timeout") || normalized.includes("timed out") || normalized === "timeout") {
+    return PROJECT_ERROR_COPY[locale].timeout;
+  }
+  return error;
 }
 
 /* ── Hooks ── */
@@ -608,7 +781,7 @@ export function ProjectsPanel({
      STATE B: MASTER-DETAIL (1+ Projects)
      ═══════════════════════════════════════════════════════════════ */
   return (
-    <section className="macos-content-scope animate-fade-in flex h-[calc(100vh-96px)] min-w-0 overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
+    <section className="macos-content-scope animate-fade-in grid min-h-full min-w-0 items-start gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
 
       {/* Delete confirmation modal */}
       <Modal
@@ -670,6 +843,9 @@ export function ProjectsPanel({
           <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">
             {performanceCopy.importSubtitle}
           </p>
+          <code className="block overflow-x-auto rounded-md bg-black/[0.04] px-3 py-2 text-[12px] text-slate-700 dark:bg-white/[0.06] dark:text-gray-200" dir="ltr">
+            {performanceCopy.importColumns}
+          </code>
           <textarea
             className="min-h-[220px] w-full resize-y rounded-xl border border-black/5 bg-white px-3 py-3 font-mono text-[13px] leading-5 text-slate-900 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100 dark:placeholder:text-gray-500"
             placeholder={performanceCopy.importPlaceholder}
@@ -682,8 +858,8 @@ export function ProjectsPanel({
       </Modal>
 
       {/* ── LEFT COLUMN (MASTER: macOS style sidebar list) ── */}
-      <aside className="relative z-10 flex w-[30%] min-w-[280px] max-w-[360px] shrink-0 flex-col border-inline-end border-black/5 bg-[#f1f1f3] dark:border-white/10 dark:bg-surface-alt">
-        <header className="flex h-12 shrink-0 items-center justify-between border-block-end border-black/5 bg-[#f7f7f9] px-4 dark:border-white/10 dark:bg-surface-alt">
+      <aside className="relative z-10 flex max-h-[280px] min-h-[220px] min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-slate-100/80 dark:border-white/10 dark:bg-surface-alt lg:sticky lg:top-0 lg:max-h-[calc(100dvh-112px)]">
+        <header className="flex h-12 shrink-0 items-center justify-between border-block-end border-black/5 bg-white/60 px-4 dark:border-white/10 dark:bg-white/[0.03]">
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.title")}</h2>
           <div className="flex items-center gap-1.5">
             <button
@@ -745,11 +921,11 @@ export function ProjectsPanel({
       </aside>
 
       {/* ── RIGHT COLUMN (DETAIL) ── */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-surface">
+      <main className="min-w-0 overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
 
         {selectedProjectId === "__new__" ? (
           // Create Mode
-          <div className="flex-1 overflow-y-auto p-6 md:p-8">
+          <div className="p-6 md:p-8">
             <div className="max-w-xl">
               <h3 className="mb-6 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.createNew")}</h3>
               <form className="space-y-6" onSubmit={onCreate}>
@@ -842,35 +1018,37 @@ export function ProjectsPanel({
                 </div>}
               </div>
 
-              {/* TABS (Zero layout shift: inactive has transparent border) */}
-              <div className="flex min-w-0 flex-wrap gap-2 px-6 pb-4 pt-2">
-                {[
-                  { id: "readiness", label: readinessCopy.tab },
-                  { id: "general", label: t("projects.tabGeneral") },
-                  { id: "wordpress", label: t("projects.tabWordpress") },
-                  { id: "performance", label: performanceCopy.tab },
-                  { id: "rules", label: t("projects.tabRules") },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as ProjectTab)}
-                    className={clsx(
-                      "min-w-0 rounded-lg border px-3 py-2 text-center text-[12px] font-bold uppercase leading-4 tracking-normal transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                      activeTab === tab.id
-                        ? "border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-300/40 dark:bg-teal-400/10 dark:text-teal-100"
-                        : "border-black/5 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+              <div className="overflow-x-auto px-6">
+                <div className="flex min-w-max border-b border-black/5 dark:border-white/10">
+                  {[
+                    { id: "readiness", label: readinessCopy.tab },
+                    { id: "general", label: t("projects.tabGeneral") },
+                    { id: "wordpress", label: t("projects.tabWordpress") },
+                    { id: "performance", label: performanceCopy.tab },
+                    { id: "rules", label: t("projects.tabRules") },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id as ProjectTab)}
+                      className={clsx(
+                        "min-h-10 border-b-2 px-4 py-2 text-center text-[12px] font-semibold leading-4 transition-colors duration-150",
+                        activeTab === tab.id
+                          ? "border-teal-500 text-teal-700 dark:border-teal-300 dark:text-teal-200"
+                          : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:text-gray-400 dark:hover:border-white/20 dark:hover:text-gray-100"
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </header>
 
-            <div className="relative min-w-0 flex-1 overflow-y-auto p-6">
+            <div className="relative min-w-0 p-6">
               {activeTab === "readiness" && (
                 <ReadinessTab
                   copy={readinessCopy}
+                  locale={locale}
                   readiness={readiness}
                   loading={readinessLoading}
                   error={readinessError}
@@ -899,6 +1077,7 @@ export function ProjectsPanel({
               {activeTab === "performance" && (
                 <PerformanceTab
                   copy={performanceCopy}
+                  locale={locale}
                   canManageProjects={canManageProjects}
                   feedback={performance}
                   loading={performanceLoading}
@@ -947,6 +1126,7 @@ function readinessDotClasses(status: string) {
 
 function ReadinessTab({
   copy,
+  locale,
   readiness,
   loading,
   error,
@@ -955,6 +1135,7 @@ function ReadinessTab({
   onOpenWordPress,
 }: {
   copy: typeof READINESS_COPY.en;
+  locale: ReadinessLocale;
   readiness: ProjectReadiness | null;
   loading: boolean;
   error: string | null;
@@ -962,10 +1143,21 @@ function ReadinessTab({
   onOpenRulebook: () => void;
   onOpenWordPress: () => void;
 }) {
+  const wordpressOnlyBlocking = !!readiness
+    && readiness.blocking_items.length > 0
+    && readiness.blocking_items.every((item) => readinessItemKind(item.id, item.label) === "wordpressPublishing");
+  const displayStatus = wordpressOnlyBlocking ? "warning" : readiness?.status;
+  const canGenerateForDisplay = !!readiness && (readiness.can_generate || wordpressOnlyBlocking);
+  const generationBlocker = readiness?.blocking_items.find(
+    (item) => readinessItemKind(item.id, item.label) !== "wordpressPublishing"
+  );
+  const publishingBlocker = readiness?.blocking_items.find(
+    (item) => readinessItemKind(item.id, item.label) === "wordpressPublishing"
+  );
   const statusLabel =
-    readiness?.status === "ready"
+    displayStatus === "ready"
       ? copy.ready
-      : readiness?.status === "blocked"
+      : displayStatus === "blocked"
         ? copy.blocked
         : copy.warning;
 
@@ -981,8 +1173,8 @@ function ReadinessTab({
           </div>
           <div className="flex items-center gap-2">
             {readiness && (
-              <span className={clsx("inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-[12px] font-semibold", readinessStatusClasses(readiness.status))}>
-                <span className={clsx("h-2 w-2 rounded-full", readinessDotClasses(readiness.status))} aria-hidden />
+              <span className={clsx("inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-[12px] font-semibold", readinessStatusClasses(displayStatus ?? "warning"))}>
+                <span className={clsx("h-2 w-2 rounded-full", readinessDotClasses(displayStatus ?? "warning"))} aria-hidden />
                 {statusLabel}
               </span>
             )}
@@ -1000,28 +1192,52 @@ function ReadinessTab({
 
         {error && (
           <div className="mt-5 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] font-medium text-red-700 dark:text-red-300" role="alert">
-            {copy.failed} {error}
+            {copy.failed} {localizeProjectError(error, locale)}
           </div>
         )}
 
         {readiness && (
           <>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+              <div
+                className={clsx(
+                  "rounded-xl border p-4",
+                  canGenerateForDisplay
+                    ? "border-emerald-500/20 bg-emerald-500/[0.06]"
+                    : "border-red-500/20 bg-red-500/[0.06]"
+                )}
+              >
                 <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.canGenerate}</p>
                 <p className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-gray-100">
-                  {readiness.can_generate ? copy.available : copy.unavailable}
+                  {canGenerateForDisplay ? copy.available : copy.unavailable}
                 </p>
+                {!canGenerateForDisplay && generationBlocker && (
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                    {localizeReadinessText(generationBlocker.message, locale)}
+                  </p>
+                )}
               </div>
-              <div className="rounded-xl border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+              <div
+                className={clsx(
+                  "rounded-xl border p-4",
+                  readiness.can_publish
+                    ? "border-emerald-500/20 bg-emerald-500/[0.06]"
+                    : "border-amber-500/20 bg-amber-500/[0.06]"
+                )}
+              >
                 <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.canPublish}</p>
                 <p className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-gray-100">
                   {readiness.can_publish ? copy.available : copy.unavailable}
                 </p>
+                {!readiness.can_publish && publishingBlocker && (
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                    {localizeReadinessText(publishingBlocker.message, locale)}
+                  </p>
+                )}
               </div>
             </div>
             <p className="mt-4 text-[12px] text-slate-500 dark:text-gray-400">
-              {copy.lastChecked}: {new Date(readiness.last_checked_at).toLocaleString()}
+              {copy.lastChecked}: {formatReadinessDate(readiness.last_checked_at, locale)}
             </p>
           </>
         )}
@@ -1038,12 +1254,18 @@ function ReadinessTab({
                 <div key={check.id} className="grid gap-3 px-4 py-3 sm:grid-cols-[160px_minmax(0,1fr)]">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className={clsx("h-2 w-2 shrink-0 rounded-full", readinessDotClasses(check.status))} aria-hidden />
-                    <span className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100">{check.label}</span>
+                    <span className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100">
+                      {localizeReadinessLabel(check.id, check.label, locale)}
+                    </span>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">{check.message}</p>
+                    <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">
+                      {localizeReadinessText(check.message, locale)}
+                    </p>
                     {check.remediation && (
-                      <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-gray-400">{check.remediation}</p>
+                      <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                        {localizeReadinessText(check.remediation, locale)}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1081,7 +1303,11 @@ function ReadinessTab({
                         if (action.id === "test_wordpress_connection") onOpenWordPress();
                       }}
                     >
-                      {action.id === "open_rulebook" ? copy.openRulebook : action.label}
+                      {action.id === "open_rulebook"
+                        ? copy.openRulebook
+                        : action.id === "test_wordpress_connection"
+                          ? copy.openWordPress
+                          : action.label}
                     </Button>
                   ))
                 )}
@@ -1124,11 +1350,12 @@ function formatCtr(value: number | null | undefined) {
   return `${formatFixedNumber(value * 100, 2)}%`;
 }
 
-function formatShortDate(value?: string | null) {
+function formatShortDate(value: string | null | undefined, locale: ReadinessLocale) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
+  return date.toLocaleDateString(localeName, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function metricFromOpportunity(
@@ -1147,6 +1374,7 @@ function metricFromOpportunity(
 
 function PerformanceTab({
   copy,
+  locale,
   canManageProjects,
   feedback,
   loading,
@@ -1157,6 +1385,7 @@ function PerformanceTab({
   onDismiss,
 }: {
   copy: typeof PERFORMANCE_COPY.en;
+  locale: ReadinessLocale;
   canManageProjects: boolean;
   feedback: ProjectPerformanceFeedback | null;
   loading: boolean;
@@ -1200,7 +1429,7 @@ function PerformanceTab({
 
         {error && (
           <div className="mt-5 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] font-medium text-red-700 dark:text-red-300" role="alert">
-            {copy.failed} {error}
+            {copy.failed} {localizeProjectError(error, locale)}
           </div>
         )}
 
@@ -1211,7 +1440,7 @@ function PerformanceTab({
             <PerformanceSummaryCard label={copy.highPriority} value={feedback.summary.high_priority_count} tone={feedback.summary.high_priority_count > 0 ? "warning" : "default"} />
             <PerformanceSummaryCard
               label={copy.latestImport}
-              value={feedback.summary.latest_imported_at ? formatShortDate(feedback.summary.latest_imported_at) : copy.noImport}
+              value={feedback.summary.latest_imported_at ? formatShortDate(feedback.summary.latest_imported_at, locale) : copy.noImport}
               valueClassName="text-[14px]"
             />
           </div>
@@ -1270,7 +1499,7 @@ function PerformanceTab({
             ) : (
               <div className="divide-y divide-black/5 dark:divide-white/10">
                 {feedback.snapshots.slice(0, 8).map((snapshot) => (
-                  <PerformanceSnapshotRow key={snapshot.id} copy={copy} snapshot={snapshot} />
+                  <PerformanceSnapshotRow key={snapshot.id} copy={copy} locale={locale} snapshot={snapshot} />
                 ))}
               </div>
             )}
@@ -1379,9 +1608,11 @@ function PerformancePill({ label, value }: { label: string; value: string }) {
 
 function PerformanceSnapshotRow({
   copy,
+  locale,
   snapshot,
 }: {
   copy: typeof PERFORMANCE_COPY.en;
+  locale: ReadinessLocale;
   snapshot: PerformanceSnapshot;
 }) {
   return (
@@ -1390,7 +1621,7 @@ function PerformanceSnapshotRow({
         {snapshot.url}
       </p>
       <p className="mt-1 text-[12px] text-slate-500 dark:text-gray-400">
-        {copy.period}: {formatShortDate(snapshot.date_from)} - {formatShortDate(snapshot.date_to)}
+        {copy.period}: {formatShortDate(snapshot.date_from, locale)} - {formatShortDate(snapshot.date_to, locale)}
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <PerformanceMiniMetric label={copy.clicks} value={formatCompactNumber(snapshot.clicks)} />

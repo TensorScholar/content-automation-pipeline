@@ -1,4 +1,5 @@
 import pytest
+from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
 from config.settings import Settings
@@ -52,6 +53,31 @@ def test_production_rejects_primary_model_provider_mismatch(monkeypatch):
 
     with pytest.raises(ValidationError, match="LLM_PRIMARY_MODEL=.*LLM_PROVIDER=gemini"):
         Settings()
+
+
+def test_production_accepts_openai_compatible_provider(monkeypatch):
+    set_required_settings(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DEBUG", "false")
+    monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://llm.example.test/v1")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "test-compatible-key")
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    for name in (
+        "LLM_PRIMARY_MODEL",
+        "LLM_SECONDARY_MODEL",
+        "LLM_FALLBACK_MODEL",
+        "LLM_KEYWORD_MODEL",
+        "LLM_PLANNING_MODEL",
+        "LLM_WRITING_MODEL",
+        "LLM_VERIFICATION_MODEL",
+    ):
+        monkeypatch.setenv(name, "compatible/google/gemini-2.5-flash-lite")
+
+    settings = Settings()
+
+    assert settings.llm.provider == "openai_compatible"
+    assert settings.llm.primary_model == "compatible/google/gemini-2.5-flash-lite"
 
 
 def test_development_llm_provider_can_autodetect_available_provider(monkeypatch):

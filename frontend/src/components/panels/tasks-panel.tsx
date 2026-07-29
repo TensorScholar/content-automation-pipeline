@@ -10,6 +10,7 @@ import {
   DraftRiskAssessment,
   ArticleReviewAction,
   ArticleReviewState,
+  ProjectReadiness,
 } from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
@@ -39,9 +40,195 @@ interface QualityMetricsResponse {
   };
 }
 
+interface ContentHistoryResponse {
+  current_version: Record<string, unknown>;
+  revisions: Array<{
+    id: string;
+    content: string;
+    revision_note: string;
+    created_at: string;
+    word_count: number;
+  }>;
+  total_revisions: number;
+}
+
 type FilterTab = "all" | "SUCCESS" | "FAILURE" | "RUNNING";
-type DetailTab = "content" | "seo" | "export";
+type DetailTab = "content" | "seo" | "export" | "history";
 type ContentView = "reader" | "raw" | "edit";
+type ReadinessItem = ProjectReadiness["blocking_items"][number];
+
+const TASK_COPY = {
+  en: {
+    statuses: {
+      SUCCESS: "Success",
+      FAILURE: "Failed",
+      FAILED: "Failed",
+      BLOCKED: "Blocked",
+      RUNNING: "Running",
+      STARTED: "Running",
+      PENDING: "Pending",
+      RETRY: "Retrying",
+    },
+    completed: "Task completed successfully",
+    failedSummary: "This task did not complete. Review the technical details if investigation is needed.",
+    notRecorded: "Not recorded for this task",
+    qualityDiagnostics: "Release gate details",
+    actualWordCount: "Actual word count",
+    allowedWordRange: "Allowed word range",
+    headings: "Headings",
+    paragraphs: "Paragraphs",
+    regenerationAttempted: "Regeneration attempted",
+    findings: "Quality findings",
+    noFaq: "No FAQ section was detected.",
+    seo: "SEO",
+    htmlSource: "HTML source",
+    markdownSource: "Markdown source",
+    seoLoading: "Loading SEO analysis for this article...",
+    seoEmpty: "SEO output has not been generated for this article yet.",
+    seoError: "SEO analysis could not be loaded.",
+    technicalDetails: "Technical details",
+    downloadHtml: "Download HTML",
+    downloadMarkdown: "Download Markdown source",
+    bulkDownloadComplete: (count: number) => `${count} article${count === 1 ? "" : "s"} downloaded.`,
+    bulkDownloadPartial: (downloaded: number, omitted: number) =>
+      `${downloaded} article${downloaded === 1 ? "" : "s"} downloaded; ${omitted} not included.`,
+    bulkDownloadUnavailable: "No completed articles could be retrieved for download.",
+    articleTitle: "Article",
+    language: "Language",
+    keyword: "Keyword",
+    generatedAt: "Generated",
+    loadingDetail: "Loading article details\u2026",
+    gradeExcellent: "Excellent",
+    gradeGood: "Good",
+    gradeFair: "Fair",
+    gradeNeedsWork: "Needs work",
+    history: "History",
+    revisionHistory: "Revision history",
+    noRevisions: "No revisions yet.",
+    manualEdit: "Manual edit",
+    revisionNote: "Manual edit in Task History",
+    viewPastContent: "View previous content",
+    unsavedChanges: "Unsaved changes",
+    save: "Save",
+    editSaved: "Article changes saved.",
+    editSaveFailed: "Article changes could not be saved.",
+    wordUnit: "words",
+  },
+  fa: {
+    statuses: {
+      SUCCESS: "موفق",
+      FAILURE: "ناموفق",
+      FAILED: "ناموفق",
+      BLOCKED: "مسدود",
+      RUNNING: "در حال اجرا",
+      STARTED: "در حال اجرا",
+      PENDING: "در انتظار",
+      RETRY: "تلاش مجدد",
+    },
+    completed: "پردازش با موفقیت کامل شد",
+    failedSummary: "این پردازش کامل نشد. در صورت نیاز به بررسی، جزئیات فنی را باز کنید.",
+    notRecorded: "برای این پردازش ثبت نشده است",
+    qualityDiagnostics: "جزئیات دروازه کیفیت",
+    actualWordCount: "تعداد کلمات واقعی",
+    allowedWordRange: "بازه مجاز کلمات",
+    headings: "تعداد تیترها",
+    paragraphs: "تعداد پاراگراف‌ها",
+    regenerationAttempted: "تلاش برای تولید دوباره",
+    findings: "یافته‌های کیفیت",
+    noFaq: "بخش پرسش‌های متداول شناسایی نشد.",
+    seo: "سئو",
+    htmlSource: "منبع HTML",
+    markdownSource: "منبع Markdown",
+    seoLoading: "در حال بارگذاری تحلیل سئوی این مقاله...",
+    seoEmpty: "هنوز خروجی سئو برای این مقاله تولید نشده است.",
+    seoError: "بارگذاری تحلیل سئو ممکن نبود.",
+    technicalDetails: "جزئیات فنی",
+    downloadHtml: "دانلود HTML",
+    downloadMarkdown: "دانلود منبع Markdown",
+    bulkDownloadComplete: (count: number) => `${count} مقاله دانلود شد.`,
+    bulkDownloadPartial: (downloaded: number, omitted: number) =>
+      `${downloaded} مقاله دانلود شد؛ ${omitted} مقاله در فایل قرار نگرفت.`,
+    bulkDownloadUnavailable: "هیچ مقاله تکمیل‌شده‌ای برای دانلود دریافت نشد.",
+    articleTitle: "مقاله",
+    language: "زبان",
+    keyword: "کلمه کلیدی",
+    generatedAt: "تاریخ تولید",
+    loadingDetail: "در حال بارگذاری جزئیات مقاله...",
+    gradeExcellent: "عالی",
+    gradeGood: "خوب",
+    gradeFair: "متوسط",
+    gradeNeedsWork: "نیازمند بهبود",
+    history: "تاریخچه",
+    revisionHistory: "تاریخچه ویرایش‌ها",
+    noRevisions: "هنوز ویرایشی ثبت نشده است.",
+    manualEdit: "ویرایش دستی",
+    revisionNote: "ویرایش دستی در تاریخچه پردازش‌ها",
+    viewPastContent: "مشاهده محتوای پیشین",
+    unsavedChanges: "تغییرات ذخیره‌نشده",
+    save: "ذخیره",
+    editSaved: "تغییرات مقاله ذخیره شد.",
+    editSaveFailed: "ذخیره تغییرات مقاله ممکن نبود.",
+    wordUnit: "کلمه",
+  },
+  ar: {
+    statuses: {
+      SUCCESS: "ناجح",
+      FAILURE: "فشل",
+      FAILED: "فشل",
+      BLOCKED: "محظور",
+      RUNNING: "قيد التشغيل",
+      STARTED: "قيد التشغيل",
+      PENDING: "قيد الانتظار",
+      RETRY: "إعادة المحاولة",
+    },
+    completed: "اكتملت المهمة بنجاح",
+    failedSummary: "لم تكتمل هذه المهمة. افتح التفاصيل الفنية عند الحاجة إلى التحقيق.",
+    notRecorded: "غير مسجل لهذه المهمة",
+    qualityDiagnostics: "تفاصيل بوابة الجودة",
+    actualWordCount: "عدد الكلمات الفعلي",
+    allowedWordRange: "نطاق الكلمات المسموح",
+    headings: "عدد العناوين",
+    paragraphs: "عدد الفقرات",
+    regenerationAttempted: "تمت محاولة إعادة الإنشاء",
+    findings: "نتائج الجودة",
+    noFaq: "لم يتم العثور على قسم للأسئلة الشائعة.",
+    seo: "تحسين محركات البحث",
+    htmlSource: "مصدر HTML",
+    markdownSource: "مصدر Markdown",
+    seoLoading: "جارٍ تحميل تحليل تحسين البحث لهذه المقالة...",
+    seoEmpty: "لم يتم إنشاء مخرجات تحسين البحث لهذه المقالة بعد.",
+    seoError: "تعذر تحميل تحليل تحسين البحث.",
+    technicalDetails: "التفاصيل التقنية",
+    downloadHtml: "تنزيل HTML",
+    downloadMarkdown: "تنزيل مصدر Markdown",
+    bulkDownloadComplete: (count: number) => `تم تنزيل ${count} مقالة.`,
+    bulkDownloadPartial: (downloaded: number, omitted: number) =>
+      `تم تنزيل ${downloaded} مقالة؛ لم يتم تضمين ${omitted} مقالة في الملف.`,
+    bulkDownloadUnavailable: "تعذر استرداد أي مقالة مكتملة للتنزيل.",
+    articleTitle: "المقال",
+    language: "اللغة",
+    keyword: "الكلمة المفتاحية",
+    generatedAt: "تاريخ الإنشاء",
+    loadingDetail: "جارٍ تحميل تفاصيل المقال...",
+    gradeExcellent: "ممتاز",
+    gradeGood: "جيد",
+    gradeFair: "متوسط",
+    gradeNeedsWork: "يحتاج تحسين",
+    history: "السجل",
+    revisionHistory: "سجل التعديلات",
+    noRevisions: "لم تُسجل أي تعديلات بعد.",
+    manualEdit: "تعديل يدوي",
+    revisionNote: "تعديل يدوي في سجل المعالجات",
+    viewPastContent: "عرض المحتوى السابق",
+    unsavedChanges: "تغييرات غير محفوظة",
+    save: "حفظ",
+    editSaved: "تم حفظ تغييرات المقال.",
+    editSaveFailed: "تعذر حفظ تغييرات المقال.",
+    wordUnit: "كلمة",
+  },
+} as const;
+
+type TaskLocale = keyof typeof TASK_COPY;
 
 const RISK_COPY = {
   en: {
@@ -93,6 +280,7 @@ const REVIEW_COPY = {
     blockedTitle: "Approval blocked",
     approveBlocked: "Resolve blocking checklist items before approval.",
     liveBlocked: "Public publishing requires manager approval.",
+    publishNeedsApproval: "Needs manager approval",
     reviewUpdated: "Review decision saved.",
     reviewError: "Could not update review decision.",
     loading: "Loading review state...",
@@ -124,6 +312,7 @@ const REVIEW_COPY = {
     blockedTitle: "تأیید مسدود است",
     approveBlocked: "قبل از تأیید، موارد مسدودکننده چک‌لیست را رفع کنید.",
     liveBlocked: "انتشار عمومی نیازمند تأیید مدیر است.",
+    publishNeedsApproval: "نیازمند تأیید مدیر",
     reviewUpdated: "تصمیم بازبینی ذخیره شد.",
     reviewError: "امکان ثبت تصمیم بازبینی وجود نداشت.",
     loading: "در حال بارگذاری وضعیت بازبینی...",
@@ -155,6 +344,7 @@ const REVIEW_COPY = {
     blockedTitle: "الموافقة محظورة",
     approveBlocked: "أصلح عناصر القائمة الحاجبة قبل الموافقة.",
     liveBlocked: "النشر العام يتطلب موافقة المدير.",
+    publishNeedsApproval: "يتطلب موافقة المدير",
     reviewUpdated: "تم حفظ قرار المراجعة.",
     reviewError: "تعذر تحديث قرار المراجعة.",
     loading: "جارٍ تحميل حالة المراجعة...",
@@ -170,6 +360,29 @@ const REVIEW_COPY = {
 };
 
 type ReviewCopy = (typeof REVIEW_COPY)["en"];
+
+const PUBLISH_COPY = {
+  en: {
+    wordpressRequired: "WordPress connection required",
+    checkingWordPress: "Checking WordPress",
+    wordpressBlocked: "Configure WordPress before public publishing.",
+  },
+  fa: {
+    wordpressRequired: "اتصال وردپرس لازم است",
+    checkingWordPress: "در حال بررسی وردپرس",
+    wordpressBlocked: "پیش از انتشار عمومی، وردپرس را متصل کنید.",
+  },
+  ar: {
+    wordpressRequired: "يلزم ربط ووردبريس",
+    checkingWordPress: "جارٍ فحص ووردبريس",
+    wordpressBlocked: "اربط ووردبريس قبل النشر العام.",
+  },
+} as const;
+
+function isWordPressPublishReadinessItem(item: ReadinessItem): boolean {
+  const text = `${item.id} ${item.label} ${item.message} ${item.remediation ?? ""}`.toLowerCase();
+  return /\bwordpress\b|وردپرس|ووردبريس/.test(text);
+}
 
 export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
   const { t, locale } = useI18n();
@@ -202,6 +415,70 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
   const [reviewAction, setReviewAction] = useState<Exclude<ArticleReviewAction, "approve"> | null>(null);
   const [reviewNote, setReviewNote] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [publishReadiness, setPublishReadiness] = useState<ProjectReadiness | null>(null);
+  const [publishReadinessLoading, setPublishReadinessLoading] = useState(false);
+
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [articleHistory, setArticleHistory] = useState<ContentHistoryResponse | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const loadHistory = useCallback(async (articleId: string, signal?: AbortSignal) => {
+    setLoadingHistory(true);
+    try {
+      const res = await apiRequest<ContentHistoryResponse>(`/content/${articleId}/history`, { token, signal });
+      if (signal?.aborted) return;
+      setArticleHistory(res);
+    } catch (e) {
+      if (signal?.aborted) return;
+      console.error(e);
+      setArticleHistory(null);
+    } finally {
+      if (signal?.aborted) return;
+      setLoadingHistory(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (detailTab === "history" && detailArticle?.id) {
+      const controller = new AbortController();
+      void loadHistory(detailArticle.id, controller.signal);
+      return () => controller.abort();
+    }
+  }, [detailTab, detailArticle?.id, loadHistory]);
+
+  const handleSaveEdit = async () => {
+    if (!detailArticle || editContent === detailArticle.content) return;
+    setSavingEdit(true);
+    try {
+      const saved = await apiRequest<{
+        content: string;
+        word_count: number;
+      }>(`/content/${detailArticle.id}`, {
+        method: "PUT",
+        token,
+        body: { content: editContent, revision_note: TASK_COPY[locale].revisionNote },
+      });
+      setEditContent(saved.content);
+      setDetailArticle({
+        ...detailArticle,
+        content: saved.content,
+        word_count: saved.word_count,
+      });
+      showToast("success", TASK_COPY[locale].editSaved);
+      // If history was already loaded, refresh it so the new revision appears
+      if (articleHistory) {
+        void loadHistory(detailArticle.id);
+      }
+    } catch (e) {
+      console.error("Failed to save edit", e);
+      showToast(
+        "error",
+        e instanceof ApiError ? e.detail : TASK_COPY[locale].editSaveFailed,
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const loadTasks = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -345,9 +622,10 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
     const load = async () => {
       setRiskLoading(true);
       setReviewLoading(true);
+      setQualityLoading(true);
       setReviewError(null);
       try {
-        const [articleResult, riskResult, reviewResult] = await Promise.allSettled([
+        const [articleResult, riskResult, reviewResult, qualityResult] = await Promise.allSettled([
           apiRequest<ArticleDetail>(`/content/${articleId}`, {
             token,
             signal: controller.signal,
@@ -360,15 +638,25 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
             token,
             signal: controller.signal,
           }),
+          apiRequest<QualityMetricsResponse>(`/content/${articleId}/quality`, {
+            token,
+            signal: controller.signal,
+            timeoutMs: 20000,
+          }),
         ]);
         if (controller.signal.aborted) return;
         if (articleResult.status === "fulfilled") {
           setDetailArticle(articleResult.value);
           setEditContent(articleResult.value.content ?? "");
-          setQualityMetrics(null);
-          setQualityError(null);
         } else {
           setDetailArticle(null);
+        }
+        if (qualityResult.status === "fulfilled") {
+          setQualityMetrics(qualityResult.value);
+          setQualityError(null);
+        } else {
+          setQualityMetrics(null);
+          setQualityError(null);
         }
         setRiskAssessment(riskResult.status === "fulfilled" ? riskResult.value : null);
         if (reviewResult.status === "fulfilled") {
@@ -387,11 +675,42 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
       } finally {
         if (!controller.signal.aborted) setRiskLoading(false);
         if (!controller.signal.aborted) setReviewLoading(false);
+        if (!controller.signal.aborted) setQualityLoading(false);
       }
     };
     void load();
     return () => controller.abort();
   }, [liveStatus?.result?.article_id, locale, token]);
+
+  const publishProjectId = detailArticle?.project_id ?? liveStatus?.result?.project_id;
+
+  useEffect(() => {
+    if (!publishProjectId) {
+      setPublishReadiness(null);
+      setPublishReadinessLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPublishReadiness(null);
+    setPublishReadinessLoading(true);
+    apiRequest<ProjectReadiness>(`/projects/${publishProjectId}/readiness`, {
+      token,
+      signal: controller.signal,
+      timeoutMs: 10000,
+    })
+      .then((payload) => {
+        if (!controller.signal.aborted) setPublishReadiness(payload);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPublishReadiness(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPublishReadinessLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [publishProjectId, token]);
 
   useEffect(() => {
     const articleId = detailArticle?.id;
@@ -458,24 +777,39 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
   };
 
   const onBulkDownload = async () => {
-    const successful = tasks.filter((t) => t.status?.toUpperCase() === "SUCCESS").slice(0, 20);
+    const allSuccessful = tasks.filter((t) => t.status?.toUpperCase() === "SUCCESS");
+    const successful = allSuccessful.slice(0, 20);
     const results: string[] = [];
+    let omitted = allSuccessful.length - successful.length;
     for (const task of successful) {
       const articleId = (task.result as Record<string, unknown> | undefined)?.article_id;
-      if (!articleId) continue;
+      if (!articleId) {
+        omitted += 1;
+        continue;
+      }
       try {
         const article = await apiRequest<ArticleDetail>(`/content/${String(articleId)}`, { token });
         results.push(`--- ${article.title} ---\n\n${article.content}\n\n`);
-      } catch { /* skip */ }
+      } catch {
+        omitted += 1;
+      }
     }
-    if (results.length === 0) return;
+    if (results.length === 0) {
+      showToast("error", TASK_COPY[locale].bulkDownloadUnavailable);
+      return;
+    }
     const blob = new Blob([results.join("\n\n")], { type: "text/plain;charset=utf-8" });
     downloadBlob(blob, "articles-bulk.txt");
+    showToast(
+      omitted > 0 ? "warning" : "success",
+      omitted > 0
+        ? TASK_COPY[locale].bulkDownloadPartial(results.length, omitted)
+        : TASK_COPY[locale].bulkDownloadComplete(results.length),
+    );
   };
 
   const onWpPublish = async (status: "draft" | "publish") => {
     if (!detailArticle) return;
-    const publishProjectId = detailArticle.project_id ?? liveStatus?.result?.project_id;
     if (!publishProjectId) {
       setWpResult(t("tasks.wpMissingProject" as any) || "Missing project ID for WordPress publish.");
       return;
@@ -486,6 +820,14 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
     }
     if (status === "publish" && reviewState?.status !== "approved") {
       setWpResult(REVIEW_COPY[locale].liveBlocked);
+      return;
+    }
+    if (wordpressActionBlocked) {
+      setWpResult(
+        publishReadinessLoading
+          ? PUBLISH_COPY[locale].checkingWordPress
+          : PUBLISH_COPY[locale].wordpressBlocked,
+      );
       return;
     }
     setWpPublishing(true);
@@ -499,7 +841,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
       });
       setWpResult(t("tasks.wpPublished") || "Published to WordPress successfully.");
     } catch (e) {
-      setWpResult(e instanceof ApiError ? e.detail : (t("tasks.wpPublishError") || "Failed to publish"));
+      setWpResult(formatPublishResult(e instanceof ApiError ? e.detail : e, t("tasks.wpPublishError") || "Failed to publish"));
     } finally {
       setWpPublishing(false);
     }
@@ -538,13 +880,38 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
     { key: "RUNNING", label: t("common.running"), count: kpis.running },
   ];
   const seoFallback =
-    locale === "fa"
-      ? "برای این مقاله هنوز داده سئو ذخیره نشده است."
-      : locale === "ar"
-        ? "لا توجد بيانات سيو محفوظة لهذه المقالة بعد."
-        : "No SEO data is stored for this article yet.";
+    TASK_COPY[locale].seoEmpty;
   const riskCopy = RISK_COPY[locale];
   const reviewCopy = REVIEW_COPY[locale];
+  const publishCopy = PUBLISH_COPY[locale];
+  const taskQualityScore = detailArticle?.quality_score ?? qualityMetrics?.overall_quality?.score;
+  const taskCost = readFiniteNumber(liveStatus?.result?.cost) ?? detailArticle?.cost_usd;
+  const sourceIsHtml = Boolean(detailArticle?.html_content?.trim());
+  const sourceContent = sourceIsHtml ? detailArticle?.html_content ?? "" : detailArticle?.content ?? "";
+  const articleDirection = resolveArticleDirection(detailArticle?.language, sourceContent);
+  const wordpressReadinessUnavailable = Boolean(publishProjectId) && !publishReadinessLoading && !publishReadiness;
+  const wordpressReadinessBlocked = publishReadiness ? !publishReadiness.can_publish : false;
+  const wordpressBlockingItem = publishReadiness?.blocking_items.find(isWordPressPublishReadinessItem);
+  const wordpressPublishBlocked = !publishProjectId || wordpressReadinessUnavailable || wordpressReadinessBlocked || Boolean(wordpressBlockingItem);
+  const wordpressActionBlocked = publishReadinessLoading || wordpressPublishBlocked;
+  const publicPublishBlocked = riskAssessment?.risk_level === "blocked" || reviewState?.status !== "approved" || publishReadinessLoading || wordpressPublishBlocked;
+  const publicPublishLabel = reviewState?.status !== "approved"
+    ? reviewCopy.publishNeedsApproval
+    : publishReadinessLoading
+      ? publishCopy.checkingWordPress
+      : wordpressPublishBlocked
+        ? publishCopy.wordpressRequired
+        : t("tasks.wpLive") || "Publish Live";
+  const publicPublishReason = reviewState?.status !== "approved"
+    ? reviewCopy.liveBlocked
+    : wordpressPublishBlocked
+      ? publishCopy.wordpressBlocked
+      : null;
+  const wordpressActionReason = wordpressActionBlocked
+    ? publishReadinessLoading
+      ? publishCopy.checkingWordPress
+      : publishCopy.wordpressBlocked
+    : null;
 
   /* ════════════════════════════════════════════════════════════════════════
      Master-Detail Layout: Smooth Dynamic Drawers and Logical Properties Only
@@ -617,19 +984,17 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
               key={card.key}
               onClick={() => setFilter(card.key as FilterTab)}
               className={clsx(
-                "relative group flex flex-col justify-between rounded-xl border p-4 text-start transition-colors duration-150 outline-none focus:ring-2 focus:ring-teal-500/20",
+                "group flex min-h-[68px] items-center gap-3 rounded-xl border px-3 py-2.5 text-start transition-colors duration-150 outline-none focus:ring-2 focus:ring-teal-500/20",
                 "border-black/5 dark:border-white/10",
                 isActive ? "bg-white ring-1 ring-teal-400/50 dark:bg-surface-alt" : "cursor-pointer bg-white hover:bg-gray-50 dark:bg-surface dark:hover:bg-surface-alt"
               )}
             >
-              <div className="mb-6 flex w-full items-start justify-end">
-                <div className="rounded-lg border border-black/5 bg-gray-50 p-2 dark:border-white/10 dark:bg-white/[0.06]">
-                  {card.icon}
-                </div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/5 bg-gray-50 dark:border-white/10 dark:bg-white/[0.06]">
+                {card.icon}
               </div>
-              <div className="flex w-full items-end justify-between">
-                <span className={clsx("text-[24px] font-semibold leading-none tabular-nums", card.text)}>{card.value}</span>
-                <span className="pb-1 text-end text-[11px] font-medium text-slate-500 dark:text-gray-300">{card.label}</span>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-[11px] font-medium text-slate-500 dark:text-gray-300">{card.label}</span>
+                <span className={clsx("mt-1 block text-[20px] font-semibold leading-none tabular-nums", card.text)}>{card.value}</span>
               </div>
             </button>
           )
@@ -715,7 +1080,9 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
       {/* ── Dynamic Master-Detail Layout Wrapper ── */}
       <div className={clsx(
         "grid min-h-0 min-w-0 w-full flex-1 gap-4 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
-        selectedTaskId ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(340px,430px)]" : "grid-cols-1"
+        selectedTaskId
+          ? "grid-cols-1 lg:grid-cols-[minmax(220px,0.32fr)_minmax(0,0.68fr)] xl:grid-cols-[minmax(240px,0.28fr)_minmax(0,0.72fr)]"
+          : "grid-cols-1"
       )}>
 
         {/* Master: Data Table */}
@@ -795,10 +1162,9 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                               <span className={clsx("truncate text-[14px] font-semibold", isSelected ? "text-teal-900 dark:text-teal-200" : "text-gray-900 dark:text-gray-100")}>
                                 {task.topic || task.task_name || task.task_id.slice(0, 12)}
                               </span>
-                              <code className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-300" dir="ltr">#{task.task_id}</code>
                               {selectedTaskId && (
                                 <span className="mt-1 truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                                  {formatDate(task.created_at)}
+                                  {formatDate(task.created_at, locale)}
                                 </span>
                               )}
                             </div>
@@ -814,10 +1180,10 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                             )}
                           </div>
                         </td>
-                        <td className={selectedTaskId ? "px-4 py-4 align-top" : "px-6 py-4"}><StatusBadge status={statusUpper} /></td>
+                        <td className={selectedTaskId ? "px-4 py-4 align-top" : "px-6 py-4"}><StatusBadge status={statusUpper} locale={locale} /></td>
                         {!selectedTaskId && (
                           <>
-                            <td className="px-6 py-4 text-[13px] text-gray-500 dark:text-gray-400 font-medium">{formatDate(task.created_at)}</td>
+                            <td className="px-6 py-4 text-[13px] text-gray-500 dark:text-gray-400 font-medium">{formatDate(task.created_at, locale)}</td>
                             <td className="px-6 py-4 text-end">
                               <button
                                 type="button"
@@ -841,7 +1207,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 
         {/* Detail: Slide-over Context Panel */}
         {selectedTaskId && (
-          <aside className="animate-slide-in-end flex min-h-0 max-h-full min-w-0 flex-col rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface lg:sticky lg:top-0">
+          <aside className="animate-slide-in-end flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface lg:sticky lg:top-0 lg:max-h-[calc(100vh-2rem)]">
             <div className="flex items-center justify-between border-b border-black/5 p-5 dark:border-white/10 lg:p-6">
               <h3 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">{t("tasks.detail") || "Task Analysis"}</h3>
               <div className="flex gap-2">
@@ -858,12 +1224,16 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                 <div className="space-y-4">
                   <div className="space-y-3 rounded-xl border border-black/5 bg-gray-50 p-4 dark:border-white/10 dark:bg-surface-alt">
                     <div className="flex items-center justify-between">
-                      <StatusBadge status={liveStatus.state} />
+                      <StatusBadge status={liveStatus.state} locale={locale} />
                       <button onClick={() => void navigator.clipboard.writeText(selectedTaskId)} className="text-[12px] text-gray-400 dark:text-gray-300 hover:text-teal-600 dark:hover:text-teal-300 font-mono transition-colors active:scale-95 flex items-center gap-1">
                         {t("tasks.copyId") || "Copy ID"}
                       </button>
                     </div>
-                    {liveStatus.status && <p className="text-[14px] text-gray-800 dark:text-gray-200 font-medium leading-relaxed">{liveStatus.status}</p>}
+                    {liveStatus.status && (
+                      <p className="text-[14px] text-gray-800 dark:text-gray-200 font-medium leading-relaxed">
+                        {localizeTaskResult(liveStatus.status, locale)}
+                      </p>
+                    )}
 
                     {/* Progress bar if numerical */}
                     {typeof liveStatus.progress === "number" && liveStatus.progress > 0 && liveStatus.progress < 100 && (
@@ -875,30 +1245,95 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 
                   {/* Failure Trace */}
                   {liveStatus.state === "FAILURE" && (
-                    <div className="rounded-xl border border-red-100 bg-red-50/50 p-5 dark:border-red-500/20 dark:bg-red-500/10">
-                      <h4 className="text-[12px] font-medium text-red-700 dark:text-red-300 mb-2">{t("tasks.failureTrace") || "Failure Trace"}</h4>
-                      <pre className="text-[11px] text-red-600 dark:text-red-300 font-mono whitespace-pre-wrap max-h-40 overflow-auto" dir="ltr">
-                        {liveStatus.error ?? liveStatus.last_error ?? (t("common.unexpectedError") || "Unknown error occurred.")}
-                      </pre>
+                    <div className="rounded-lg border border-red-100 border-s-4 border-s-red-500 bg-red-50/50 p-4 dark:border-red-500/20 dark:border-s-red-400 dark:bg-red-500/10">
+                      <h4 className="text-[13px] font-semibold text-red-800 dark:text-red-200">{TASK_COPY[locale].statuses.FAILURE}</h4>
+                      <p className="mt-1 text-[12px] leading-5 text-red-700 dark:text-red-300">{TASK_COPY[locale].failedSummary}</p>
+                      {liveStatus.quality_diagnostics && (
+                        <section className="mt-4 border-t border-red-200/70 pt-3 dark:border-red-400/20">
+                          <h5 className="text-[12px] font-semibold text-red-900 dark:text-red-100">{TASK_COPY[locale].qualityDiagnostics}</h5>
+                          <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <DiagnosticItem label={TASK_COPY[locale].actualWordCount} value={formatDiagnosticNumber(liveStatus.quality_diagnostics.actual_word_count, locale)} />
+                            <DiagnosticItem label={TASK_COPY[locale].allowedWordRange} value={formatWordRange(liveStatus.quality_diagnostics, locale)} />
+                            <DiagnosticItem label={TASK_COPY[locale].headings} value={formatDiagnosticNumber(liveStatus.quality_diagnostics.headings_count, locale)} />
+                            <DiagnosticItem label={TASK_COPY[locale].paragraphs} value={formatDiagnosticNumber(liveStatus.quality_diagnostics.paragraphs_count, locale)} />
+                            <DiagnosticItem label={TASK_COPY[locale].language} value={formatDiagnosticLanguage(liveStatus.quality_diagnostics.language, locale)} />
+                            <DiagnosticItem label={TASK_COPY[locale].regenerationAttempted} value={formatBoolean(liveStatus.quality_diagnostics.regeneration_attempted, locale)} />
+                          </dl>
+                          {liveStatus.quality_diagnostics.findings?.length ? (
+                            <div className="mt-3 border-t border-red-200/70 pt-3 dark:border-red-400/20">
+                              <h6 className="text-[11px] font-semibold text-red-900 dark:text-red-100">{TASK_COPY[locale].findings}</h6>
+                              <ul className="mt-2 space-y-1.5 text-[11px] leading-5 text-red-800 dark:text-red-200">
+                                {liveStatus.quality_diagnostics.findings.map((finding, index) => (
+                                  <li key={`${finding.code ?? "finding"}-${index}`}>
+                                    {localizeQualityFinding(finding.code, finding.message, locale)}
+                                    {formatQualityFindingActual(finding.code, liveStatus.quality_diagnostics, finding.actual, locale)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </section>
+                      )}
+                      <details className="mt-3 text-[11px] text-red-700 dark:text-red-300">
+                        <summary className="cursor-pointer font-medium">{TASK_COPY[locale].technicalDetails}</summary>
+                        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono" dir="ltr">
+                          {liveStatus.error ?? liveStatus.last_error ?? (t("common.unexpectedError") || "Unknown error occurred.")}
+                        </pre>
+                      </details>
                     </div>
                   )}
 
                   {/* Success Article Payload */}
                   {liveStatus.state === "SUCCESS" && detailArticle && (
                     <div className="space-y-6">
+                      {/* Article Metadata Header */}
+                      <div className="rounded-xl border border-black/5 bg-gray-50 p-4 dark:border-white/10 dark:bg-surface-alt">
+                        <h4 className="text-[16px] font-semibold text-gray-900 dark:text-gray-100 leading-snug" dir="auto">
+                          {detailArticle.title || "\u2014"}
+                        </h4>
+                        <div className="mt-2.5 flex flex-wrap gap-2">
+                          {detailArticle.language && (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-black/5 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-300" dir="auto">
+                              {TASK_COPY[locale].language}: {detailArticle.language}
+                            </span>
+                          )}
+                          {detailArticle.primary_keyword && (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-black/5 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-300" dir="auto">
+                              {TASK_COPY[locale].keyword}: {detailArticle.primary_keyword}
+                            </span>
+                          )}
+                          {detailArticle.generated_at && (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-black/5 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-300">
+                              {TASK_COPY[locale].generatedAt}: {formatDate(detailArticle.generated_at, locale)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Metric Chips */}
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-3">
-                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-center dark:border-white/10 dark:bg-surface-alt">
+                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-center dark:border-white/10 dark:bg-surface-alt">
                           <span className="block text-[11px] font-medium text-gray-400 dark:text-gray-300">{t("tasks.wordCount") || "Words"}</span>
                           <span className="block text-[18px] font-bold text-gray-900 dark:text-gray-100 mt-1">{detailArticle.word_count ?? "—"}</span>
                         </div>
-                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-center dark:border-white/10 dark:bg-surface-alt">
+                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-center dark:border-white/10 dark:bg-surface-alt">
                           <span className="block text-[11px] font-medium text-gray-400 dark:text-gray-300">{t("tasks.qualityScore") || "Quality"}</span>
-                          <span className={clsx("block text-[18px] font-bold mt-1", (detailArticle.quality_score ?? 0) >= 80 ? "text-emerald-600" : "text-amber-600")}>{detailArticle.quality_score ?? "—"}</span>
+                          {typeof taskQualityScore === "number" ? (
+                            <>
+                              <span className={clsx("block text-[18px] font-bold mt-1", qualityGrade(taskQualityScore, locale).color)}>{taskQualityScore}</span>
+                              <span className={clsx("block text-[10px] font-semibold mt-0.5", qualityGrade(taskQualityScore, locale).color)}>{qualityGrade(taskQualityScore, locale).label}</span>
+                            </>
+                          ) : (
+                            <span className="mt-2 block text-[11px] font-medium leading-5 text-gray-500 dark:text-gray-300">{TASK_COPY[locale].notRecorded}</span>
+                          )}
                         </div>
-                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-center dark:border-white/10 dark:bg-surface-alt">
+                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-center dark:border-white/10 dark:bg-surface-alt">
                           <span className="block text-[11px] font-medium text-gray-400 dark:text-gray-300">{t("tasks.cost") || "Cost"}</span>
-                          <span className="block text-[18px] font-bold text-teal-600 mt-1">{detailArticle.cost_usd ? `$${detailArticle.cost_usd.toFixed(3)}` : "—"}</span>
+                          {typeof taskCost === "number" ? (
+                            <span className="block text-[18px] font-bold text-teal-600 mt-1">${taskCost.toFixed(3)}</span>
+                          ) : (
+                            <span className="mt-2 block text-[11px] font-medium leading-5 text-gray-500 dark:text-gray-300">{TASK_COPY[locale].notRecorded}</span>
+                          )}
                         </div>
                       </div>
 
@@ -926,6 +1361,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                           { key: "content" as DetailTab, label: t("tasks.contentTab") || "Content" },
                           { key: "seo" as DetailTab, label: t("tasks.seoTab") || "SEO" },
                           { key: "export" as DetailTab, label: t("tasks.exportTab") || "Export" },
+                          { key: "history" as DetailTab, label: TASK_COPY[locale].history },
                         ].map((tab) => (
                           <button key={tab.key} onClick={() => setDetailTab(tab.key)} className={clsx("flex-1 rounded-lg py-1.5 text-[13px] font-semibold transition-all", detailTab === tab.key ? "bg-white text-gray-900 shadow-sm dark:bg-white/15 dark:text-gray-100" : "text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100")}>
                             {tab.label}
@@ -939,21 +1375,37 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                           <div className="mb-2 flex flex-wrap gap-2">
                             {(["reader", "raw", "edit"] as ContentView[]).map(cv => (
                               <button key={cv} onClick={() => setContentView(cv)} className={clsx("text-[12px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors", contentView === cv ? "bg-teal-50 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300" : "text-gray-400 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/[0.06]")}>
-                                {cv === "reader" ? t("tasks.readerMode") || "Reader" : cv === "raw" ? t("tasks.rawHtml") || "Raw" : t("tasks.editMode") || "Edit"}
+                                {cv === "reader"
+                                  ? t("tasks.readerMode") || "Reader"
+                                  : cv === "raw"
+                                    ? sourceIsHtml
+                                      ? TASK_COPY[locale].htmlSource
+                                      : TASK_COPY[locale].markdownSource
+                                    : t("tasks.editMode") || "Edit"}
                               </button>
                             ))}
                           </div>
                           <div className="rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-white/[0.05]">
                             {contentView === "reader" && (
-                              <article className="prose prose-sm prose-teal max-w-none whitespace-pre-wrap p-5 font-sans text-[14px] leading-relaxed text-gray-800 dark:text-gray-200" dir={locale === "en" ? "ltr" : "rtl"}>
-                                {toReaderText(detailArticle.html_content ?? detailArticle.content)}
+                              <article className="prose prose-sm prose-teal max-w-none whitespace-pre-wrap p-5 font-sans text-[14px] leading-relaxed text-gray-800 dark:text-gray-200" dir={articleDirection}>
+                                {toReaderText(sourceContent)}
                               </article>
                             )}
                             {contentView === "raw" && (
-                              <pre className="max-h-96 overflow-auto rounded-xl border border-black/5 bg-slate-950 p-4 font-mono text-[12px] text-slate-100 whitespace-pre-wrap select-all dark:border-white/10 dark:bg-slate-950" dir="ltr">{detailArticle.html_content ?? detailArticle.content}</pre>
+                              <pre className="max-h-96 overflow-auto rounded-xl border border-black/5 bg-slate-50 p-4 font-mono text-[12px] text-slate-800 whitespace-pre-wrap select-all dark:border-white/10 dark:bg-slate-950 dark:text-slate-100" dir={articleDirection}>{sourceContent}</pre>
                             )}
                             {contentView === "edit" && (
-                              <textarea className="w-full h-96 p-4 outline-none resize-none bg-transparent font-mono text-[13px] text-gray-700 dark:text-gray-200 leading-relaxed" dir="auto" value={editContent} onChange={(e) => setEditContent(e.target.value)} />
+                              <div className="relative group">
+                                <textarea className="w-full h-96 p-4 outline-none resize-none bg-transparent font-mono text-[13px] text-gray-700 dark:text-gray-200 leading-relaxed" dir="auto" value={editContent} onChange={(e) => setEditContent(e.target.value)} />
+                                <div className="absolute bottom-4 right-4 flex gap-2 opacity-100 transition-opacity">
+                                  {editContent !== detailArticle.content && (
+                                    <span className="text-[12px] text-amber-600 flex items-center font-medium bg-amber-50 px-2 py-1 rounded-md">{TASK_COPY[locale].unsavedChanges}</span>
+                                  )}
+                                  <Button size="sm" variant="primary" loading={savingEdit} disabled={editContent === detailArticle.content} onClick={() => void handleSaveEdit()}>
+                                    {TASK_COPY[locale].save}
+                                  </Button>
+                                </div>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -980,7 +1432,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                                   <h4 className="text-[14px] font-bold text-gray-900 dark:text-gray-100">{t("tasks.seoTab") || "SEO"}</h4>
                                   <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-300">
                                     {qualityLoading
-                                      ? t("common.loading")
+                                      ? TASK_COPY[locale].seoLoading
                                       : qualityMetrics?.readability_grade
                                         ? qualityMetrics.readability_grade
                                         : seoFallback}
@@ -994,7 +1446,11 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 
                             {qualityError && (
                               <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] font-medium text-red-700 dark:text-red-300">
-                                {qualityError}
+                                <p>{TASK_COPY[locale].seoError}</p>
+                                <details className="mt-2 text-[11px] opacity-80">
+                                  <summary className="cursor-pointer">{TASK_COPY[locale].technicalDetails}</summary>
+                                  <p className="mt-1 break-words" dir="auto">{qualityError}</p>
+                                </details>
                               </div>
                             )}
 
@@ -1089,39 +1545,94 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                               <div className="mt-3 space-y-2">
                                 {riskAssessment.issues.slice(0, 3).map((issue) => (
                                   <p key={issue.id} className="text-[12px] leading-5 text-gray-600 dark:text-gray-300">
-                                    <span className="font-semibold text-gray-900 dark:text-gray-100">{issue.category}: </span>
-                                    {issue.message}
+                                    <span className="font-semibold text-gray-900 dark:text-gray-100">{localizeRiskCategory(issue.category, locale)}: </span>
+                                    {localizeRiskMessage(issue.message, locale)}
                                   </p>
                                 ))}
                               </div>
                             ) : null}
                           </div>
                           <div className="grid grid-cols-2 gap-3">
-                            <Button variant="outlined" onClick={() => downloadContent(detailArticle, "txt")}>{t("tasks.downloadTxt") || "Text"}</Button>
-                            <Button variant="outlined" onClick={() => downloadContent(detailArticle, "html")}>{t("tasks.downloadHtml") || "HTML"}</Button>
-                            <Button variant="outlined" onClick={() => void navigator.clipboard.writeText(contentView === "edit" ? editContent : detailArticle.content)} className="col-span-2">{t("tasks.copyContent") || "Copy Full Content"}</Button>
+                            <Button variant="outlined" onClick={() => downloadContent(detailArticle, "txt")}>
+                              <svg className="w-4 h-4 mie-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              {t("tasks.downloadTxt") || "Text"}
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              onClick={() => downloadContent(detailArticle, sourceIsHtml ? "html" : "markdown")}
+                            >
+                              <svg className="w-4 h-4 mie-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              {sourceIsHtml ? TASK_COPY[locale].downloadHtml : TASK_COPY[locale].downloadMarkdown}
+                            </Button>
+                            <Button variant="outlined" onClick={() => void navigator.clipboard.writeText(contentView === "edit" ? editContent : detailArticle.content)} className="col-span-2">
+                              <svg className="w-4 h-4 mie-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                              {t("tasks.copyContent") || "Copy Full Content"}
+                            </Button>
                           </div>
                           <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-5 dark:border-blue-500/20 dark:bg-blue-500/10">
                             <h4 className="text-[14px] font-bold text-blue-900 dark:text-blue-200 mb-3">{t("tasks.wpPublish") || "WordPress Publish"}</h4>
                             <div className="flex gap-3">
-                              <Button variant="outlined" size="sm" loading={wpPublishing} disabled={riskAssessment?.risk_level === "blocked"} onClick={() => void onWpPublish("draft")}>{t("tasks.wpDraft") || "Draft"}</Button>
+                              <Button variant="outlined" size="sm" loading={wpPublishing} disabled={riskAssessment?.risk_level === "blocked" || wordpressActionBlocked} onClick={() => void onWpPublish("draft")}>{t("tasks.wpDraft") || "Draft"}</Button>
                               <Button
-                                variant="primary"
+                                variant={publicPublishBlocked ? "outlined" : "primary"}
                                 size="sm"
                                 loading={wpPublishing}
-                                disabled={riskAssessment?.risk_level === "blocked" || reviewState?.status !== "approved"}
+                                disabled={publicPublishBlocked}
                                 onClick={() => void onWpPublish("publish")}
+                                className={publicPublishBlocked ? "border-amber-200 bg-amber-50 text-amber-800 shadow-none hover:bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/10" : undefined}
                               >
-                                {t("tasks.wpLive") || "Publish Live"}
+                                {publicPublishLabel}
                               </Button>
                             </div>
-                            {reviewState?.status !== "approved" && (
+                            {publicPublishReason && (
                               <p className="mt-3 text-[12px] font-medium text-amber-700 dark:text-amber-300">
-                                {reviewCopy.liveBlocked}
+                                {publicPublishReason}
+                              </p>
+                            )}
+                            {wordpressActionReason && wordpressActionReason !== publicPublishReason && (
+                              <p className="mt-2 text-[12px] font-medium text-amber-700 dark:text-amber-300">
+                                {wordpressActionReason}
                               </p>
                             )}
                             {wpResult && <p className={clsx("mt-3 text-[12px] font-medium", wpResult.includes("error") || wpResult.includes("خطا") ? "text-red-600 dark:text-red-300" : "text-blue-600 dark:text-blue-300")}>{wpResult}</p>}
                           </div>
+                        </div>
+                      )}
+                      {detailTab === "history" && (
+                        <div className="space-y-4">
+                          <h4 className="text-[14px] font-bold text-gray-900 dark:text-gray-100">{TASK_COPY[locale].revisionHistory}</h4>
+                          {loadingHistory ? (
+                            <div className="animate-pulse space-y-3">
+                              <div className="h-16 w-full rounded-xl bg-gray-100 dark:bg-white/10" />
+                              <div className="h-16 w-full rounded-xl bg-gray-100 dark:bg-white/10" />
+                            </div>
+                          ) : !articleHistory?.revisions?.length ? (
+                            <p className="text-[13px] text-gray-500 dark:text-gray-400 p-6 text-center rounded-xl border border-dashed border-gray-200 dark:border-white/10">{TASK_COPY[locale].noRevisions}</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {articleHistory.revisions.map((rev) => (
+                                <div key={rev.id} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
+                                      {rev.revision_note || TASK_COPY[locale].manualEdit}
+                                    </div>
+                                    <div className="text-[12px] text-gray-500 dark:text-gray-400">
+                                      {formatDate(rev.created_at, locale)}
+                                    </div>
+                                  </div>
+                                  <div className="text-[12px] text-gray-500 dark:text-gray-400 mb-3">
+                                    {formatDiagnosticNumber(rev.word_count, locale)} {TASK_COPY[locale].wordUnit}
+                                  </div>
+                                  <details className="text-[12px]">
+                                    <summary className="cursor-pointer text-teal-600 dark:text-teal-400 font-medium select-none">{TASK_COPY[locale].viewPastContent}</summary>
+                                    <div className="mt-3 max-h-64 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-[11px] text-gray-700 dark:bg-white/[0.03] dark:text-gray-300" dir="auto">
+                                      {rev.content}
+                                    </div>
+                                  </details>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1131,6 +1642,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                 <div className="space-y-4 animate-pulse">
                   <div className="h-24 w-full rounded-xl bg-gray-100 dark:bg-white/10" />
                   <div className="h-64 w-full rounded-xl bg-gray-100 dark:bg-white/10" />
+                  <p className="text-center text-[12px] font-medium text-gray-400 dark:text-gray-500">{TASK_COPY[locale].loadingDetail}</p>
                 </div>
               )}
             </div>
@@ -1143,7 +1655,16 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 }
 
 /* ─── Helper Components ─── */
-function StatusBadge({ status }: { status: string }) {
+function DiagnosticItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-b border-red-200/60 pb-2 last:border-b-0 dark:border-red-400/15">
+      <dt className="text-[10px] font-medium text-red-700/80 dark:text-red-200/80">{label}</dt>
+      <dd className="mt-0.5 text-[12px] font-semibold text-red-900 dark:text-red-100" dir="auto">{value}</dd>
+    </div>
+  );
+}
+
+function StatusBadge({ status, locale }: { status: string; locale: TaskLocale }) {
   const s = status.toUpperCase();
   const cls = s === "SUCCESS"
     ? "border-emerald-200/60 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/[0.12] dark:text-emerald-200"
@@ -1153,7 +1674,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span className={clsx("inline-flex items-center justify-center rounded-lg border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider", cls)}>
-      {status}
+      {localizeTaskStatus(status, locale)}
     </span>
   );
 }
@@ -1320,9 +1841,159 @@ function reviewLabel(status: string, copy: ReviewCopy) {
 }
 
 /* ─── Helper Functions ─── */
-function formatDate(d?: string): string {
+function localizeTaskStatus(status: string, locale: TaskLocale): string {
+  const normalized = status.trim().toUpperCase() as keyof typeof TASK_COPY.en.statuses;
+  return TASK_COPY[locale].statuses[normalized]
+    ?? status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function localizeTaskResult(message: string, locale: TaskLocale): string {
+  const normalized = message.trim().toLowerCase().replace(/[.!]+$/, "");
+  if (normalized === "task completed successfully") {
+    return TASK_COPY[locale].completed;
+  }
+  if (normalized === "task failed") {
+    return TASK_COPY[locale].statuses.FAILURE;
+  }
+  return message;
+}
+
+function formatDiagnosticNumber(value: number | undefined, locale: TaskLocale): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return TASK_COPY[locale].notRecorded;
+  const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
+  return new Intl.NumberFormat(localeName).format(value);
+}
+
+function formatWordRange(
+  diagnostics: NonNullable<TaskStatusResponse["quality_diagnostics"]>,
+  locale: TaskLocale,
+): string {
+  const { min_word_count: minimum, max_word_count: maximum } = diagnostics;
+  if (typeof minimum !== "number" || typeof maximum !== "number") return TASK_COPY[locale].notRecorded;
+  return `${formatDiagnosticNumber(minimum, locale)}–${formatDiagnosticNumber(maximum, locale)}`;
+}
+
+function formatDiagnosticLanguage(language: string | undefined, locale: TaskLocale): string {
+  const normalized = language?.trim().toLowerCase();
+  if (!normalized) return TASK_COPY[locale].notRecorded;
+  const labels = {
+    en: { fa: "Persian", ar: "Arabic", en: "English" },
+    fa: { fa: "فارسی", ar: "عربی", en: "انگلیسی" },
+    ar: { fa: "الفارسية", ar: "العربية", en: "الإنجليزية" },
+  } as const;
+  return labels[locale][normalized as keyof typeof labels.en] ?? language;
+}
+
+function formatBoolean(value: boolean | undefined, locale: TaskLocale): string {
+  if (typeof value !== "boolean") return TASK_COPY[locale].notRecorded;
+  return locale === "fa" ? (value ? "بله" : "خیر") : locale === "ar" ? (value ? "نعم" : "لا") : value ? "Yes" : "No";
+}
+
+function formatQualityFindingActual(
+  code: string | undefined,
+  diagnostics: TaskStatusResponse["quality_diagnostics"],
+  fallback: string | undefined,
+  locale: TaskLocale,
+): string {
+  const units = {
+    en: { words: "words", headings: "headings", paragraphs: "paragraphs" },
+    fa: { words: "کلمه", headings: "تیتر", paragraphs: "پاراگراف" },
+    ar: { words: "كلمة", headings: "عناوين", paragraphs: "فقرات" },
+  } as const;
+
+  if (code === "word_count_below_minimum" || code === "word_count_above_maximum") {
+    return typeof diagnostics?.actual_word_count === "number"
+      ? `: ${formatDiagnosticNumber(diagnostics.actual_word_count, locale)} ${units[locale].words}`
+      : fallback ? `: ${fallback}` : "";
+  }
+  if (code === "insufficient_headings") {
+    return typeof diagnostics?.headings_count === "number"
+      ? `: ${formatDiagnosticNumber(diagnostics.headings_count, locale)} ${units[locale].headings}`
+      : fallback ? `: ${fallback}` : "";
+  }
+  if (code === "insufficient_paragraphs") {
+    return typeof diagnostics?.paragraphs_count === "number"
+      ? `: ${formatDiagnosticNumber(diagnostics.paragraphs_count, locale)} ${units[locale].paragraphs}`
+      : fallback ? `: ${fallback}` : "";
+  }
+  return fallback ? `: ${fallback}` : "";
+}
+
+function localizeQualityFinding(code: string | undefined, fallback: string | undefined, locale: TaskLocale): string {
+  const messages = {
+    en: {
+      word_count_below_minimum: "Article is shorter than the required minimum",
+      word_count_above_maximum: "Article exceeds the allowed maximum",
+      insufficient_headings: "Article does not have enough structural headings",
+      insufficient_paragraphs: "Article does not have enough readable paragraphs",
+      duplicate_adjacent_headings: "Consecutive duplicate headings were detected",
+      missing_required_faq: "The requested FAQ section is missing",
+      incomplete_required_faq: "The requested FAQ section needs more answered questions",
+    },
+    fa: {
+      word_count_below_minimum: "مقاله از حداقل طول لازم کوتاه‌تر است",
+      word_count_above_maximum: "مقاله از حداکثر طول مجاز بیشتر است",
+      insufficient_headings: "مقاله تیترهای ساختاری کافی ندارد",
+      insufficient_paragraphs: "مقاله پاراگراف‌های خوانای کافی ندارد",
+      duplicate_adjacent_headings: "تیترهای تکراری پیاپی در مقاله شناسایی شد",
+      missing_required_faq: "بخش پرسش‌های متداول درخواستی وجود ندارد",
+      incomplete_required_faq: "بخش پرسش‌های متداول به پرسش‌های پاسخ‌داده‌شده بیشتری نیاز دارد",
+    },
+    ar: {
+      word_count_below_minimum: "المقالة أقصر من الحد الأدنى المطلوب",
+      word_count_above_maximum: "المقالة تتجاوز الحد الأقصى المسموح",
+      insufficient_headings: "لا تحتوي المقالة على عناوين هيكلية كافية",
+      insufficient_paragraphs: "لا تحتوي المقالة على فقرات مقروءة كافية",
+      duplicate_adjacent_headings: "تم اكتشاف عناوين متتالية مكررة",
+      missing_required_faq: "قسم الأسئلة الشائعة المطلوب غير موجود",
+      incomplete_required_faq: "يحتاج قسم الأسئلة الشائعة إلى مزيد من الأسئلة المجابة",
+    },
+  } as const;
+  return messages[locale][code as keyof typeof messages.en] ?? fallback ?? TASK_COPY[locale].notRecorded;
+}
+
+function formatPublishResult(value: unknown, fallback: string): string {
+  if (typeof value === "string") {
+    return value.trim() && value !== "[object Object]" ? value : fallback;
+  }
+  if (typeof value === "object" && value !== null) {
+    const record = value as Record<string, unknown>;
+    return formatPublishResult(record.message ?? record.label ?? record.detail, fallback);
+  }
+  return fallback;
+}
+
+function localizeRiskCategory(category: string, locale: TaskLocale): string {
+  return category.trim().toLowerCase() === "seo" ? TASK_COPY[locale].seo : category;
+}
+
+function localizeRiskMessage(message: string, locale: TaskLocale): string {
+  if (message.toLowerCase().includes("no faq section was detected")) {
+    return TASK_COPY[locale].noFaq;
+  }
+  return message;
+}
+
+function resolveArticleDirection(language: string | undefined, content: string): "ltr" | "rtl" | "auto" {
+  const normalized = language?.trim().toLowerCase();
+  if (normalized && /^(fa|fa-ir|persian|farsi|ar|ar-)/.test(normalized)) return "rtl";
+  if (normalized && /^(en|en-|english)/.test(normalized)) return "ltr";
+  if (/[\u0600-\u06FF]/.test(content.slice(0, 240))) return "rtl";
+  if (/[A-Za-z]/.test(content.slice(0, 240))) return "ltr";
+  return "auto";
+}
+
+function formatDate(d: string | undefined, locale: TaskLocale): string {
   if (!d) return "—";
-  try { return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+  const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
+  try {
+    return new Intl.DateTimeFormat(localeName, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(d));
+  }
   catch { return d; }
 }
 
@@ -1330,6 +2001,18 @@ function formatPercentScore(value?: number): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   const normalized = value <= 1 ? value * 100 : value;
   return `${Math.round(normalized)}%`;
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function qualityGrade(score: number | undefined, locale: TaskLocale): { label: string; color: string } {
+  if (typeof score !== "number") return { label: "—", color: "text-gray-500" };
+  if (score >= 80) return { label: TASK_COPY[locale].gradeExcellent, color: "text-emerald-600 dark:text-emerald-400" };
+  if (score >= 65) return { label: TASK_COPY[locale].gradeGood, color: "text-teal-600 dark:text-teal-400" };
+  if (score >= 50) return { label: TASK_COPY[locale].gradeFair, color: "text-amber-600 dark:text-amber-400" };
+  return { label: TASK_COPY[locale].gradeNeedsWork, color: "text-red-600 dark:text-red-400" };
 }
 
 function humanizeMetricKey(key: string): string {
@@ -1355,10 +2038,16 @@ function toReaderText(content?: string): string {
     .trim();
 }
 
-function downloadContent(article: ArticleDetail, format: "txt" | "html") {
-  const content = format === "html" ? (article.html_content ?? article.content) : article.content;
-  const blob = new Blob([content], { type: format === "html" ? "text/html;charset=utf-8" : "text/plain;charset=utf-8" });
-  downloadBlob(blob, `${article.title || "article"}.${format}`);
+function downloadContent(article: ArticleDetail, format: "txt" | "html" | "markdown") {
+  const content = format === "html" ? (article.html_content ?? "") : article.content;
+  const extension = format === "markdown" ? "md" : format;
+  const type = format === "html"
+    ? "text/html;charset=utf-8"
+    : format === "markdown"
+      ? "text/markdown;charset=utf-8"
+      : "text/plain;charset=utf-8";
+  const blob = new Blob([content], { type });
+  downloadBlob(blob, `${article.title || "article"}.${extension}`);
 }
 
 function downloadBlob(blob: Blob, filename: string) {

@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { ApiError, apiRequest } from "@/lib/api";
+import { formatModelDisplayName } from "@/lib/model-display";
 import { LlmOptionsResponse, ProjectReadiness, TaskStatusResponse } from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
@@ -24,8 +25,69 @@ interface SocialPost {
   content: string;
 }
 
+type ReadinessItem = ProjectReadiness["blocking_items"][number];
+
+function isWordPressReadinessItem(item: ReadinessItem): boolean {
+  const stableId = item.id.trim().toLowerCase();
+  if (/(^|[._:-])wordpress($|[._:-])/.test(stableId)) return true;
+
+  return /\bwordpress\b|وردپرس|ووردبريس/i.test(item.message);
+}
+
+function isContentRulesReadinessItem(item: ReadinessItem): boolean {
+  const stableId = item.id.trim().toLowerCase();
+  if (/(content[._:-]?rules?|rulebook|editorial[._:-]?rules?)/.test(stableId)) return true;
+
+  return /content rulebook|content rules|قوانین محتوا|قاعده.*محتوا|قواعد المحتوى/i.test(item.message);
+}
+
+type GenerationBlockerKind = "contentRules" | "worker" | "aiProvider" | "budget" | "projectProfile" | "system";
+
+function generationBlockerKind(items: ReadinessItem[]): GenerationBlockerKind {
+  const text = items.map((item) => `${item.id} ${item.label} ${item.message} ${item.remediation ?? ""}`.toLowerCase()).join(" ");
+  if (items.some(isContentRulesReadinessItem)) return "contentRules";
+  if (/worker|celery|queue|صف پردازش|عامل معالجة/.test(text)) return "worker";
+  if (/ai provider|llm|model|api key|ارائه‌دهنده هوش|مدل|مزود الذكاء/.test(text)) return "aiProvider";
+  if (/budget|cost limit|بودجه|ميزانية/.test(text)) return "budget";
+  if (/project profile|project identity|مشخصات پروژه|ملف المشروع/.test(text)) return "projectProfile";
+  return "system";
+}
+
 type StudioTab = "generate" | "bulk" | "social" | "schema";
 type GenerationLanguage = "fa" | "en";
+
+const EXECUTION_COPY = {
+  en: { success: "Success", failed: "Failed", running: "Running", pending: "Pending", live: "Live", taskStatus: "Execution Status", completed: "Generation completed successfully", processing: "Generation is being processed", queued: "Generation request queued.", failureSummary: "Content generation did not pass the release checks.", releaseGate: "Release gate", wordCount: "Words", wordRange: "Allowed", headings: "Headings", paragraphs: "Paragraphs", findings: "Findings", technicalDetails: "Technical details", wordCountBounds: "Article word counts must be between 800 and 3500." },
+  fa: { success: "موفق", failed: "ناموفق", running: "در حال اجرا", pending: "در انتظار", live: "زنده", taskStatus: "وضعیت اجرا", completed: "پردازش با موفقیت کامل شد", processing: "پردازش در حال انجام است", queued: "درخواست تولید در صف قرار گرفت.", failureSummary: "تولید محتوا از بررسی‌های نهایی عبور نکرد.", releaseGate: "دروازه کیفیت", wordCount: "تعداد کلمات", wordRange: "بازه مجاز", headings: "تیترها", paragraphs: "پاراگراف‌ها", findings: "یافته‌ها", technicalDetails: "جزئیات فنی", wordCountBounds: "تعداد کلمات مقاله باید بین ۸۰۰ تا ۳۵۰۰ باشد." },
+  ar: { success: "ناجح", failed: "فشل", running: "قيد التشغيل", pending: "قيد الانتظار", live: "مباشر", taskStatus: "حالة التنفيذ", completed: "اكتمل طلب الإنشاء بنجاح", processing: "طلب الإنشاء قيد المعالجة", queued: "تمت إضافة طلب الإنشاء إلى قائمة الانتظار.", failureSummary: "لم يجتز إنشاء المحتوى فحوص الإصدار النهائية.", releaseGate: "بوابة الجودة", wordCount: "الكلمات", wordRange: "النطاق المسموح", headings: "العناوين", paragraphs: "الفقرات", findings: "النتائج", technicalDetails: "التفاصيل التقنية", wordCountBounds: "يجب أن يكون عدد كلمات المقال بين 800 و3500." },
+} as const;
+
+const ARTICLE_WORD_COUNT_MIN = 800;
+const ARTICLE_WORD_COUNT_MAX = 3500;
+
+function localizeExecutionState(state: string, locale: keyof typeof EXECUTION_COPY) {
+  const normalized = state.trim().toUpperCase();
+  if (normalized === "SUCCESS") return EXECUTION_COPY[locale].success;
+  if (normalized === "FAILURE" || normalized === "FAILED") return EXECUTION_COPY[locale].failed;
+  if (normalized === "PENDING") return EXECUTION_COPY[locale].pending;
+  if (normalized === "QUEUED") return EXECUTION_COPY[locale].queued;
+  return EXECUTION_COPY[locale].running;
+}
+
+function localizeExecutionMessage(message: string, locale: keyof typeof EXECUTION_COPY) {
+  const normalized = message.trim().toLowerCase().replace(/[.!]+$/, "");
+  if (normalized === "task completed successfully") return EXECUTION_COPY[locale].completed;
+  if (normalized === "task is being processed") return EXECUTION_COPY[locale].processing;
+  if (normalized === "queued" || normalized === "task is queued") return EXECUTION_COPY[locale].queued;
+  if (normalized === "task failed") return EXECUTION_COPY[locale].failureSummary;
+  return message;
+}
+
+function formatExecutionNumber(value: number | undefined, locale: keyof typeof EXECUTION_COPY) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
+  return new Intl.NumberFormat(localeName).format(value);
+}
 
 const TONE_OPTIONS = [
   { value: "professional", fa: "حرفه‌ای", ar: "مهني", en: "Professional" },
@@ -57,25 +119,105 @@ const READINESS_COPY = {
   en: {
     ready: "Project is ready for generation.",
     warning: "Project has readiness warnings. Generation is still available.",
-    blocked: "Generation is blocked until runtime dependencies are restored.",
-    publishingBlocked: "Publishing is blocked. Generation is still available.",
+    blocked: "Generation is temporarily unavailable. Review project readiness for the exact cause.",
+    contentRulesBlocked: "Configure the project content rules before generating an article.",
+    workerBlocked: "Generation needs an active processing worker.",
+    aiBlocked: "Generation needs an available AI provider and model.",
+    budgetBlocked: "Generation is paused because the configured AI budget is unavailable or exhausted.",
+    profileBlocked: "Complete the required project profile before generating an article.",
+    contentRulesHint: "Open Content Rules in the project settings.",
+    workerHint: "Open Monitoring and check the processing queue and worker status.",
+    workerStatus: "Processing queue unavailable",
+    additionalSetupItems: "Additional generation setup items also require attention.",
+    aiHint: "Check AI provider credentials and model availability.",
+    llmTimeout: "The AI model test connection did not finish in time.",
+    budgetHint: "Review the project or global AI budget.",
+    profileHint: "Complete the required project fields.",
+    systemHint: "Open Project Flight Check for details.",
+    publishingBlocked: "WordPress is not connected. You can still generate content, but publishing to WordPress is unavailable until the connection is configured.",
     checking: "Checking project readiness...",
+    unavailable: "Project readiness could not be verified. Generation is paused until a successful recheck.",
+    readyStatus: "Ready",
+    warningStatus: "Review warnings",
+    blockedStatus: "Generation blocked",
+    setupStatus: "Generation setup needed",
+    publishingStatus: "Publishing setup needed",
+    checkingStatus: "Checking",
+    unavailableStatus: "Readiness unavailable",
+    unavailableHint: "Check the API connection, then recheck project readiness.",
+    refresh: "Recheck",
   },
   fa: {
     ready: "پروژه برای تولید محتوا آماده است.",
     warning: "پروژه هشدار آماده‌سازی دارد، اما تولید محتوا فعال است.",
-    blocked: "تا بازیابی وابستگی‌های اجرایی، تولید محتوا مسدود است.",
-    publishingBlocked: "انتشار مسدود است، اما تولید محتوا فعال است.",
+    blocked: "تولید محتوا موقتاً در دسترس نیست. علت دقیق را در بررسی آماده‌سازی پروژه ببینید.",
+    contentRulesBlocked: "پیش از تولید مقاله، قوانین محتوای پروژه را تکمیل کنید.",
+    workerBlocked: "برای تولید محتوا، حداقل یک پردازشگر فعال لازم است.",
+    aiBlocked: "برای تولید محتوا، ارائه‌دهنده و مدل هوش مصنوعی باید در دسترس باشند.",
+    budgetBlocked: "تولید محتوا به‌دلیل نبودن یا پایان بودجه هوش مصنوعی متوقف شده است.",
+    profileBlocked: "پیش از تولید مقاله، مشخصات الزامی پروژه را تکمیل کنید.",
+    contentRulesHint: "قوانین محتوا را در تنظیمات پروژه باز کنید.",
+    workerHint: "به مانیتورینگ بروید و وضعیت صف پردازش و پردازشگرها را بررسی کنید.",
+    workerStatus: "صف پردازش غیرفعال است",
+    additionalSetupItems: "موارد دیگری از تنظیمات تولید نیز نیازمند بررسی است.",
+    aiHint: "اعتبارنامه ارائه‌دهنده و دسترسی مدل را بررسی کنید.",
+    llmTimeout: "اتصال آزمایشی به مدل هوش مصنوعی در زمان مجاز کامل نشد.",
+    budgetHint: "بودجه هوش مصنوعی پروژه یا سامانه را بررسی کنید.",
+    profileHint: "فیلدهای الزامی پروژه را تکمیل کنید.",
+    systemHint: "برای جزئیات، بررسی آماده‌سازی پروژه را باز کنید.",
+    publishingBlocked: "وردپرس متصل نیست. همچنان می‌توانید محتوا تولید کنید، اما انتشار در وردپرس تا زمان تکمیل اتصال در دسترس نیست.",
     checking: "در حال بررسی آمادگی پروژه...",
+    unavailable: "آمادگی پروژه تأیید نشد. تولید محتوا تا بررسی موفق دوباره متوقف است.",
+    readyStatus: "آماده",
+    warningStatus: "نیازمند بررسی",
+    blockedStatus: "تولید مسدود است",
+    setupStatus: "تنظیم تولید لازم است",
+    publishingStatus: "تنظیم انتشار لازم است",
+    checkingStatus: "در حال بررسی",
+    unavailableStatus: "آمادگی در دسترس نیست",
+    unavailableHint: "اتصال API را بررسی کنید و سپس آمادگی پروژه را دوباره بسنجید.",
+    refresh: "بررسی دوباره",
   },
   ar: {
     ready: "المشروع جاهز لإنشاء المحتوى.",
     warning: "توجد تحذيرات جاهزية، لكن الإنشاء متاح.",
-    blocked: "إنشاء المحتوى محظور حتى استعادة الاعتماديات التشغيلية.",
-    publishingBlocked: "النشر محظور، لكن إنشاء المحتوى متاح.",
+    blocked: "إنشاء المحتوى غير متاح مؤقتاً. راجع فحص جاهزية المشروع لمعرفة السبب الدقيق.",
+    contentRulesBlocked: "أكمل إعداد قواعد محتوى المشروع قبل إنشاء المقال.",
+    workerBlocked: "يتطلب إنشاء المحتوى عامل معالجة نشطاً واحداً على الأقل.",
+    aiBlocked: "يتطلب إنشاء المحتوى مزود ذكاء اصطناعي ونموذجاً متاحين.",
+    budgetBlocked: "تم إيقاف إنشاء المحتوى لأن ميزانية الذكاء الاصطناعي غير متاحة أو مستنفدة.",
+    profileBlocked: "أكمل حقول ملف المشروع المطلوبة قبل إنشاء المقال.",
+    contentRulesHint: "افتح قواعد المحتوى من إعدادات المشروع.",
+    workerHint: "انتقل إلى المراقبة وتحقق من حالة قائمة المعالجة والعاملين.",
+    workerStatus: "قائمة المعالجة غير متاحة",
+    additionalSetupItems: "توجد عناصر إعداد إضافية لإنشاء المحتوى تحتاج إلى المراجعة.",
+    aiHint: "تحقق من بيانات اعتماد المزود وتوفر النموذج.",
+    llmTimeout: "لم يكتمل اختبار الاتصال بنموذج الذكاء الاصطناعي ضمن المهلة.",
+    budgetHint: "راجع ميزانية الذكاء الاصطناعي للمشروع أو النظام.",
+    profileHint: "أكمل حقول المشروع المطلوبة.",
+    systemHint: "افتح فحص جاهزية المشروع للتفاصيل.",
+    publishingBlocked: "ووردبريس غير متصل. لا يزال بإمكانك إنشاء المحتوى، لكن النشر إلى ووردبريس غير متاح حتى يتم إعداد الاتصال.",
     checking: "جارٍ فحص جاهزية المشروع...",
+    unavailable: "تعذر التحقق من جاهزية المشروع. تم إيقاف الإنشاء حتى ينجح الفحص مجدداً.",
+    readyStatus: "جاهز",
+    warningStatus: "يحتاج إلى مراجعة",
+    blockedStatus: "إنشاء المحتوى محظور",
+    setupStatus: "يلزم إعداد الإنشاء",
+    publishingStatus: "يلزم إعداد النشر",
+    checkingStatus: "جارٍ الفحص",
+    unavailableStatus: "الجاهزية غير متاحة",
+    unavailableHint: "تحقق من اتصال API ثم أعد فحص جاهزية المشروع.",
+    refresh: "إعادة الفحص",
   },
 };
+
+function localizeTechnicalMessage(message: string, locale: keyof typeof READINESS_COPY) {
+  const normalized = message.trim().toLowerCase();
+  if (normalized.includes("llm ping timed out") || normalized.includes("ai provider ping timed out")) {
+    return READINESS_COPY[locale].llmTimeout;
+  }
+  return localizeExecutionMessage(message, locale);
+}
 
 const MODEL_COPY = {
   en: {
@@ -114,28 +256,33 @@ function refreshTask(taskId: string, token: string, signal?: AbortSignal) {
 }
 
 function buildWordCountPayload(minRaw: string, maxRaw: string): {
-  error?: string;
+  error?: "bounds" | "range";
   payload: { word_count_range?: string; target_word_count?: number };
 } {
   const min = minRaw.trim() ? Number(minRaw) : undefined;
   const max = maxRaw.trim() ? Number(maxRaw) : undefined;
 
-  if ((min !== undefined && (!Number.isFinite(min) || min < 1)) || (max !== undefined && (!Number.isFinite(max) || max < 1))) {
-    return { error: "Word count must be a positive number.", payload: {} };
+  if (
+    min === undefined || max === undefined ||
+    !Number.isInteger(min) || !Number.isInteger(max) ||
+    min < ARTICLE_WORD_COUNT_MIN || max > ARTICLE_WORD_COUNT_MAX
+  ) {
+    return { error: "bounds", payload: {} };
   }
   if (min !== undefined && max !== undefined && min > max) {
-    return { error: "Minimum word count cannot exceed maximum word count.", payload: {} };
+    return { error: "range", payload: {} };
   }
-  if (min !== undefined && max !== undefined) {
-    return { payload: { word_count_range: `${Math.round(min)}-${Math.round(max)}` } };
-  }
-  if (max !== undefined) {
-    return { payload: { target_word_count: Math.round(max) } };
-  }
-  if (min !== undefined) {
-    return { payload: { target_word_count: Math.round(min) } };
-  }
-  return { payload: {} };
+  return { payload: { word_count_range: `${min}-${max}` } };
+}
+
+function sanitizeArticleWordCountInput(value: string): string {
+  return value.replace(/[^\d]/g, "");
+}
+
+function clampArticleWordCountInput(value: string): string {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return "";
+  return String(Math.min(ARTICLE_WORD_COUNT_MAX, Math.max(ARTICLE_WORD_COUNT_MIN, Math.round(numericValue))));
 }
 
 function getSocialPosts(status: TaskStatusResponse | null): SocialPost[] {
@@ -194,8 +341,8 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const [audience, setAudience] = useState("general");
   const [customAudience, setCustomAudience] = useState("");
 
-  const [wordCountMin, setWordCountMin] = useState("");
-  const [wordCountMax, setWordCountMax] = useState("");
+  const [wordCountMin, setWordCountMin] = useState(String(ARTICLE_WORD_COUNT_MIN));
+  const [wordCountMax, setWordCountMax] = useState("1000");
   const [temperature, setTemperature] = useState(0.7);
 
   const [submitting, setSubmitting] = useState(false);
@@ -216,6 +363,8 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const [batchStatus, setBatchStatus] = useState<BatchStatusResponse | null>(null);
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessError, setReadinessError] = useState(false);
+  const readinessRequestRef = useRef<AbortController | null>(null);
   const [llmOptions, setLlmOptions] = useState<LlmOptionsResponse | null>(null);
   const [llmOptionsLoading, setLlmOptionsLoading] = useState(false);
   const [modelOverride, setModelOverride] = useState("");
@@ -229,11 +378,21 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const customValuePlaceholder = locale === "fa" ? "مقدار دلخواه را وارد کنید" : locale === "ar" ? "أدخل قيمة مخصصة" : "Enter custom value";
   const contextPlaceholder = locale === "fa" ? "- روی مورد X تمرکز شود..." : locale === "ar" ? "- ركّز على العنصر X..." : "- Focus on topic X...";
   const sourcePlaceholder = locale === "fa" ? "https://example.com/page-1\nhttps://example.com/page-2" : locale === "ar" ? "https://example.com/page-1\nhttps://example.com/page-2" : "https://example.com/page-1\nhttps://example.com/page-2";
-  const socialLoadingText = locale === "fa" ? "در حال پردازش خروجی‌های شبکه اجتماعی..." : locale === "ar" ? "جاري معالجة مخرجات الشبكات الاجتماعية..." : "Processing social outputs...";
-  const socialReadyText = locale === "fa" ? "خروجی‌های آماده انتشار" : locale === "ar" ? "مخرجات جاهزة للنشر" : "Ready-to-publish outputs";
-  const socialMissingText = locale === "fa" ? "برای ساخت خروجی‌های شبکه اجتماعی، ابتدا یک مقاله تولید کنید." : locale === "ar" ? "أنشئ مقالة أولاً لإعداد مخرجات الشبكات الاجتماعية." : "Generate an article first to prepare social outputs.";
-  const schemaMissingText = locale === "fa" ? "برای تولید JSON-LD و خروجی HTML، ابتدا یک مقاله موفق تولید کنید." : locale === "ar" ? "أنشئ مقالة ناجحة أولاً لتوليد JSON-LD و HTML." : "Generate a successful article first to produce JSON-LD and HTML export.";
-  const schemaReadyText = locale === "fa" ? "متادیتای ساختاریافته آماده است" : locale === "ar" ? "البيانات المنظمة جاهزة" : "Structured metadata is ready";
+  const socialLoadingText = locale === "fa" ? "در حال آماده‌سازی پیش‌نویس‌های شبکه اجتماعی..." : locale === "ar" ? "جارٍ إعداد مسودات الشبكات الاجتماعية..." : "Preparing social drafts...";
+  const socialReadyText = locale === "fa" ? "پیش‌نویس‌های آماده برای کپی؛ بدون اتصال حساب، زمان‌بندی، انتشار یا تحلیل." : locale === "ar" ? "مسودات جاهزة للنسخ؛ بدون ربط حساب أو جدولة أو نشر أو تحليلات." : "Drafts ready to copy; no account connection, scheduling, publishing, or analytics.";
+  const schemaReadyText = locale === "fa" ? "داده ساخت‌یافته و خروجی HTML آماده است؛ این بخش ممیزی یا ویرایشگر کامل سئو نیست." : locale === "ar" ? "البيانات المنظمة وتصدير HTML جاهزان؛ هذه ليست أداة تدقيق أو تحرير كاملة لتحسين البحث." : "Structured data and HTML export are ready; this is not a full SEO audit or editor.";
+  const socialTabLabel = locale === "fa" ? "پیش‌نویس‌های شبکه‌های اجتماعی" : locale === "ar" ? "مسودات الشبكات الاجتماعية" : "Social Drafts";
+  const schemaTabLabel = locale === "fa" ? "خروجی و ابزارهای سئو" : locale === "ar" ? "أدوات وتصدير تحسين البحث" : "SEO Export Tools";
+  const socialEmptyText = locale === "fa"
+    ? "پیش‌نویس‌ها فقط پس از تولید موفق مقاله در همین نشست استودیو نمایش داده می‌شوند. اتصال حساب، زمان‌بندی، انتشار و تحلیل در این بخش وجود ندارد."
+    : locale === "ar"
+      ? "تظهر المسودات فقط بعد إنشاء مقالة ناجحة في جلسة الاستوديو الحالية. لا يتوفر ربط حساب أو جدولة أو نشر أو تحليلات هنا."
+      : "Drafts appear only after a successful article generated in this Studio session. This view has no account connection, scheduling, publishing, or analytics.";
+  const schemaEmptyText = locale === "fa"
+    ? "این ابزارها فقط پس از تولید موفق مقاله در همین نشست استودیو، داده ساخت‌یافته و خروجی HTML را نشان می‌دهند. این بخش ممیزی یا ویرایشگر کامل سئو نیست."
+    : locale === "ar"
+      ? "تعرض هذه الأدوات البيانات المنظمة وتصدير HTML فقط بعد إنشاء مقالة ناجحة في جلسة الاستوديو الحالية. ليست أداة تدقيق أو تحرير كاملة لتحسين البحث."
+      : "These tools show structured data and HTML export only after a successful article generated in this Studio session. This is not a full SEO audit or editor.";
   const loadingSchemaText = locale === "fa" ? "در حال آماده‌سازی JSON-LD و خروجی HTML..." : locale === "ar" ? "جاري إعداد JSON-LD و HTML..." : "Preparing JSON-LD and HTML export...";
   const modelCopy = MODEL_COPY[locale];
 
@@ -249,6 +408,8 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   };
 
   const articleId = useMemo(() => taskStatus?.result?.article_id ?? null, [taskStatus]);
+  const executionState = taskStatus?.state.trim().toUpperCase();
+  const executionDiagnostics = taskStatus?.quality_diagnostics;
   const socialTaskId = useMemo(() => taskStatus?.result?.social_task_id ? String(taskStatus.result.social_task_id) : null, [taskStatus]);
   const socialPosts = useMemo(() => getSocialPosts(socialStatus), [socialStatus]);
   const schemaJson = useMemo(() => jsonld ? JSON.stringify(jsonld, null, 2) : "", [jsonld]);
@@ -262,6 +423,41 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
     }
   }, [showToast, t]);
 
+  const loadReadiness = useCallback(async () => {
+    readinessRequestRef.current?.abort();
+
+    if (!selectedProjectId) {
+      readinessRequestRef.current = null;
+      setReadiness(null);
+      setReadinessLoading(false);
+      setReadinessError(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    readinessRequestRef.current = controller;
+    setReadinessLoading(true);
+    setReadinessError(false);
+    try {
+      const payload = await apiRequest<ProjectReadiness>(`/projects/${selectedProjectId}/readiness`, {
+        token,
+        signal: controller.signal,
+        timeoutMs: 10000,
+      });
+      if (controller.signal.aborted) return;
+      setReadiness(payload);
+      setReadinessError(false);
+    } catch {
+      if (controller.signal.aborted) return;
+      setReadiness(null);
+      setReadinessError(true);
+    } finally {
+      if (controller.signal.aborted) return;
+      if (readinessRequestRef.current === controller) readinessRequestRef.current = null;
+      setReadinessLoading(false);
+    }
+  }, [selectedProjectId, token]);
+
   // Reset state on project change
   useEffect(() => {
     setTaskStatus(null); setSocialStatus(null); setJsonld(null); setExportHtml("");
@@ -270,31 +466,9 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   }, [selectedProjectId]);
 
   useEffect(() => {
-    if (!selectedProjectId) {
-      setReadiness(null);
-      setReadinessLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    setReadinessLoading(true);
-    apiRequest<ProjectReadiness>(`/projects/${selectedProjectId}/readiness`, {
-      token,
-      signal: controller.signal,
-      timeoutMs: 10000,
-    })
-      .then((payload) => {
-        if (!controller.signal.aborted) setReadiness(payload);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setReadiness(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setReadinessLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [selectedProjectId, token]);
+    void loadReadiness();
+    return () => readinessRequestRef.current?.abort();
+  }, [loadReadiness]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -523,7 +697,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const onSubmitGenerate = async (e: FormEvent) => {
     e.preventDefault();
     if (!selectedProjectId) return showToast("error", safe_t("studio.selectProjectFirst", "Select a project first"));
-    if (readiness && !readiness.can_generate) return showToast("error", READINESS_COPY[locale].blocked);
+    if (generationBlocked) return showToast("error", readinessMessage);
     setSubmitting(true);
     setTaskStatus(null);
     setSocialStatus(null);
@@ -532,25 +706,31 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
     setSchemaError(null);
     setSchemaTitle("");
 
-    const resolvedTone = tone === "__custom__" ? customTone.trim() : labelFor(TONE_OPTIONS, tone);
-    const resolvedStructure = structure === "__custom__" ? customStructure.trim() : labelFor(STRUCTURE_OPTIONS, structure);
-    const resolvedAudience = audience === "__custom__" ? customAudience.trim() : labelFor(AUDIENCE_OPTIONS, audience);
+    // Stable machine values for structured top-level request fields.
+    // Uses the option `value` key (locale-independent), not the display label.
+    const resolvedTone = tone === "__custom__" ? customTone.trim() : tone;
+    const resolvedStructure = structure === "__custom__" ? customStructure.trim() : structure;
+    const resolvedAudience = audience === "__custom__" ? customAudience.trim() : audience;
     const wordCount = buildWordCountPayload(wordCountMin, wordCountMax);
 
     if (wordCount.error) {
       setSubmitting(false);
-      return showToast("error", wordCount.error);
+      return showToast(
+        "error",
+        wordCount.error === "bounds"
+          ? EXECUTION_COPY[locale].wordCountBounds
+          : safe_t("studio.wordCountInvalidRange", "Minimum word count cannot exceed maximum word count."),
+      );
     }
 
+    // additional_instructions carries only free-form context and point-of-view.
+    // Tone, structure, and audience are transmitted as structured top-level fields.
     const instructions = [
       language === "en" ? "Output language must be English." : "Output language must be Persian (Farsi).",
       extraInstructions.trim(),
       competitorUrl.trim() ? `Competitor URL: ${competitorUrl.trim()}` : "",
       sourceUrls.trim() ? `Source URLs:\n${sourceUrls.trim()}` : "",
-      `Tone: ${resolvedTone}`,
-      `Structure: ${resolvedStructure}`,
-      `Point of View: ${pov === "__custom__" ? customPov.trim() : labelFor(POV_OPTIONS, pov)}`,
-      `Target audience: ${resolvedAudience}`,
+      `Point of View: ${pov === "__custom__" ? customPov.trim() : pov}`,
       "After article generation, preserve social repurposing outputs.",
       "Ensure schema-friendly structure for FAQ/HowTo rich snippets."
     ].filter(Boolean).join("\n");
@@ -561,13 +741,16 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
         body: {
           project_id: selectedProjectId, topic: topic.trim(), priority: "high", primary_keyword: keyword.trim(),
           additional_instructions: instructions, language, temperature,
+          tone: resolvedTone || undefined,
+          target_audience: resolvedAudience || undefined,
+          content_structure: resolvedStructure || undefined,
           model_override: modelOverride || undefined,
           ...wordCount.payload,
           seo_settings: { auto_schema: true, competitor_takedown: competitorUrl.trim().length > 0 }
         }
       });
       setTaskStatus({ task_id: payload.task_id, state: "PENDING", ready: false, status: payload.status });
-      showToast("success", safe_t("studio.taskQueued", "Generation task queued").replace("{taskId}", payload.task_id));
+      showToast("success", safe_t("studio.taskQueued", EXECUTION_COPY[locale].queued));
     } catch (err) { showToast("error", extractError(err)); }
     finally { setSubmitting(false); }
   };
@@ -575,7 +758,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const onSubmitBatch = async (e: FormEvent) => {
     e.preventDefault();
     if (!selectedProjectId) return showToast("error", safe_t("studio.selectProjectFirst", "Select a project first"));
-    if (readiness && !readiness.can_generate) return showToast("error", READINESS_COPY[locale].blocked);
+    if (generationBlocked) return showToast("error", readinessMessage);
     const topics = bulkTopics.split("\n").map(l => l.trim()).filter(Boolean);
     if (topics.length === 0 || topics.length > 20) return showToast("error", safe_t("studio.maxTopics", "Max 20 topics allowed"));
 
@@ -601,7 +784,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
         }
       });
       setBatchId(payload.batch_id);
-      showToast("success", safe_t("studio.batchProgress", "Batch queued successfully"));
+      showToast("success", safe_t("toast.batchSubmitted", "Batch request submitted"));
     } catch (err) { showToast("error", extractError(err)); }
     finally { setBulkSubmitting(false); }
   };
@@ -609,8 +792,8 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const tabEntries: { key: StudioTab; label: string }[] = [
     { key: "generate", label: safe_t("studio.tabGenerate", "Single Article") },
     { key: "bulk", label: safe_t("studio.tabBatch", "Bulk Generation") },
-    { key: "social", label: safe_t("studio.tabSocial", "Social Output") },
-    { key: "schema", label: safe_t("studio.tabSchema", "SEO & Schema") },
+    { key: "social", label: socialTabLabel },
+    { key: "schema", label: schemaTabLabel },
   ];
 
   const InputClass = clsx(
@@ -620,27 +803,84 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
   const LabelClass = "mb-1.5 max-w-max text-[12px] font-medium leading-none text-slate-500 dark:text-gray-300";
 
-  const HeaderClass = "mb-5 border-b border-black/5 pb-3 text-[13px] font-semibold text-slate-500 dark:border-white/10 dark:text-gray-300";
-  const readinessState = readinessLoading
-    ? "checking"
-    : readiness && !readiness.can_generate
-      ? "blocked"
-      : readiness && (readiness.status === "warning" || readiness.status === "blocked")
-        ? "warning"
-        : "ready";
-  const generationBlocked = !!readiness && !readiness.can_generate;
-  const publishingBlocked = !!readiness && readiness.can_generate && !readiness.can_publish;
-  const readinessMessage =
-    readinessState === "checking"
-      ? READINESS_COPY[locale].checking
-      : readinessState === "blocked"
-        ? READINESS_COPY[locale].blocked
-        : publishingBlocked
-          ? READINESS_COPY[locale].publishingBlocked
-          : readinessState === "warning"
-          ? READINESS_COPY[locale].warning
-          : READINESS_COPY[locale].ready;
-  const readinessDetail = readiness?.blocking_items[0]?.message ?? readiness?.warnings[0]?.message ?? null;
+   const HeaderClass = "mb-5 border-b border-black/5 pb-3 text-[13px] font-semibold text-slate-500 dark:border-white/10 dark:text-gray-300";
+   const wordpressBlockingItems = readiness?.blocking_items.filter(isWordPressReadinessItem) ?? [];
+   const generationBlockingItems = readiness?.blocking_items.filter((item) => !isWordPressReadinessItem(item)) ?? [];
+   const blockerKind = generationBlockerKind(generationBlockingItems);
+   const wordpressOnlyBlocking = !!readiness
+     && !readiness.can_generate
+     && readiness.blocking_items.length > 0
+     && wordpressBlockingItems.length === readiness.blocking_items.length;
+   const readinessState = readinessLoading
+     ? "checking"
+     : readinessError
+       ? "unavailable"
+     : readiness && !readiness.can_generate && !wordpressOnlyBlocking
+       ? "blocked"
+       : (readiness && !readiness.can_publish) || wordpressOnlyBlocking
+         ? "warning"
+         : readiness && (readiness.status === "warning" || readiness.status === "blocked")
+           ? "warning"
+           : "ready";
+   const generationBlocked = readinessLoading
+     || readinessError
+     || (!!readiness && !readiness.can_generate && !wordpressOnlyBlocking);
+   const publishingBlocked = (!!readiness && readiness.can_generate && !readiness.can_publish) || wordpressOnlyBlocking;
+   const wordpressPublishingBlocked = publishingBlocked && wordpressBlockingItems.length > 0;
+   const readinessMessage =
+     readinessState === "checking"
+       ? READINESS_COPY[locale].checking
+       : readinessState === "unavailable"
+         ? READINESS_COPY[locale].unavailable
+       : readinessState === "blocked"
+         ? blockerKind === "contentRules"
+           ? READINESS_COPY[locale].contentRulesBlocked
+           : blockerKind === "worker"
+             ? READINESS_COPY[locale].workerBlocked
+             : blockerKind === "aiProvider"
+               ? READINESS_COPY[locale].aiBlocked
+               : blockerKind === "budget"
+                 ? READINESS_COPY[locale].budgetBlocked
+                 : blockerKind === "projectProfile"
+                   ? READINESS_COPY[locale].profileBlocked
+                   : READINESS_COPY[locale].blocked
+         : wordpressPublishingBlocked
+           ? READINESS_COPY[locale].publishingBlocked
+           : publishingBlocked
+             ? READINESS_COPY[locale].warning
+           : readinessState === "warning"
+           ? READINESS_COPY[locale].warning
+           : READINESS_COPY[locale].ready;
+   const readinessStatusLabel = readinessState === "checking"
+     ? READINESS_COPY[locale].checkingStatus
+     : readinessState === "unavailable"
+       ? READINESS_COPY[locale].unavailableStatus
+     : readinessState === "blocked"
+       ? blockerKind === "worker"
+         ? READINESS_COPY[locale].workerStatus
+         : blockerKind === "system"
+           ? READINESS_COPY[locale].blockedStatus
+           : READINESS_COPY[locale].setupStatus
+       : wordpressPublishingBlocked
+         ? READINESS_COPY[locale].publishingStatus
+         : readinessState === "warning"
+           ? READINESS_COPY[locale].warningStatus
+           : READINESS_COPY[locale].readyStatus;
+   const readinessHint = readinessState === "unavailable"
+     ? READINESS_COPY[locale].unavailableHint
+     : readinessState === "blocked"
+     ? blockerKind === "contentRules"
+       ? READINESS_COPY[locale].contentRulesHint
+       : blockerKind === "worker"
+         ? READINESS_COPY[locale].workerHint
+         : blockerKind === "aiProvider"
+           ? READINESS_COPY[locale].aiHint
+           : blockerKind === "budget"
+             ? READINESS_COPY[locale].budgetHint
+             : blockerKind === "projectProfile"
+               ? READINESS_COPY[locale].profileHint
+               : READINESS_COPY[locale].systemHint
+     : null;
   const selectableModels = llmOptions?.selectable_models ?? [];
   const selectedModelOption = selectableModels.find((option) => option.model === modelOverride);
   const llmUnavailable = !llmOptionsLoading && selectableModels.length === 0;
@@ -648,6 +888,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
     ? llmOptions.user_message
     : null;
   const llmWarning = llmOptions?.warnings[0] ?? llmUserMessage ?? (llmUnavailable ? modelCopy.unavailable : null);
+  const localizedLlmWarning = llmWarning ? localizeTechnicalMessage(llmWarning, locale) : null;
   const selectedActiveProviderUnavailable =
     !!llmUserMessage && selectedModelOption?.provider === llmOptions?.active_provider;
   const selectedModelUnavailable = llmUnavailable || selectedActiveProviderUnavailable;
@@ -692,7 +933,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
               <div className="px-4 pt-4 lg:px-5">
                 <div className={clsx(
                   "mx-auto flex w-full max-w-5xl items-start justify-between gap-3 rounded-xl border px-4 py-3 text-[13px] shadow-sm",
-                  readinessState === "blocked"
+                  readinessState === "blocked" || readinessState === "unavailable"
                     ? "border-red-200 bg-red-50 text-red-900 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-100"
                     : readinessState === "warning"
                       ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100"
@@ -702,19 +943,32 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     <span className={clsx(
                       "mt-1 h-2 w-2 shrink-0 rounded-full",
                       readinessState === "checking" ? "animate-pulse bg-slate-400" :
-                        readinessState === "blocked" ? "bg-red-500" :
+                        readinessState === "blocked" || readinessState === "unavailable" ? "bg-red-500" :
                           readinessState === "warning" ? "bg-amber-500" : "bg-emerald-500"
                     )} />
                     <div className="min-w-0">
                       <p className="font-semibold leading-5">{readinessMessage}</p>
-                      {readinessDetail && <p className="mt-0.5 truncate text-[12px] opacity-75">{readinessDetail}</p>}
+                      {readinessHint && <p className="mt-1 text-[12px] leading-5 opacity-80">{readinessHint}</p>}
+                      {generationBlocked && generationBlockingItems.length > 1 && (
+                        <p className="mt-1 text-[11px] leading-5 opacity-70">{READINESS_COPY[locale].additionalSetupItems}</p>
+                      )}
                     </div>
                   </div>
-                  {readiness && (
-                    <span className="shrink-0 rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-normal text-slate-700 dark:bg-white/10 dark:text-white/80">
-                      {readiness.status}
-                    </span>
-                  )}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {(readiness || readinessError) && (
+                      <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-normal text-slate-700 dark:bg-white/10 dark:text-white/80">
+                        {readinessStatusLabel}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={readinessLoading}
+                      onClick={() => void loadReadiness()}
+                      className="rounded-md border border-black/5 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
+                    >
+                      {READINESS_COPY[locale].refresh}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -849,7 +1103,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                                 ) : selectableModels.length > 0 ? (
                                   selectableModels.map((option) => (
                                     <option key={`${option.provider}:${option.model}`} value={option.model}>
-                                      {option.label} · {option.provider}
+                                      {formatModelDisplayName(option.model)}
                                     </option>
                                   ))
                                 ) : (
@@ -859,27 +1113,27 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                             </div>
                             <div className="flex min-h-[36px] items-center rounded-xl border border-black/5 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
                               {selectedModelOption
-                                ? `${selectedModelOption.recommended ? modelCopy.recommended : modelCopy.active} · ${selectedModelOption.model}`
+                                ? `${selectedModelOption.recommended ? modelCopy.recommended : modelCopy.active} · ${formatModelDisplayName(selectedModelOption.model)}`
                                 : llmOptionsLoading
                                   ? modelCopy.loading
                                   : modelCopy.unavailable}
                             </div>
                           </div>
 
-                          {llmWarning && (
+                          {localizedLlmWarning && (
                             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[12px] font-medium leading-5 text-amber-800 dark:text-amber-200">
-                              {llmWarning}
+                              {localizedLlmWarning}
                             </div>
                           )}
 
                           <div className="flex gap-4 max-w-lg">
                             <div className="flex-1 flex flex-col gap-0">
                               <label className={LabelClass}>{safe_t("studio.wordCountMin", "Min Words")}</label>
-                              <input type="number" className={InputClass} value={wordCountMin} onChange={e => setWordCountMin(e.target.value)} dir="ltr" />
+                              <input type="number" min={ARTICLE_WORD_COUNT_MIN} max={ARTICLE_WORD_COUNT_MAX} step={1} className={InputClass} value={wordCountMin} onChange={e => setWordCountMin(sanitizeArticleWordCountInput(e.target.value))} onBlur={() => setWordCountMin((value) => clampArticleWordCountInput(value))} dir="ltr" />
                             </div>
                             <div className="flex-1 flex flex-col gap-0">
                               <label className={LabelClass}>{safe_t("studio.wordCountMax", "Max Words")}</label>
-                              <input type="number" className={InputClass} value={wordCountMax} onChange={e => setWordCountMax(e.target.value)} dir="ltr" />
+                              <input type="number" min={ARTICLE_WORD_COUNT_MIN} max={ARTICLE_WORD_COUNT_MAX} step={1} className={InputClass} value={wordCountMax} onChange={e => setWordCountMax(sanitizeArticleWordCountInput(e.target.value))} onBlur={() => setWordCountMax((value) => clampArticleWordCountInput(value))} dir="ltr" />
                             </div>
                           </div>
 
@@ -944,7 +1198,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                           ) : selectableModels.length > 0 ? (
                             selectableModels.map((option) => (
                               <option key={`bulk:${option.provider}:${option.model}`} value={option.model}>
-                                {option.label} · {option.provider}
+                                {formatModelDisplayName(option.model)}
                               </option>
                             ))
                           ) : (
@@ -954,15 +1208,15 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                       </div>
                       <div className="flex min-h-[36px] items-center rounded-xl border border-black/5 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
                         {selectedModelOption
-                          ? `${selectedModelOption.recommended ? modelCopy.recommended : modelCopy.active} · ${selectedModelOption.model}`
+                          ? `${selectedModelOption.recommended ? modelCopy.recommended : modelCopy.active} · ${formatModelDisplayName(selectedModelOption.model)}`
                           : llmOptionsLoading
                             ? modelCopy.loading
                             : modelCopy.unavailable}
                       </div>
                     </div>
-                    {llmWarning && (
+                    {localizedLlmWarning && (
                       <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[12px] font-medium leading-5 text-amber-800 dark:text-amber-200">
-                        {llmWarning}
+                        {localizedLlmWarning}
                       </div>
                     )}
                   </div>
@@ -992,11 +1246,11 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 pb-4 dark:border-white/10">
                       <div>
-                        <h3 className="text-[18px] font-semibold text-slate-900 dark:text-gray-100">{safe_t("studio.tabSocial", "Social Media Management")}</h3>
+                        <h3 className="text-[18px] font-semibold text-slate-900 dark:text-gray-100">{socialTabLabel}</h3>
                         <p className="mt-1 text-[13px] font-medium text-slate-500 dark:text-gray-300">{socialReadyText}</p>
                       </div>
                       <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
-                        {socialStatus?.state ?? "SUCCESS"}
+                        {localizeExecutionState(socialStatus?.state ?? "SUCCESS", locale)}
                       </span>
                     </div>
 
@@ -1024,15 +1278,13 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-50 dark:bg-white/10">
                       <svg className="w-8 h-8 text-slate-400 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                     </div>
-                    <h3 className="text-[16px] font-bold text-slate-800 dark:text-gray-100 mb-2">{safe_t("studio.tabSocial", "Social Media Management")}</h3>
+                    <h3 className="text-[16px] font-bold text-slate-800 dark:text-gray-100 mb-2">{socialTabLabel}</h3>
                     <p className="max-w-sm text-[14px] font-medium leading-relaxed text-slate-500 dark:text-gray-300">
                       {socialTaskId
                         ? socialStatus?.state === "FAILURE"
                           ? extractError(socialStatus.error ?? socialStatus.last_error)
                           : socialLoadingText
-                        : articleId
-                          ? safe_t("studio.socialEmpty", "Extracted social media content will be ready for publication here after final article processing.")
-                          : socialMissingText}
+                        : socialEmptyText}
                     </p>
                   </div>
                 )}
@@ -1045,7 +1297,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 pb-4 dark:border-white/10">
                       <div>
-                        <h3 className="text-[18px] font-semibold text-slate-900 dark:text-gray-100">{safe_t("studio.tabSchema", "SEO Optimization")}</h3>
+                        <h3 className="text-[18px] font-semibold text-slate-900 dark:text-gray-100">{schemaTabLabel}</h3>
                         <p className="mt-1 text-[13px] font-medium text-slate-500 dark:text-gray-300">
                           {schemaLoading ? loadingSchemaText : schemaReadyText}
                         </p>
@@ -1077,7 +1329,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                           </div>
                         </div>
                         <pre className="min-h-0 flex-1 overflow-auto p-4 text-[12px] leading-5 text-slate-700 dark:text-gray-200" dir="ltr">
-                          {schemaLoading && !schemaJson ? loadingSchemaText : schemaJson || safe_t("studio.schemaEmpty", "SEO micro-transactions (FAQ) and structured metadata (JSON-LD) will be injected here for optimal indexing post-generation.")}
+                          {schemaLoading && !schemaJson ? loadingSchemaText : schemaJson || schemaEmptyText}
                         </pre>
                       </article>
 
@@ -1094,7 +1346,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                           </div>
                         </div>
                         <pre className="min-h-0 flex-1 overflow-auto p-4 text-[12px] leading-5 text-slate-700 dark:text-gray-200" dir="ltr">
-                          {schemaLoading && !exportHtml ? loadingSchemaText : exportHtml || safe_t("studio.schemaEmpty", "SEO micro-transactions (FAQ) and structured metadata (JSON-LD) will be injected here for optimal indexing post-generation.")}
+                          {schemaLoading && !exportHtml ? loadingSchemaText : exportHtml || schemaEmptyText}
                         </pre>
                       </article>
                     </div>
@@ -1104,8 +1356,10 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-50 dark:bg-white/10">
                       <svg className="w-8 h-8 text-slate-400 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
                     </div>
-                    <h3 className="text-[16px] font-bold text-slate-800 dark:text-gray-100 mb-2">{safe_t("studio.tabSchema", "SEO Optimization")}</h3>
-                    <p className="text-[14px] font-medium text-slate-500 dark:text-gray-400 max-w-sm leading-relaxed">{schemaMissingText}</p>
+                    <h3 className="text-[16px] font-bold text-slate-800 dark:text-gray-100 mb-2">{schemaTabLabel}</h3>
+                    <p className="text-[14px] font-medium text-slate-500 dark:text-gray-400 max-w-sm leading-relaxed">
+                      {schemaEmptyText}
+                    </p>
                   </div>
                 )}
               </div>
@@ -1115,37 +1369,80 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
         {/* ── Dynamic Layout Drawer: Active Tasks (only visible when a task is running) ── */}
         {(taskStatus || batchStatus) && (
-          <aside className="animate-slide-in-start sticky top-4 flex w-full max-w-sm flex-col gap-4 self-start rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface">
-            <h3 className="text-[13px] font-semibold text-slate-400 dark:text-gray-300">{safe_t("studio.taskStatus", "Execution Status")}</h3>
+          <aside className="animate-slide-in-start sticky top-4 flex w-full max-w-sm flex-col gap-3 self-start rounded-lg border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface">
+            <h3 className="text-[14px] font-semibold text-slate-800 dark:text-gray-100">{EXECUTION_COPY[locale].taskStatus}</h3>
 
             {taskStatus && (
-              <div className="relative space-y-4 overflow-hidden rounded-xl border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-surface-alt">
-                <div className="absolute top-0 start-0 w-1 p-0.5 h-full bg-teal-500" />
+              <div className="relative space-y-3 overflow-hidden rounded-lg border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-surface-alt">
+                <div className={clsx(
+                  "absolute top-0 start-0 h-full w-1 p-0.5",
+                  executionState === "FAILURE" ? "bg-red-500" : executionState === "SUCCESS" ? "bg-emerald-500" : "bg-teal-500",
+                )} />
                 <div className="flex items-center justify-between ps-3">
                   <div className="flex items-center gap-2">
                     <span className={clsx(
                       "w-2 h-2 rounded-full",
-                      taskStatus.state === "SUCCESS" ? "bg-emerald-500" :
-                        taskStatus.state === "FAILURE" ? "bg-red-500" :
+                      executionState === "SUCCESS" ? "bg-emerald-500" :
+                        executionState === "FAILURE" ? "bg-red-500" :
                           "bg-teal-500 animate-pulse"
                     )} />
                     <span className="text-[11px] font-semibold text-slate-600 dark:text-gray-300 uppercase">
-                      {taskStatus.state}
+                      {localizeExecutionState(taskStatus.state, locale)}
                     </span>
                   </div>
-                  {!taskStatus.ready && <span className="text-[10px] bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-200 px-2 py-0.5 rounded-full font-semibold uppercase animate-pulse">Live</span>}
+                  {!taskStatus.ready && <span className="text-[10px] bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-200 px-2 py-0.5 rounded-full font-semibold animate-pulse">{EXECUTION_COPY[locale].live}</span>}
                 </div>
-                <code className="block text-[10px] text-slate-400 dark:text-gray-300 font-mono truncate ps-3" dir="ltr">id: {taskStatus.task_id}</code>
-                <p className="text-[13px] text-slate-700 dark:text-gray-300 leading-relaxed font-medium ps-3">{taskStatus.status}</p>
-                {taskStatus.error && (
-                  <p className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-medium leading-5 text-red-700 dark:text-red-300">
-                    {taskStatus.error}
+                <code className="block text-[10px] text-slate-400 dark:text-gray-300 font-mono truncate ps-3" dir="ltr">#{taskStatus.task_id.slice(0, 8)}</code>
+                {taskStatus.status && (
+                  <p className="text-[13px] text-slate-700 dark:text-gray-300 leading-relaxed font-medium ps-3">
+                    {localizeExecutionMessage(taskStatus.status, locale)}
                   </p>
                 )}
-                {taskStatus.manager_error_detail && (
-                  <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-800 dark:text-amber-200">
-                    {taskStatus.manager_error_detail}
-                  </p>
+                {executionState === "FAILURE" && executionDiagnostics && (
+                  <section className="ms-3 border-t border-red-500/20 pt-3">
+                    <h4 className="text-[11px] font-semibold text-red-800 dark:text-red-200">
+                      {EXECUTION_COPY[locale].releaseGate}
+                    </h4>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+                      <div>
+                        <dt className="text-[10px] text-slate-500 dark:text-gray-400">{EXECUTION_COPY[locale].wordCount}</dt>
+                        <dd className="mt-0.5 text-[12px] font-semibold text-slate-900 dark:text-gray-100">{formatExecutionNumber(executionDiagnostics.actual_word_count, locale)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[10px] text-slate-500 dark:text-gray-400">{EXECUTION_COPY[locale].wordRange}</dt>
+                        <dd className="mt-0.5 text-[12px] font-semibold text-slate-900 dark:text-gray-100">
+                          {formatExecutionNumber(executionDiagnostics.min_word_count, locale)}–{formatExecutionNumber(executionDiagnostics.max_word_count, locale)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-[10px] text-slate-500 dark:text-gray-400">{EXECUTION_COPY[locale].headings}</dt>
+                        <dd className="mt-0.5 text-[12px] font-semibold text-slate-900 dark:text-gray-100">{formatExecutionNumber(executionDiagnostics.headings_count, locale)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[10px] text-slate-500 dark:text-gray-400">{EXECUTION_COPY[locale].paragraphs}</dt>
+                        <dd className="mt-0.5 text-[12px] font-semibold text-slate-900 dark:text-gray-100">{formatExecutionNumber(executionDiagnostics.paragraphs_count, locale)}</dd>
+                      </div>
+                    </dl>
+                    {executionDiagnostics.findings?.length ? (
+                      <p className="mt-2 text-[10px] font-medium text-red-700 dark:text-red-300">
+                        {EXECUTION_COPY[locale].findings}: {formatExecutionNumber(executionDiagnostics.findings.length, locale)}
+                      </p>
+                    ) : null}
+                  </section>
+                )}
+                {(
+                  (typeof taskStatus.error === "string" && !taskStatus.error.includes("[object Object]"))
+                  || (typeof taskStatus.manager_error_detail === "string" && !taskStatus.manager_error_detail.includes("[object Object]"))
+                ) && (
+                  <details className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] leading-5 text-red-700 dark:text-red-300">
+                    <summary className="cursor-pointer font-semibold">{EXECUTION_COPY[locale].technicalDetails}</summary>
+                    {typeof taskStatus.error === "string" && !taskStatus.error.includes("[object Object]") && (
+                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono" dir="ltr">{taskStatus.error}</pre>
+                    )}
+                    {typeof taskStatus.manager_error_detail === "string" && !taskStatus.manager_error_detail.includes("[object Object]") && (
+                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap border-t border-red-500/20 pt-2 font-mono" dir="ltr">{taskStatus.manager_error_detail}</pre>
+                    )}
+                  </details>
                 )}
               </div>
             )}

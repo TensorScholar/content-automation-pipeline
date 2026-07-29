@@ -18,6 +18,7 @@ from typing import Dict, List, Optional
 
 from loguru import logger
 
+from core.enums import SectionIntent
 from core.exceptions import WorkflowError
 from core.models import ContentPlan, Keyword, Project, ProjectContext
 from infrastructure.llm_client import AbstractLLMClient
@@ -86,6 +87,8 @@ class ContentPlanner:
             context.tone = kwargs.get("tone")
         if kwargs.get("target_audience"):
             context.target_audience = kwargs.get("target_audience")
+        if kwargs.get("content_structure"):
+            context.style_guide = kwargs.get("content_structure")
 
         # 2. Build the LLM prompt for *planning*
         content_memory_guidance = await self._load_content_memory_guidance(project.id, topic)
@@ -129,23 +132,28 @@ class ContentPlanner:
             # Handle both LLMResponse objects and raw dict responses
             if isinstance(response, dict):
                 content = response.get('content')
+                planning_cost = float(response.get("cost") or 0.0)
             else:
                 content = getattr(response, 'content', None)
+                planning_cost = float(getattr(response, "cost", 0.0) or 0.0)
+            if not isinstance(content, str) or not content.strip():
+                raise WorkflowError("Content planning provider returned an empty response")
             plan_data = self._parse_llm_json_response(content)
 
             # Create Outline from sections
             from core.models import Outline, Section
 
+            section_count = len(plan_data["sections"])
+            base_words, remainder = divmod(target_word_count, section_count)
             sections = [
                 Section(
                     heading=section["heading"],
                     theme_embedding=[],  # Will be populated during generation
                     target_keywords=[kw.phrase for kw in keywords[:3]],  # Use first 3 keywords
-                    estimated_words=plan_data.get("target_word_count", target_word_count)
-                    // len(plan_data["sections"]),
-                    intent="explain",  # Default intent
+                    estimated_words=base_words + (1 if index < remainder else 0),
+                    intent=SectionIntent.EXPLAIN,
                 )
-                for section in plan_data["sections"]
+                for index, section in enumerate(plan_data["sections"])
             ]
 
             # Truncate meta_description if too long (max 160 chars)
@@ -195,11 +203,13 @@ class ContentPlanner:
                 primary_keywords=primary_kws,
                 secondary_keywords=secondary_kws,
                 outline=outline,
-                target_word_count=plan_data.get("target_word_count", target_word_count),
+                target_word_count=target_word_count,
                 readability_target="grade_10-12",
                 language=language,  # Pass language through to generation
-                estimated_cost_usd=0.0,
-                created_at=datetime.utcnow(),  # Use naive datetime for PostgreSQL
+                estimated_cost_usd=max(0.0, planning_cost),
+                created_at=datetime.now(timezone.utc).replace(
+                    tzinfo=None
+                ),  # PostgreSQL column stores naive UTC.
             )
 
             # 6. Save and return

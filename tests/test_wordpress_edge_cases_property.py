@@ -631,6 +631,7 @@ def test_exponential_backoff_jitter_properties(retry_attempt, base_delay):
 # CHAOS TEST: Intermittent Network Failures
 # ============================================================================
 
+@pytest.mark.chaos
 def test_chaos_intermittent_network():
     """
     CHAOS TEST: Simulate intermittent network that fails randomly.

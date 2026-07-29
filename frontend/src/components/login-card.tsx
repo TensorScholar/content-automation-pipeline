@@ -446,17 +446,17 @@ export function LoginCard() {
                     required
                     aria-label={t("auth.password")}
                     className={clsx(
-                      "auth-input h-[50px] w-full rounded-xl border border-black/10 px-4 pe-[48px] text-[15px] outline-none transition-all duration-200 text-start dark:border-white/10",
+                      "auth-input h-[50px] w-full rounded-xl border border-black/10 px-4 pr-[48px] text-[15px] outline-none transition-all duration-200 text-start dark:border-white/10",
                       "focus:border-brand focus:ring-2 focus:ring-brand/20",
                       "[&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden lg:[&::-webkit-contacts-auto-fill-button]:hidden"
                     )}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                   />
-                  {/* BIDI Precise: end-3 guarantees RTL mirror */}
+                  {/* Password input is always LTR, so the reveal action stays on the physical right side. */}
                   <button
                     type="button"
-                    className="absolute end-3 z-10 rounded-lg p-1.5 text-ink-tertiary transition-colors duration-200 hover:text-ink focus:bg-surface focus:outline-none focus:ring-2 focus:ring-brand"
+                    className="absolute right-3 z-10 rounded-lg p-1.5 text-ink-tertiary transition-colors duration-200 hover:text-ink focus:bg-surface focus:outline-none focus:ring-2 focus:ring-brand"
                     onClick={() => setShowPassword(o => !o)}
                     aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                   >

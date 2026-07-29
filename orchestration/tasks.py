@@ -25,19 +25,27 @@ import traceback as tb_module
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, List, Optional
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
+from celery.utils.time import get_exponential_backoff_interval
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
 from api.dependencies import get_database, get_metrics, get_redis
 from core.exceptions import WorkflowError
+from core.generation_contract import normalize_target_word_count, normalize_word_count_range
 from infrastructure.llm_options import validate_model_available
 from orchestration.celery_app import app
-from orchestration.task_persistence import SyncTaskResultRepository, TaskResultRepository
+from orchestration.generation_finalization import GenerationFinalizationRepository
+from orchestration.task_persistence import (
+    SyncTaskResultRepository,
+    TaskResultRepository,
+    TaskStatus,
+)
 
 # ============================================================================
 # SMTP Configuration for Admin Notifications
@@ -47,6 +55,9 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+
+CONTENT_GENERATION_MAX_RETRIES = 3
+CONTENT_GENERATION_RETRY_BACKOFF_MAX = 600
 SMTP_ENABLED = bool(SMTP_HOST and ADMIN_EMAIL)
 
 # ============================================================================
@@ -66,7 +77,12 @@ class GenerateContentInput(BaseModel):
         pattern="^(en|fa)$",
         description="Content language: 'fa' for Persian (default), 'en' for English",
     )
-    temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
+    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    word_count_range: Optional[str] = None
+    target_word_count: Optional[int] = None
+    tone: Optional[str] = Field(None, max_length=100)
+    target_audience: Optional[str] = Field(None, max_length=200)
+    content_structure: Optional[str] = Field(None, max_length=100)
 
     @field_validator("project_id")
     @classmethod
@@ -88,14 +104,42 @@ class GenerateContentInput(BaseModel):
             raise ValueError("Topic cannot be empty after sanitization")
         return sanitized.strip()
 
-    @field_validator("custom_instructions")
+    @field_validator("custom_instructions", "tone", "target_audience", "content_structure")
     @classmethod
     def validate_custom_instructions(cls, v: Optional[str]) -> Optional[str]:
-        """Sanitize custom instructions if provided."""
+        """Sanitize optional structured string fields."""
         if v is None:
             return None
         sanitized = "".join(char for char in v if ord(char) >= 32 or char in "\n\t")
         return sanitized.strip() if sanitized.strip() else None
+
+    @field_validator("word_count_range")
+    @classmethod
+    def validate_article_word_count_range(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_word_count_range(value)
+
+    @field_validator("target_word_count")
+    @classmethod
+    def validate_article_target_word_count(cls, value: Optional[int]) -> Optional[int]:
+        return normalize_target_word_count(value)
+
+
+def _retry_wrapped_workflow_error(task: Task, error: WorkflowError) -> bool:
+    """Bridge structured transient workflow failures into Celery retry."""
+    if not error.retryable:
+        return False
+
+    countdown = get_exponential_backoff_interval(
+        factor=1,
+        retries=task.request.retries,
+        maximum=CONTENT_GENERATION_RETRY_BACKOFF_MAX,
+        full_jitter=True,
+    )
+    raise task.retry(
+        exc=error,
+        countdown=countdown,
+        max_retries=CONTENT_GENERATION_MAX_RETRIES,
+    )
 
 
 class AnalyzeWebsiteInput(BaseModel):
@@ -547,6 +591,108 @@ def _build_social_posts(title: str, topic: str, language: str = "fa") -> Dict[st
     }
 
 
+async def _deliver_pending_export(
+    finalization_repo: GenerationFinalizationRepository,
+    *,
+    task_id: str,
+    content_generator: Any,
+) -> None:
+    """Complete the durable local export after the finalization transaction."""
+    export = await finalization_repo.claim_pending_export(task_id)
+    if export is None:
+        return
+
+    try:
+        exported = await content_generator._export_article_to_files(
+            export.article,
+            SimpleNamespace(language=export.language),
+        )
+    except Exception as exc:
+        await finalization_repo.record_export_failure(
+            export.event_id,
+            export.attempt_number,
+            str(exc),
+        )
+        logger.warning("Durable export dispatch failed | task_id=%s | error=%s", task_id, exc)
+        return
+
+    if exported:
+        await finalization_repo.complete_export(export.event_id, export.attempt_number)
+        return
+
+    await finalization_repo.record_export_failure(
+        export.event_id,
+        export.attempt_number,
+        "Article export returned an unsuccessful result.",
+    )
+
+
+async def _deliver_pending_social_dispatch(
+    finalization_repo: GenerationFinalizationRepository,
+    *,
+    task_id: str,
+    current_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Dispatch a leased social event without making article success contingent on it."""
+    try:
+        dispatch = await finalization_repo.claim_pending_social_dispatch(task_id)
+        if dispatch is None:
+            finalized = await finalization_repo.get_finalized_result(task_id)
+            return finalized.result if finalized is not None else current_result
+
+        try:
+            generate_social_posts_task.apply_async(
+                kwargs=dispatch.task_kwargs,
+                task_id=dispatch.social_task_id,
+                queue="default",
+                routing_key="default",
+            )
+        except Exception as exc:
+            await finalization_repo.record_social_dispatch_failure(
+                dispatch.event_id,
+                dispatch.attempt_number,
+                dispatch.parent_task_id,
+                str(exc),
+            )
+            logger.warning(
+                "Social repurposing dispatch retained for retry | "
+                f"task_id={task_id} | social_task_id={dispatch.social_task_id} | error={exc}"
+            )
+        else:
+            await finalization_repo.complete_social_dispatch(
+                dispatch.event_id,
+                dispatch.attempt_number,
+                dispatch.parent_task_id,
+            )
+
+        finalized = await finalization_repo.get_finalized_result(task_id)
+        return finalized.result if finalized is not None else current_result
+    except Exception as exc:
+        logger.warning(
+            "Social repurposing recovery deferred without invalidating article | "
+            f"task_id={task_id} | error={exc}"
+        )
+        return current_result
+
+
+async def _cache_finalized_result(
+    redis_client: Any,
+    *,
+    idempotency_key: str,
+    result: Dict[str, Any],
+    task_id: str,
+) -> None:
+    """Cache a durable task result without changing its terminal DB state."""
+    try:
+        await mark_task_complete(redis_client, idempotency_key, result)
+    except Exception as exc:
+        logger.warning(
+            "Failed to cache an already finalized task result | task_id=%s | error=%s",
+            task_id,
+            exc,
+        )
+
+
 class ContentGenerationBaseTask(Task):
     """
     Base task class with enhanced error handling and lifecycle hooks.
@@ -616,10 +762,18 @@ class ContentGenerationBaseTask(Task):
         # Persist task failure to database (using sync repository)
         try:
             task_repo = SyncTaskResultRepository()
+            quality_diagnostics = None
+            if is_workflow_error and isinstance(getattr(exc, "context", None), dict):
+                candidate = exc.context.get("quality_diagnostics")
+                if isinstance(candidate, dict):
+                    quality_diagnostics = candidate
             task_repo.update_task_failure(
                 task_id=task_id,
                 error=str(exc),
                 traceback=str(einfo),
+                result={"quality_diagnostics": quality_diagnostics}
+                if quality_diagnostics
+                else None,
             )
             task_record = task_repo.get_task_by_id(task_id)
             release_failed_task_locks(
@@ -670,34 +824,26 @@ class ContentGenerationBaseTask(Task):
                 sys.path.insert(0, project_root)
 
             metrics_collector = get_metrics()
-            db_manager = get_database()
         except Exception as e:
             logger.warning(f"Failed to load dependencies for success logging: {e}")
             metrics_collector = None
-            db_manager = None
 
         # Record success metrics if available
         if metrics_collector:
             try:
+                result_data = retval if isinstance(retval, dict) else {}
                 metrics_collector.record_workflow_completion(
                     project_id=kwargs.get("project_id", "unknown"),
                     workflow_type="content_generation",
-                    duration_seconds=getattr(retval, "duration", 0),
-                    cost=getattr(retval, "cost", 0.0),
+                    duration_seconds=result_data.get("duration_seconds", 0),
+                    cost=result_data.get("cost", 0.0),
                     success=True,
                 )
             except Exception as e:
                 logger.warning(f"Failed to record success metrics: {e}")
 
-        # Persist task success to database (using sync repository)
-        try:
-            task_repo = SyncTaskResultRepository()
-            task_repo.update_task_success(
-                task_id=task_id,
-                result=retval,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to persist task success: {e}")
+        # The generation workflow persists success with the article and project
+        # counters in one transaction. Do not rewrite that durable result here.
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
         """Handle task retry with structured logging and persistence."""
@@ -730,7 +876,7 @@ class ContentGenerationBaseTask(Task):
         TimeoutError,
         asyncio.TimeoutError,
     ),
-    retry_kwargs={"max_retries": 3},  # Maximum 3 retry attempts
+    retry_kwargs={"max_retries": CONTENT_GENERATION_MAX_RETRIES},
     retry_backoff=True,  # Use exponential backoff between retries
     retry_backoff_max=600,  # Maximum backoff of 10 minutes (production best practice)
     retry_jitter=True,  # Add random jitter to backoff
@@ -782,6 +928,12 @@ def generate_content_task(
         language_arg = kwargs.pop("language", None)
         submitted_by_user_id = kwargs.pop("submitted_by_user_id", None)
         submission_idempotency_key = kwargs.pop("submission_idempotency_key", None)
+        word_count_range_arg = kwargs.pop("word_count_range", None)
+        target_word_count_arg = kwargs.pop("target_word_count", None)
+        temperature_arg = kwargs.pop("temperature", None)
+        tone_arg = kwargs.pop("tone", None)
+        target_audience_arg = kwargs.pop("target_audience", None)
+        content_structure_arg = kwargs.pop("content_structure", None)
 
         validated_input = GenerateContentInput(
             project_id=project_id,
@@ -789,6 +941,12 @@ def generate_content_task(
             priority=priority,
             custom_instructions=custom_instructions,
             language=language_arg or "fa",
+            temperature=temperature_arg,
+            word_count_range=word_count_range_arg,
+            target_word_count=target_word_count_arg,
+            tone=tone_arg,
+            target_audience=target_audience_arg,
+            content_structure=content_structure_arg,
         )
     except Exception as validation_error:
         logger.error(
@@ -796,6 +954,19 @@ def generate_content_task(
         )
         # Don't retry validation errors - they're permanent
         raise ValueError(f"Invalid task parameters: {validation_error}")
+
+    if validated_input.word_count_range is not None:
+        kwargs["word_count_range"] = validated_input.word_count_range
+    if validated_input.target_word_count is not None:
+        kwargs["target_word_count"] = validated_input.target_word_count
+    if validated_input.temperature is not None:
+        kwargs["temperature"] = validated_input.temperature
+    if validated_input.tone is not None:
+        kwargs["tone"] = validated_input.tone
+    if validated_input.target_audience is not None:
+        kwargs["target_audience"] = validated_input.target_audience
+    if validated_input.content_structure is not None:
+        kwargs["content_structure"] = validated_input.content_structure
 
     logger.info(
         f"Content generation task started | task_id={self.request.id} | "
@@ -931,67 +1102,91 @@ def generate_content_task(
                     raise WorkflowError("Database connection timeout")
 
                 content_agent = get_content_agent()
+                finalization_repo = GenerationFinalizationRepository(db)
 
                 try:
-                    article = await content_agent.create_content(
-                        project_id=project_uuid,
-                        topic=validated_input.topic,
-                        priority=validated_input.priority,
-                        custom_instructions=validated_input.custom_instructions,
-                        project_context=project_context,
-                        language=validated_input.language,
-                        _llm_user_id=submitted_by_user_id,
-                        _llm_task_id=self.request.id,
-                        **kwargs,  # Pass extended SEO parameters
+                    finalized = await finalization_repo.get_finalized_result(self.request.id)
+                    social_request = {
+                        "title": "",
+                        "topic": validated_input.topic,
+                        "language": validated_input.language,
+                        "submitted_by_user_id": submitted_by_user_id,
+                    }
+                    if finalized is not None:
+                        execution_result = finalized.result
+                        social_request["title"] = str(execution_result.get("title") or "")
+                        logger.info(
+                            "Returning durable finalized generation result | "
+                            f"task_id={self.request.id} | article_id={finalized.article_id}"
+                        )
+                    else:
+                        article = await content_agent.create_content(
+                            project_id=project_uuid,
+                            topic=validated_input.topic,
+                            priority=validated_input.priority,
+                            custom_instructions=validated_input.custom_instructions,
+                            project_context=project_context,
+                            language=validated_input.language,
+                            _llm_user_id=submitted_by_user_id,
+                            _llm_task_id=self.request.id,
+                            _defer_finalization=True,
+                            **kwargs,  # Pass extended SEO parameters
+                        )
+
+                        execution_result = {
+                            "status": "success",
+                            "article_id": str(article.id),
+                            "project_id": str(project_uuid),
+                            "title": article.title,
+                            "word_count": article.quality_metrics.word_count,
+                            "cost": article.total_cost_usd,
+                            "distributed": len(article.distribution_channels) > 0,
+                            "generated_at": article.created_at.isoformat(),
+                            "model_used": getattr(article, "model_used", None),
+                        }
+                        social_request["title"] = article.title
+                        finalized = await finalization_repo.finalize(
+                            task_id=self.request.id,
+                            article=article,
+                            task_result=execution_result,
+                            language=validated_input.language,
+                            social_request=social_request,
+                        )
+                        execution_result = finalized.result
+
+                    execution_result = await finalization_repo.ensure_social_dispatch(
+                        task_id=self.request.id,
+                        article_id=finalized.article_id,
+                        social_request=social_request,
+                    )
+                    execution_result = await _deliver_pending_social_dispatch(
+                        finalization_repo,
+                        task_id=self.request.id,
+                        current_result=execution_result,
                     )
 
-                    execution_result = {
-                        "status": "success",
-                        "article_id": str(article.id),
-                        "project_id": str(project_uuid),
-                        "title": article.title,
-                        "word_count": article.quality_metrics.word_count,
-                        "cost": article.total_cost_usd,
-                        "distributed": len(article.distribution_channels) > 0,
-                        "generated_at": article.created_at.isoformat(),
-                    }
-
-                    # Trigger social media repurposing as a follow-up Celery sub-task.
-                    try:
-                        social_task = generate_social_posts_task.apply_async(
-                            kwargs={
-                                "article_id": str(article.id),
-                                "title": article.title,
-                                "topic": validated_input.topic,
-                                "language": validated_input.language,
-                            },
-                            queue="default",
-                            routing_key="default",
-                        )
-                        execution_result["social_task_id"] = social_task.id
-                        execution_result["social_status"] = "queued"
-                    except Exception as social_error:
-                        logger.warning(
-                            "Failed to dispatch social repurposing task | "
-                            f"task_id={self.request.id} | error={social_error}"
-                        )
+                    await _deliver_pending_export(
+                        finalization_repo,
+                        task_id=self.request.id,
+                        content_generator=content_agent.content_generator,
+                    )
 
                 finally:
                     # Cleanup fresh database resources
                     if hasattr(content_agent, "database_manager"):
                         await content_agent.database_manager.close()
 
-                # --- CACHE RESULT ---
-                # Use mark_task_complete instead of cache_result
-                await mark_task_complete(redis_client, idempotency_key, execution_result)
+                await _cache_finalized_result(
+                    redis_client,
+                    idempotency_key=idempotency_key,
+                    result=execution_result,
+                    task_id=self.request.id,
+                )
 
-                # --- UPDATE TASK RECORD (Sync) ---
-                try:
-                    task_repo.update_task_success(task_id=self.request.id, result=execution_result)
-                except Exception as e:
-                    logger.error(f"Failed to update task status: {e}")
-
-                logger.info(f"Task completed successfully | article_id={article.id}")
+                logger.info(
+                    "Task completed successfully | "
+                    f"article_id={execution_result.get('article_id')}"
+                )
                 return execution_result
 
             finally:
@@ -1069,6 +1264,7 @@ def generate_content_task(
         logger.error(
             f"Content generation workflow failed | task_id={self.request.id} | " f"error={str(e)}"
         )
+        _retry_wrapped_workflow_error(self, e)
         raise
 
     except SoftTimeLimitExceeded:
@@ -1198,23 +1394,97 @@ def generate_social_posts_task(
     title: str,
     topic: str,
     language: str = "fa",
+    submitted_by_user_id: Optional[str] = None,
+    parent_task_id: Optional[str] = None,
 ) -> Dict:
     """
     Generate platform-ready social media posts from article metadata.
     """
+    task_id = self.request.id
+    task_repo = SyncTaskResultRepository()
+    try:
+        persisted = task_repo.get_task_by_id(task_id)
+    except Exception as exc:
+        persisted = None
+        logger.warning(
+            "Unable to read durable social task state | "
+            f"social_task_id={task_id} | error={exc}"
+        )
+    if persisted and persisted.get("status") == TaskStatus.SUCCESS.value:
+        stored_result = persisted.get("result")
+        if isinstance(stored_result, str):
+            stored_result = json.loads(stored_result)
+        if isinstance(stored_result, dict):
+            if parent_task_id:
+                try:
+                    task_repo.mark_social_dispatch_completed(
+                        parent_task_id=parent_task_id,
+                        social_task_id=task_id,
+                    )
+                except Exception as exc:
+                    raise ConnectionError(
+                        "Completed social task could not close its durable parent hand-off."
+                    ) from exc
+            return stored_result
+
+    try:
+        task_repo.create_task_record(
+            task_id=task_id,
+            task_name=self.name,
+            args=(article_id, title, topic),
+            kwargs={
+                "article_id": article_id,
+                "title": title,
+                "topic": topic,
+                "language": language,
+                "submitted_by_user_id": submitted_by_user_id,
+                "parent_task_id": parent_task_id,
+            },
+            idempotency_key=f"social-drafts:{parent_task_id or article_id}",
+            worker_name=getattr(self.request, "hostname", None),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Unable to refresh durable social task start | "
+            f"social_task_id={task_id} | error={exc}"
+        )
+
     logger.info(
         "Social repurposing started | social_task_id=%s | article_id=%s",
-        self.request.id,
+        task_id,
         article_id,
     )
-    posts = _build_social_posts(title=title, topic=topic, language=language)
-    return {
-        "task_id": self.request.id,
-        "article_id": article_id,
-        "status": "completed",
-        "posts": posts,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    try:
+        posts = _build_social_posts(title=title, topic=topic, language=language)
+        result = {
+            "task_id": task_id,
+            "parent_task_id": parent_task_id,
+            "article_id": article_id,
+            "status": "completed",
+            "posts": posts,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        task_repo.update_task_success(task_id=task_id, result=result)
+    except Exception as exc:
+        try:
+            task_repo.update_task_failure(task_id=task_id, error=str(exc))
+        except Exception as persistence_error:
+            logger.warning(
+                "Unable to persist social task failure | "
+                f"social_task_id={task_id} | error={persistence_error}"
+            )
+        raise
+    if parent_task_id:
+        try:
+            task_repo.mark_social_dispatch_completed(
+                parent_task_id=parent_task_id,
+                social_task_id=task_id,
+            )
+        except Exception as exc:
+            raise ConnectionError(
+                "Social task completed but its durable parent hand-off could not be closed."
+            ) from exc
+    return result
 
 
 @app.task(
@@ -1275,6 +1545,7 @@ def analyze_website_task(self, project_id: str, domain: str) -> Dict:
             analyzer.analyze_website(UUID(validated_input.project_id), validated_input.domain)
         )
 
+        analyzed_at = getattr(inferred, "analyzed_at", None) if inferred else None
         return {
             "task_id": self.request.id,
             "status": "completed",
@@ -1285,9 +1556,7 @@ def analyze_website_task(self, project_id: str, domain: str) -> Dict:
             "readability_score": getattr(inferred, "readability_score", None),
             "confidence": getattr(inferred, "confidence", None),
             "sample_size": getattr(inferred, "sample_size", None),
-            "analyzed_at": getattr(inferred, "analyzed_at", None).isoformat()
-            if inferred and getattr(inferred, "analyzed_at", None)
-            else None,
+            "analyzed_at": analyzed_at.isoformat() if analyzed_at is not None else None,
         }
     except Exception as e:
         logger.error(f"Website analysis task failed | task_id={self.request.id} | error={str(e)}")
@@ -1362,7 +1631,7 @@ def process_dead_letter(
             task_repo.create_task_record(
                 task_id=self.request.id,
                 task_name="dead_letter_queue",
-                args=[original_task_id, original_task_name],
+                args=(original_task_id, original_task_name),
                 kwargs={
                     "original_args": original_args,
                     "original_kwargs": original_kwargs,

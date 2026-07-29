@@ -61,66 +61,147 @@ jobs:
 
       - name: Run pip-audit
         id: pip_audit
-        continue-on-error: true
         run: |
-          echo "## pip-audit Results" > pip-audit-report.txt
-          pip-audit -r requirements.txt --desc --output json > pip-audit-report.json 2>&1 || true
-          pip-audit -r requirements.txt --desc >> pip-audit-report.txt 2>&1 || true
-          echo "Scan complete. See artifact for details."
+          set -euo pipefail
+          set +e
+          pip-audit -r requirements.txt --desc --format json --output pip-audit-report.json
+          scan_status=$?
+          set -e
+
+          SCAN_STATUS="$scan_status" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report_path = Path("pip-audit-report.json")
+          if not report_path.is_file() or report_path.stat().st_size == 0:
+              raise SystemExit("pip-audit did not produce a required JSON report")
+
+          try:
+              data = json.loads(report_path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"pip-audit report is unreadable or malformed: {exc}") from exc
+
+          if isinstance(data, dict) and isinstance(data.get("dependencies"), list):
+              dependencies = data["dependencies"]
+              vulnerability_count = 0
+              for dependency in dependencies:
+                  if not isinstance(dependency, dict) or not isinstance(
+                      dependency.get("vulns", []), list
+                  ):
+                      raise SystemExit("pip-audit report has an unexpected dependency schema")
+                  vulnerability_count += len(dependency.get("vulns", []))
+          elif isinstance(data, list):
+              vulnerability_count = 0
+              for dependency in data:
+                  if not isinstance(dependency, dict) or not isinstance(
+                      dependency.get("vulns", []), list
+                  ):
+                      raise SystemExit("pip-audit report has an unexpected list schema")
+                  vulnerability_count += len(dependency.get("vulns", []))
+          else:
+              raise SystemExit("pip-audit report has an unsupported top-level schema")
+
+          scan_status = int(os.environ["SCAN_STATUS"])
+          if scan_status not in (0, 1):
+              raise SystemExit(f"pip-audit execution failed with status {scan_status}")
+          if scan_status == 1 and vulnerability_count == 0:
+              raise SystemExit(
+                  "pip-audit returned its findings status without report findings"
+              )
+
+          Path("pip-audit-report.txt").write_text(
+              f"pip-audit completed with {vulnerability_count} vulnerability finding(s).\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Run safety check
         id: safety_check
-        continue-on-error: true
         run: |
-          echo "## Safety Results" > safety-report.txt
-          safety check -r requirements.txt --output json > safety-report.json 2>&1 || true
-          safety check -r requirements.txt >> safety-report.txt 2>&1 || true
-          echo "Scan complete. See artifact for details."
+          set -euo pipefail
+          set +e
+          safety check -r requirements.txt --output json > safety-report.json
+          scan_status=$?
+          set -e
+
+          SCAN_STATUS="$scan_status" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report_path = Path("safety-report.json")
+          if not report_path.is_file() or report_path.stat().st_size == 0:
+              raise SystemExit("Safety did not produce a required JSON report")
+
+          try:
+              data = json.loads(report_path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"Safety report is unreadable or malformed: {exc}") from exc
+
+          if isinstance(data, list):
+              vulnerability_count = len(data)
+          elif isinstance(data, dict) and isinstance(data.get("vulnerabilities"), list):
+              vulnerability_count = len(data["vulnerabilities"])
+          else:
+              raise SystemExit("Safety report has an unsupported top-level schema")
+
+          scan_status = int(os.environ["SCAN_STATUS"])
+          if scan_status not in (0, 64):
+              raise SystemExit(f"Safety execution failed with status {scan_status}")
+          if scan_status == 64 and vulnerability_count == 0:
+              raise SystemExit(
+                  "Safety returned its findings status without report findings"
+              )
+
+          Path("safety-report.txt").write_text(
+              f"Safety completed with {vulnerability_count} vulnerability finding(s).\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Evaluate scan results
         run: |
+          set -euo pipefail
           echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
 
-          # Check pip-audit results
-          if [ -f pip-audit-report.json ]; then
-            VULN_COUNT=$(python -c "
-          import json, sys
-          try:
-              data = json.load(open('pip-audit-report.json'))
-              if isinstance(data, dict):
-                  vulns = data.get('vulnerabilities', [])
-              elif isinstance(data, list):
-                  vulns = [d for d in data if d.get('vulns')]
-              else:
-                  vulns = []
-              print(len(vulns))
-          except Exception:
-              print(0)
-          " 2>/dev/null || echo "0")
-            echo "| pip-audit | $VULN_COUNT vulnerability(ies) found |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| pip-audit | Report not generated |" >> $GITHUB_STEP_SUMMARY
-          fi
+          read -r VULN_COUNT SAFETY_COUNT < <(python - <<'PY'
+          import json
+          from pathlib import Path
 
-          # Check safety results
-          if [ -f safety-report.json ]; then
-            SAFETY_COUNT=$(python -c "
-          import json, sys
-          try:
-              data = json.load(open('safety-report.json'))
-              if isinstance(data, list):
-                  print(len(data))
-              elif isinstance(data, dict):
-                  print(len(data.get('vulnerabilities', [])))
-              else:
-                  print(0)
-          except Exception:
-              print(0)
-          " 2>/dev/null || echo "0")
-            echo "| safety | $SAFETY_COUNT issue(s) found |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| safety | Report not generated |" >> $GITHUB_STEP_SUMMARY
-          fi
+          def load_required(path: str):
+              report = Path(path)
+              if not report.is_file() or report.stat().st_size == 0:
+                  raise SystemExit(f"Required scanner report is missing or empty: {path}")
+              try:
+                  return json.loads(report.read_text(encoding="utf-8"))
+              except (OSError, json.JSONDecodeError) as exc:
+                  raise SystemExit(f"Required scanner report is malformed: {path}: {exc}") from exc
+
+          pip_data = load_required("pip-audit-report.json")
+          if isinstance(pip_data, dict) and isinstance(pip_data.get("dependencies"), list):
+              pip_entries = pip_data["dependencies"]
+          elif isinstance(pip_data, list):
+              pip_entries = pip_data
+          else:
+              raise SystemExit("pip-audit report has an unsupported schema")
+          pip_count = sum(len(entry.get("vulns", [])) for entry in pip_entries)
+
+          safety_data = load_required("safety-report.json")
+          if isinstance(safety_data, list):
+              safety_count = len(safety_data)
+          elif isinstance(safety_data, dict) and isinstance(
+              safety_data.get("vulnerabilities"), list
+          ):
+              safety_count = len(safety_data["vulnerabilities"])
+          else:
+              raise SystemExit("Safety report has an unsupported schema")
+
+          print(pip_count, safety_count)
+          PY
+          )
+          echo "| pip-audit | $VULN_COUNT vulnerability(ies) found |" >> $GITHUB_STEP_SUMMARY
+          echo "| safety | $SAFETY_COUNT issue(s) found |" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload security reports
         if: always()
@@ -153,8 +234,9 @@ jobs:
         run: pip install bandit
 
       - name: Run Bandit scan
-        continue-on-error: true
         run: |
+          set -euo pipefail
+          set +e
           bandit -r \
             api/ \
             core/ \
@@ -169,16 +251,55 @@ jobs:
             -o bandit-report.json \
             --severity-level medium \
             --confidence-level medium \
-            2>&1 || true
+            2>&1
+          scan_status=$?
+          set -e
+
+          SCAN_STATUS="$scan_status" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report_path = Path("bandit-report.json")
+          if not report_path.is_file() or report_path.stat().st_size == 0:
+              raise SystemExit("Bandit did not produce a required JSON report")
+
+          try:
+              data = json.loads(report_path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"Bandit report is unreadable or malformed: {exc}") from exc
+
+          results = data.get("results") if isinstance(data, dict) else None
+          if not isinstance(results, list):
+              raise SystemExit("Bandit report has an unsupported schema")
+
+          scan_status = int(os.environ["SCAN_STATUS"])
+          if scan_status not in (0, 1):
+              raise SystemExit(f"Bandit execution failed with status {scan_status}")
+          if scan_status == 1 and not results:
+              raise SystemExit(
+                  "Bandit returned its findings status without report findings"
+              )
+          PY
 
       - name: Generate Bandit summary
         if: always()
         run: |
+          set -euo pipefail
           echo "## 🛡️ SAST (Bandit) Summary" >> $GITHUB_STEP_SUMMARY
-          if [ -f bandit-report.json ]; then
-            python -c "
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
-          data = json.load(open('bandit-report.json'))
+          from pathlib import Path
+
+          report = Path("bandit-report.json")
+          if not report.is_file() or report.stat().st_size == 0:
+              raise SystemExit("Required Bandit report is missing or empty")
+          try:
+              data = json.loads(report.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"Required Bandit report is malformed: {exc}") from exc
+          if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+              raise SystemExit("Bandit report has an unsupported schema")
           metrics = data.get('metrics', {}).get('_totals', {})
           results = data.get('results', [])
           high = sum(1 for r in results if r.get('issue_severity') == 'HIGH')
@@ -189,10 +310,7 @@ jobs:
           print(f'| High | {high} |')
           print(f'| Medium | {med} |')
           print(f'| Low | {low} |')
-          " >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Could not parse Bandit report" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Bandit report was not generated." >> $GITHUB_STEP_SUMMARY
-          fi
+          PY
 
       - name: Upload Bandit report
         if: always()
@@ -237,67 +355,91 @@ jobs:
         with:
           name: security-scan-reports
           path: reports/
-        continue-on-error: true
 
       - name: Download Bandit report
         uses: actions/download-artifact@v4
         with:
           name: bandit-sast-report
           path: reports/
-        continue-on-error: true
 
       - name: Evaluate security gate
         run: |
+          set -euo pipefail
           echo "## 🚦 Security Gate Decision" >> $GITHUB_STEP_SUMMARY
           FAILED=0
 
           # Check for HIGH severity Bandit findings
-          if [ -f reports/bandit-report.json ]; then
-            HIGH_COUNT=$(python -c "
+          HIGH_COUNT=$(python - <<'PY'
           import json
-          data = json.load(open('reports/bandit-report.json'))
+          from pathlib import Path
+
+          report = Path("reports/bandit-report.json")
+          if not report.is_file() or report.stat().st_size == 0:
+              raise SystemExit("Required Bandit report is missing or empty")
+          try:
+              data = json.loads(report.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"Required Bandit report is malformed: {exc}") from exc
+          if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+              raise SystemExit("Bandit report has an unsupported schema")
           results = data.get('results', [])
           high = [r for r in results if r.get('issue_severity') == 'HIGH' and r.get('issue_confidence') == 'HIGH']
           print(len(high))
-          " 2>/dev/null || echo "0")
+          PY
+          )
 
-            if [ "$HIGH_COUNT" -gt 0 ] 2>/dev/null; then
-              echo "❌ **$HIGH_COUNT high-severity + high-confidence SAST finding(s)**" >> $GITHUB_STEP_SUMMARY
-              FAILED=1
-            else
-              echo "✅ No high-severity SAST findings" >> $GITHUB_STEP_SUMMARY
-            fi
+          if [ "$HIGH_COUNT" -gt 0 ]; then
+            echo "❌ **$HIGH_COUNT high-severity + high-confidence SAST finding(s)**" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
           else
-            echo "⚠️ Bandit report not available" >> $GITHUB_STEP_SUMMARY
+            echo "✅ No high-severity SAST findings" >> $GITHUB_STEP_SUMMARY
           fi
 
           # pip-audit reports are high-confidence dependency findings. Treat any
           # reported vulnerability as blocking for production launch readiness.
-          if [ -f reports/pip-audit-report.json ]; then
-            PIP_AUDIT_COUNT=$(python -c "
+          PIP_AUDIT_COUNT=$(python - <<'PY'
           import json
-          data = json.load(open('reports/pip-audit-report.json'))
-          if isinstance(data, dict):
-              print(len(data.get('vulnerabilities', [])))
-          elif isinstance(data, list):
-              print(sum(len(item.get('vulns', [])) for item in data))
-          else:
-              print(0)
-          " 2>/dev/null || echo "0")
+          from pathlib import Path
 
-            if [ "$PIP_AUDIT_COUNT" -gt 0 ] 2>/dev/null; then
-              echo "❌ **$PIP_AUDIT_COUNT dependency vulnerability finding(s)**" >> $GITHUB_STEP_SUMMARY
-              FAILED=1
-            else
-              echo "✅ No pip-audit dependency vulnerabilities" >> $GITHUB_STEP_SUMMARY
-            fi
+          report = Path("reports/pip-audit-report.json")
+          if not report.is_file() or report.stat().st_size == 0:
+              raise SystemExit("Required pip-audit report is missing or empty")
+          try:
+              data = json.loads(report.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"Required pip-audit report is malformed: {exc}") from exc
+          if isinstance(data, dict) and isinstance(data.get("dependencies"), list):
+              dependencies = data["dependencies"]
+          elif isinstance(data, list):
+              dependencies = data
+          else:
+              raise SystemExit("pip-audit report has an unsupported schema")
+          count = 0
+          for dependency in dependencies:
+              if not isinstance(dependency, dict) or not isinstance(
+                  dependency.get("vulns", []), list
+              ):
+                  raise SystemExit("pip-audit report has an unexpected dependency schema")
+              count += len(dependency.get("vulns", []))
+          print(count)
+          PY
+          )
+
+          if [ "$PIP_AUDIT_COUNT" -gt 0 ]; then
+            echo "❌ **$PIP_AUDIT_COUNT dependency vulnerability finding(s)**" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
           else
-            echo "⚠️ pip-audit report not available" >> $GITHUB_STEP_SUMMARY
+            echo "✅ No pip-audit dependency vulnerabilities" >> $GITHUB_STEP_SUMMARY
           fi
 
           # Check upstream job results
           if [ "${{ needs.dependency-scan.result }}" = "failure" ]; then
             echo "❌ **Dependency scan job failed**" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
+          fi
+
+          if [ "${{ needs.sast.result }}" = "failure" ]; then
+            echo "❌ **SAST job failed**" >> $GITHUB_STEP_SUMMARY
             FAILED=1
           fi
 

@@ -225,15 +225,25 @@ async def lifespan(app: FastAPI):
         has_anthropic = _secret_is_configured(settings.llm.anthropic_api_key)
         has_openai = _secret_is_configured(settings.llm.openai_api_key)
         has_gemini = _secret_is_configured(settings.llm.gemini_api_key)
+        has_openai_compatible = bool(
+            settings.llm.openai_compatible_base_url and settings.llm.openai_compatible_api_key
+        )
         has_local = bool(settings.llm.local_llm_url and settings.llm.local_llm_url.strip())
-        if not has_anthropic and not has_openai and not has_gemini and not has_local:
+        if (
+            not has_anthropic
+            and not has_openai
+            and not has_gemini
+            and not has_openai_compatible
+            and not has_local
+        ):
             validation_errors.append(
-                "At least one LLM provider is required (GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL)"
+                "At least one LLM provider is required (managed API credentials, OPENAI_COMPATIBLE_BASE_URL/OPENAI_COMPATIBLE_API_KEY, or LOCAL_LLM_URL)"
             )
         selected_provider_configured = {
             "anthropic": has_anthropic,
             "openai": has_openai,
             "gemini": has_gemini,
+            "openai_compatible": has_openai_compatible,
             "local": has_local,
         }.get(settings.llm.provider, False)
         if not selected_provider_configured:

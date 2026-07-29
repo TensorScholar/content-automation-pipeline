@@ -14,6 +14,7 @@ Purpose: Super strict multi-pipeline testing to find mission-critical issues in:
 This is NOT about making tests pass - it's about finding REAL issues and fixing them.
 """
 
+import os
 import random
 import string
 import time
@@ -27,16 +28,24 @@ import redis
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = [pytest.mark.integration, pytest.mark.live, pytest.mark.slow]
 
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
 
-API_BASE = "http://127.0.0.1:9001"
-REDIS_URL = "redis://127.0.0.1:6379/0"
-MANAGER_EMAIL = "manager@smarlux.com"
-MANAGER_PASSWORD = "Manager@123456789"
+API_BASE = os.getenv("LIVE_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+REDIS_URL = os.getenv("LIVE_REDIS_URL", "redis://127.0.0.1:6379/0")
+MANAGER_EMAIL = os.getenv("LIVE_MANAGER_EMAIL")
+MANAGER_PASSWORD = os.getenv("LIVE_MANAGER_PASSWORD")
+
+
+def _live_credentials() -> dict[str, str]:
+    if not MANAGER_EMAIL or not MANAGER_PASSWORD:
+        pytest.fail(
+            "Set LIVE_MANAGER_EMAIL and LIVE_MANAGER_PASSWORD when running with --run-live."
+        )
+    return {"username": MANAGER_EMAIL, "password": MANAGER_PASSWORD}
 
 
 # ==============================================================================
@@ -54,10 +63,7 @@ def manager_token(api_client):
     """Authenticate as manager for session"""
     response = api_client.post(
         f"{API_BASE}/auth/token",
-        data={
-            "username": MANAGER_EMAIL,
-            "password": MANAGER_PASSWORD
-        }
+        data=_live_credentials(),
     )
 
     if response.status_code != 200:

@@ -23,6 +23,7 @@ Example:
 
 import asyncio
 import html
+import math
 import re
 import time
 import uuid
@@ -34,8 +35,17 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from config.settings import get_settings
+from core.enums import GenerationStatus
 from core.exceptions import WorkflowError
-from core.models import ContentPlan, GeneratedArticle, Keyword, QualityMetrics
+from core.models import (
+    ContentPlan,
+    GeneratedArticle,
+    Keyword,
+    QualityMetrics,
+    ValidationDetails,
+)
+from execution.article_quality_gate import evaluate_article_quality
+from execution.export_safety import render_safe_article_html
 from infrastructure.llm_client import UnifiedLLMClient
 from infrastructure.monitoring import MetricsCollector
 from intelligence.context_synthesizer import ContextSynthesizer
@@ -43,6 +53,34 @@ from intelligence.semantic_analyzer import SemanticAnalyzer
 from knowledge.article_repository import ArticleRepository
 from optimization.prompt_compressor import prompt_compressor
 from optimization.token_budget_manager import TokenBudgetManager
+
+
+def _completion_token_limit(word_count: int, language: str) -> int:
+    """Return a bounded completion budget sized for the requested output."""
+    tokens_per_word = 3.0 if language.lower().startswith(("fa", "ar")) else 2.0
+    return min(16000, max(256, math.ceil(word_count * tokens_per_word) + 256))
+
+
+def _section_word_target(plan: ContentPlan, section) -> int:
+    """Normalize a section estimate against the authoritative article target."""
+    sections = plan.outline.sections
+    estimated_total = sum(item.estimated_words for item in sections)
+    if estimated_total <= 0:
+        return max(1, round(plan.target_word_count / max(len(sections), 1)))
+    return max(1, round(plan.target_word_count * section.estimated_words / estimated_total))
+
+
+def _response_model_identity(response, fallback_model: str) -> str:
+    """Return the provider/model identity that actually served a response."""
+    model = str(getattr(response, "model", None) or fallback_model)
+    provider = getattr(response, "provider", None)
+    provider_name = getattr(provider, "value", provider)
+    if not provider_name:
+        return model
+    provider_name = str(provider_name)
+    if model.startswith(f"{provider_name}/"):
+        return model
+    return f"{provider_name}/{model}"
 
 
 def _smart_truncate_html(text: str, max_chars: int = 8000) -> str:
@@ -75,7 +113,7 @@ def _smart_truncate_html(text: str, max_chars: int = 8000) -> str:
             current_length += len(element_text)
         else:
             # Try to include part of this element if it's text
-            if element.name is None:  # Text node
+            if getattr(element, "name", None) is None:  # Text node
                 remaining = max_chars - current_length
                 if remaining > 100:  # Only if we can fit meaningful text
                     # Find sentence boundary
@@ -154,6 +192,8 @@ class ContentGenerator:
         writing_model: Optional[str] = None,
         verification_model: Optional[str] = None,
         temperature: Optional[float] = None,
+        generation_feedback: Optional[str] = None,
+        persist: bool = True,
         **kwargs,
     ) -> GeneratedArticle:
         settings = get_settings()
@@ -217,7 +257,14 @@ class ContentGenerator:
             f"sections={len(plan.outline.sections)} | temperature={temperature}"
         )
         section_tasks = [
-            self._generate_section(project_id, plan, section, writing_model, temperature)
+            self._generate_section(
+                project_id,
+                plan,
+                section,
+                writing_model,
+                temperature,
+                generation_feedback,
+            )
             for section in plan.outline.sections
         ]
 
@@ -227,9 +274,10 @@ class ContentGenerator:
         article_content_parts = []
         total_tokens = 0
         total_cost = 0.0
+        model_identities: set[str] = set()
 
         for i, result in enumerate(section_results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.error(f"Section {i} failed: {result}")
                 # Continue with other sections rather than failing completely
                 article_content_parts.append(
@@ -237,10 +285,11 @@ class ContentGenerator:
                     f"<p><em>[Content generation failed for this section]</em></p>\n"
                 )
             else:
-                formatted_section, tokens, cost = result
+                formatted_section, tokens, cost, model_identity = result
                 article_content_parts.append(formatted_section)
                 total_tokens += tokens
                 total_cost += cost
+                model_identities.add(model_identity)
 
         # Assemble draft article
         draft_content = "\n".join(article_content_parts)
@@ -258,19 +307,26 @@ class ContentGenerator:
 
         # Refine (Style) - Critic/Editor pattern
         logger.info("Refining content for style compliance...")
-        refined_content, refine_tokens, refine_cost = await self._refine_content(
-            draft_content, plan, writing_model
+        refined_content, refine_tokens, refine_cost, refine_models = await self._refine_content(
+            draft_content,
+            plan,
+            writing_model,
+            generation_feedback,
         )
         total_tokens += refine_tokens
         total_cost += refine_cost
+        model_identities.update(refine_models)
 
         # Verify (Facts) - LLM hallucination self-check
         logger.info("Verifying facts in generated content...")
-        verified_content, verify_tokens, verify_cost = await self._verify_facts(
-            refined_content, verification_model
+        verified_content, verify_tokens, verify_cost, verify_models = await self._verify_facts(
+            refined_content,
+            verification_model,
+            plan,
         )
         total_tokens += verify_tokens
         total_cost += verify_cost
+        model_identities.update(verify_models)
 
         # Run quality analysis
         quality_metrics = await self._run_quality_analysis(verified_content, plan.primary_keywords)
@@ -301,22 +357,39 @@ class ContentGenerator:
             quality_metrics=quality_metrics,
             validation_result=validation_details.validation_result,
             validation_details=validation_details,
-            model_used=writing_model,
-            status="completed",
+            model_used=", ".join(sorted(model_identities)) or writing_model,
+            status=GenerationStatus.COMPLETED,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
 
-        await self.article_repo.save_generated_article(article)
+        if persist:
+            if not article.title.strip():
+                raise WorkflowError("Article failed release gate before persistence: title is required")
+            release_gate = evaluate_article_quality(
+                article.content,
+                language=plan.language,
+                target_word_count=plan.target_word_count,
+                require_faq=bool(kwargs.get("include_faq")),
+            )
+            if not release_gate.passed:
+                raise WorkflowError(
+                    "Article failed release gate before persistence: "
+                    f"{release_gate.to_dict()}"
+                )
+            await self.finalize_article(article, plan)
 
-        # Export article to filesystem
-        await self._export_article_to_files(article, plan)
-
+        persistence_state = "finalized" if persist else "pending release gate"
         logger.success(
-            f"✓ Article generated and saved: {article.title} "
+            f"Article generated and {persistence_state}: {article.title} "
             f"({total_tokens} tokens, ${total_cost:.4f}, {generation_time:.1f}s)"
         )
         return article
+
+    async def finalize_article(self, article: GeneratedArticle, plan: ContentPlan) -> None:
+        """Persist and export an already accepted article exactly once."""
+        await self.article_repo.save_generated_article(article)
+        await self._export_article_to_files(article, plan)
 
     async def _generate_section(
         self,
@@ -325,7 +398,8 @@ class ContentGenerator:
         section,
         writing_model: str,
         temperature: float = 0.7,
-    ) -> tuple[str, int, float]:
+        generation_feedback: Optional[str] = None,
+    ) -> tuple[str, int, float, str]:
         """Generate a single article section with budget tracking.
 
         Called concurrently for all sections via asyncio.gather.
@@ -337,21 +411,27 @@ class ContentGenerator:
             writing_model: LLM model to use for drafting.
 
         Returns:
-            Tuple of (formatted_html, tokens_used, cost_usd).
+            Tuple of (formatted_html, tokens_used, cost_usd, provider/model identity).
 
         Raises:
             Exception: If section generation fails (caught by caller).
         """
         try:
             # Build section-specific prompt
-            section_prompt = await self._build_section_prompt(plan, section)
+            section_target = _section_word_target(plan, section)
+            section_prompt = await self._build_section_prompt(
+                plan,
+                section,
+                section_target,
+                generation_feedback,
+            )
 
             # Call LLM to generate section content
             response = await self.llm_client.complete(
                 prompt=section_prompt,
                 model=writing_model,
                 temperature=temperature,
-                max_tokens=2000,
+                max_tokens=_completion_token_limit(section_target, plan.language),
             )
 
             # Clean LLM response before formatting
@@ -376,7 +456,12 @@ class ContentGenerator:
                 f"({response.usage.total_tokens} tokens, ${response.cost:.4f})"
             )
 
-            return formatted_section, response.usage.total_tokens, response.cost
+            return (
+                formatted_section,
+                response.usage.total_tokens,
+                response.cost,
+                _response_model_identity(response, writing_model),
+            )
 
         except Exception as e:
             logger.error(f"Failed to generate section '{section.heading}': {e}")
@@ -399,7 +484,13 @@ class ContentGenerator:
 
         return content.strip()
 
-    async def _build_section_prompt(self, plan: ContentPlan, section) -> str:
+    async def _build_section_prompt(
+        self,
+        plan: ContentPlan,
+        section,
+        section_target: int,
+        generation_feedback: Optional[str] = None,
+    ) -> str:
         """Build LLM prompt for writing a specific article section.
 
         Uses prompt compression for cost optimization.
@@ -412,7 +503,7 @@ class ContentGenerator:
         Returns:
             Formatted prompt string for LLM.
         """
-        target_word_count = getattr(plan, "target_word_count", None) or 500
+        article_target = getattr(plan, "target_word_count", None) or 500
         tone = self._get_rulebook_value("tone", "authoritative")
         style = self._get_rulebook_value("style", "concise")
         language = getattr(plan, "language", "en")
@@ -420,7 +511,7 @@ class ContentGenerator:
         # Language-specific instructions
         if language == "fa":
             language_instruction = """
-CRITICAL: Write the entire article in Persian (Farsi/فارسی).
+CRITICAL: Write this section in Persian (Farsi/فارسی).
 - Use formal Persian writing style (نوشتار رسمی فارسی)
 - Write right-to-left (RTL)
 - Use Persian numerals (۱, ۲, ۳) where appropriate
@@ -440,16 +531,38 @@ CRITICAL: Write the entire article in Persian (Farsi/فارسی).
                 "tone": tone,
                 "style": style,
                 "structure": "Use <h2> for main sections, <h3> for subsections",
-                "target_word_count": str(target_word_count),
-                "word_count": str(target_word_count),
+                "target_word_count": str(section_target),
+                "word_count": str(section_target),
                 "language_instruction": language_instruction,
             }
         )
-        return result.compressed_prompt
+        lower_bound = max(1, math.floor(section_target * 0.85))
+        upper_bound = max(lower_bound, math.ceil(section_target * 1.15))
+        feedback_instruction = (
+            f"\nPrevious-candidate correction: {generation_feedback}"
+            if generation_feedback
+            else ""
+        )
+        return (
+            f"{result.compressed_prompt}\n\n"
+            "HARD OUTPUT CONTRACT:\n"
+            f"- Write only the section named: {section.heading}\n"
+            f"- The complete article target is {article_target} words.\n"
+            f"- This section must contain {lower_bound}-{upper_bound} words "
+            f"(target {section_target}).\n"
+            "- Do not repeat the H2 heading; the caller adds it.\n"
+            "- Use at most one H3 subsection and do not add unrelated sections.\n"
+            "- Never expand this section into a complete article."
+            f"{feedback_instruction}"
+        )
 
     async def _refine_content(
-        self, draft: str, plan: ContentPlan, writing_model: str
-    ) -> tuple[str, int, float]:
+        self,
+        draft: str,
+        plan: ContentPlan,
+        writing_model: str,
+        generation_feedback: Optional[str] = None,
+    ) -> tuple[str, int, float, set[str]]:
         """Apply critic/editor pattern for style refinement.
 
         Two-step process:
@@ -462,7 +575,7 @@ CRITICAL: Write the entire article in Persian (Farsi/فارسی).
             model: LLM model to use.
 
         Returns:
-            Tuple of (refined_content, tokens_used, cost_usd).
+            Tuple of (refined_content, tokens_used, cost_usd, provider/model identities).
 
         Note:
             Skips editor step if critic finds no issues.
@@ -470,6 +583,7 @@ CRITICAL: Write the entire article in Persian (Farsi/فارسی).
         """
         total_tokens = 0
         total_cost = 0.0
+        model_identities: set[str] = set()
 
         # Critic step: Ask LLM to critique the content
         rulebook_summary = ""
@@ -501,15 +615,16 @@ CRITICAL: Write the entire article in Persian (Farsi/فارسی).
             )
             total_tokens += critic_response.usage.total_tokens
             total_cost += critic_response.cost
+            model_identities.add(_response_model_identity(critic_response, writing_model))
             critique = critic_response.content
         except Exception as e:
             logger.warning(f"Critic step failed: {e}. Skipping refinement.")
-            return draft, total_tokens, total_cost
+            return draft, total_tokens, total_cost, model_identities
 
         # If no issues, return draft as is
         if "no issues" in critique.lower():
             logger.debug("Critic found no issues; skipping editor step.")
-            return draft, total_tokens, total_cost
+            return draft, total_tokens, total_cost, model_identities
 
         # Editor step: Ask LLM to apply the critique
         editor_prompt = f"""
@@ -528,23 +643,35 @@ CRITICAL: Write the entire article in Persian (Farsi/فارسی).
         - Do NOT include DOCTYPE, <html>, <head>, or <body> tags
         - Preserve the original structure and headings
         - Only fix the specific issues mentioned in the critique
+        - Preserve the requested article length of approximately {plan.target_word_count} words
+        - Do not add new sections or expand the article
+        {f'- Correct the previous release-gate failure: {generation_feedback}' if generation_feedback else ''}
         """
 
         try:
             editor_response = await self.llm_client.complete(
-                prompt=editor_prompt, model=writing_model, temperature=0.4, max_tokens=4000
+                prompt=editor_prompt,
+                model=writing_model,
+                temperature=0.4,
+                max_tokens=_completion_token_limit(plan.target_word_count, plan.language),
             )
             total_tokens += editor_response.usage.total_tokens
             total_cost += editor_response.cost
+            model_identities.add(_response_model_identity(editor_response, writing_model))
             refined = editor_response.content
         except Exception as e:
             logger.warning(f"Editor step failed: {e}. Returning original draft.")
-            return draft, total_tokens, total_cost
+            return draft, total_tokens, total_cost, model_identities
 
         logger.debug("Content refinement complete.")
-        return refined, total_tokens, total_cost
+        return refined, total_tokens, total_cost, model_identities
 
-    async def _verify_facts(self, content: str, verification_model: str) -> tuple[str, int, float]:
+    async def _verify_facts(
+        self,
+        content: str,
+        verification_model: str,
+        plan: ContentPlan,
+    ) -> tuple[str, int, float, set[str]]:
         """Verify factual accuracy using LLM fact-checking.
 
         Process:
@@ -557,13 +684,14 @@ CRITICAL: Write the entire article in Persian (Farsi/فارسی).
             model: LLM model to use for fact-checking.
 
         Returns:
-            Tuple of (verified_content, tokens_used, cost_usd).
+            Tuple of (verified_content, tokens_used, cost_usd, provider/model identities).
 
         Note:
             Returns original content unchanged if verification fails.
         """
         total_tokens = 0
         total_cost = 0.0
+        model_identities: set[str] = set()
 
         # Step 1: Extract and verify claims
         verify_prompt = f"""You are a fact-checker. Analyze this article for factual accuracy.
@@ -590,10 +718,13 @@ If no issues found, respond with: ALL_FACTS_VERIFIED"""
             )
             total_tokens += verify_response.usage.total_tokens
             total_cost += verify_response.cost
+            model_identities.add(
+                _response_model_identity(verify_response, verification_model)
+            )
             verification_report = verify_response.content
         except Exception as e:
             logger.warning(f"Fact verification failed: {e}. Returning content as-is.")
-            return content, total_tokens, total_cost
+            return content, total_tokens, total_cost, model_identities
 
         # Log verification report for auditing
         logger.info(f"Fact verification report:\n{verification_report[:500]}...")
@@ -601,7 +732,7 @@ If no issues found, respond with: ALL_FACTS_VERIFIED"""
         # Step 2: If issues found, add disclaimers or request corrections
         if "ALL_FACTS_VERIFIED" in verification_report:
             logger.debug("All facts verified - no corrections needed")
-            return content, total_tokens, total_cost
+            return content, total_tokens, total_cost, model_identities
 
         # Parse LOW confidence claims
         low_confidence_claims = []
@@ -614,7 +745,7 @@ If no issues found, respond with: ALL_FACTS_VERIFIED"""
                     low_confidence_claims.append({"claim": claim, "issue": issue})
 
         if not low_confidence_claims:
-            return content, total_tokens, total_cost
+            return content, total_tokens, total_cost, model_identities
 
         # Step 3: Apply corrections or add disclaimers
         logger.warning(f"Found {len(low_confidence_claims)} low-confidence claims")
@@ -632,6 +763,8 @@ Instructions:
 2. For incorrect facts, correct them if you know the right answer, otherwise remove or hedge
 3. Preserve the article structure and flow
 4. Output the corrected article only, no explanations
+5. Preserve the requested article length of approximately {plan.target_word_count} words
+6. Do not add new sections or expand the article
 
 CRITICAL FORMAT REQUIREMENTS:
 - Output in MARKDOWN format ONLY
@@ -641,20 +774,26 @@ CRITICAL FORMAT REQUIREMENTS:
 
         try:
             correction_response = await self.llm_client.complete(
-                prompt=correction_prompt, model=verification_model, temperature=0.3, max_tokens=4000
+                prompt=correction_prompt,
+                model=verification_model,
+                temperature=0.3,
+                max_tokens=_completion_token_limit(plan.target_word_count, plan.language),
             )
             total_tokens += correction_response.usage.total_tokens
             total_cost += correction_response.cost
+            model_identities.add(
+                _response_model_identity(correction_response, verification_model)
+            )
             corrected_content = correction_response.content
 
             logger.info(f"Applied corrections for {len(low_confidence_claims)} claims")
-            return corrected_content, total_tokens, total_cost
+            return corrected_content, total_tokens, total_cost, model_identities
 
         except Exception as e:
             logger.warning(f"Fact correction failed: {e}. Returning original with disclaimer.")
             # Add a general disclaimer if correction fails
             disclaimer = "\n\n---\n*Note: Some statistics in this article may require independent verification.*\n"
-            return content + disclaimer, total_tokens, total_cost
+            return content + disclaimer, total_tokens, total_cost, model_identities
 
     async def _run_quality_analysis(self, content: str, keywords: list[Keyword]) -> QualityMetrics:
         """
@@ -748,7 +887,7 @@ CRITICAL FORMAT REQUIREMENTS:
             ValidationDetails with specific issues and overall validation result
         """
         from core.enums import ValidationResult
-        from core.models import ValidationDetails, ValidationIssue
+        from core.models import ValidationIssue
 
         issues = []
 
@@ -846,92 +985,10 @@ CRITICAL FORMAT REQUIREMENTS:
         )
 
     def _sanitize_content_for_html(self, content: str) -> str:
-        """
-        Sanitize article content before inserting into HTML wrapper.
+        """Convert article Markdown or HTML to a safe semantic fragment."""
+        return render_safe_article_html(content)
 
-        This function:
-        1. Detects if content already contains HTML tags
-        2. Extracts body content if it's a full HTML document
-        3. Converts Markdown to clean HTML
-        4. Removes any duplicate DOCTYPE/html/head/body tags
-
-        Args:
-            content: Raw article content (may be Markdown or HTML)
-
-        Returns:
-            Clean HTML content ready to be wrapped
-        """
-        import re
-
-        from bs4 import BeautifulSoup
-
-        # Try to import markdown library, use fallback if not available
-        try:
-            import markdown
-            has_markdown = True
-        except ImportError:
-            has_markdown = False
-            logger.debug("Markdown library not available, using regex fallback")
-
-        # Check if content contains HTML tags
-        has_html_tags = bool(re.search(r'<(?:html|head|body|!DOCTYPE)', content, re.IGNORECASE))
-
-        if has_html_tags:
-            # Content already has HTML - extract body content only
-            try:
-                soup = BeautifulSoup(content, 'html.parser')
-
-                # Try to find body tag first
-                body = soup.find('body')
-                if body:
-                    # Extract everything inside body, excluding the body tag itself
-                    clean_content = ''.join(str(child) for child in body.children)
-                else:
-                    # No body tag - just remove DOCTYPE, html, head tags
-                    for tag_name in ['!DOCTYPE', 'html', 'head', 'meta', 'title', 'style', 'script']:
-                        for tag in soup.find_all(tag_name):
-                            tag.decompose()
-                    clean_content = str(soup)
-
-                # Remove empty lines and excessive whitespace
-                clean_content = re.sub(r'\n\s*\n', '\n\n', clean_content)
-                return clean_content.strip()
-            except Exception as e:
-                logger.warning(f"Failed to parse HTML content, using as-is: {e}")
-                # Fallback - remove obvious HTML wrapper tags with regex
-                content = re.sub(r'<!DOCTYPE[^>]*>', '', content, flags=re.IGNORECASE)
-                content = re.sub(r'</?html[^>]*>', '', content, flags=re.IGNORECASE)
-                content = re.sub(r'</?head[^>]*>', '', content, flags=re.IGNORECASE)
-                content = re.sub(r'</?body[^>]*>', '', content, flags=re.IGNORECASE)
-                return content.strip()
-        else:
-            # Content is Markdown - convert to HTML
-            if has_markdown:
-                try:
-                    # Convert Markdown to HTML with extensions for better formatting
-                    html_content = markdown.markdown(
-                        content,
-                        extensions=['extra', 'nl2br', 'sane_lists']
-                    )
-                    return html_content
-                except Exception as e:
-                    logger.warning(f"Failed to convert Markdown to HTML: {e}")
-                    has_markdown = False  # Fall through to regex conversion
-
-            # Fallback - basic Markdown conversion with regex
-            content = re.sub(r'^### (.+)$', r'<h3>\1</h3>', content, flags=re.MULTILINE)
-            content = re.sub(r'^## (.+)$', r'<h2>\1</h2>', content, flags=re.MULTILINE)
-            content = re.sub(r'^# (.+)$', r'<h1>\1</h1>', content, flags=re.MULTILINE)
-            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
-            content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
-            # Convert paragraphs (double newlines to </p><p>)
-            content = re.sub(r'\n\n+', '</p>\n<p>', content)
-            # Wrap in paragraph tags if not already wrapped
-            if not content.strip().startswith('<'):
-                content = f'<p>{content}</p>'
-            return content
-
-    async def _export_article_to_files(self, article, plan) -> None:
+    async def _export_article_to_files(self, article, plan) -> bool:
         """
         Export generated article to filesystem in HTML and Markdown formats.
 
@@ -1030,13 +1087,13 @@ CRITICAL FORMAT REQUIREMENTS:
 </head>
 <body>
     <article>
-        <h1>{article.title}</h1>
+        <h1>{safe_html_title}</h1>
 
         <div class="meta">
-            <p><strong>{"توضیحات متا:" if is_rtl else "Meta Description:"}</strong> {article.meta_description}</p>
+            <p><strong>{"توضیحات متا:" if is_rtl else "Meta Description:"}</strong> {safe_meta}</p>
             <p><strong>{"تعداد کلمات:" if is_rtl else "Word Count:"}</strong> {article.quality_metrics.word_count}</p>
             <div class="keywords">
-                {"".join(f'<span class="keyword">{kw}</span>' for kw in article.keywords[:10])}
+                {"".join(f'<span class="keyword">{html.escape(kw, quote=True)}</span>' for kw in article.keywords[:10])}
             </div>
         </div>
 
@@ -1067,21 +1124,30 @@ CRITICAL FORMAT REQUIREMENTS:
 *{article.created_at.strftime("%Y-%m-%d %H:%M")} | {"تعداد کلمات" if is_rtl else "Words"}: {article.quality_metrics.word_count} | {"هزینه" if is_rtl else "Cost"}: ${article.total_cost_usd:.4f}*
 '''
 
-            # Write files
+            # Write files atomically so a lease-expiry retry cannot leave a
+            # partially written export visible to a reader.
             html_path = export_base / f"{safe_title}.html"
             md_path = export_base / f"{safe_title}.md"
 
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(html_content)
+            def atomic_write(path: Path, content: str) -> None:
+                temporary_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+                try:
+                    temporary_path.write_text(content, encoding="utf-8")
+                    os.replace(temporary_path, path)
+                finally:
+                    if temporary_path.exists():
+                        temporary_path.unlink()
 
-            with open(md_path, "w", encoding="utf-8") as f:
-                f.write(md_content)
+            atomic_write(html_path, html_content)
+            atomic_write(md_path, md_content)
 
             logger.info(
                 f"✓ Article exported to files | "
                 f"html={html_path} | md={md_path}"
             )
+            return True
 
         except Exception as e:
             # Don't fail the entire generation if export fails
             logger.warning(f"Failed to export article to files: {e}")
+            return False

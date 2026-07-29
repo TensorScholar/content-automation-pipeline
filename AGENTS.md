@@ -25,6 +25,18 @@
 - Screenshot requests must specify exact screen, state, language/theme, window size if relevant, and what must be visible.
 - Report before commit.
 
+## Closed-Loop Launch-Critical Workflow
+- Launch-critical work must use a closed loop: discovery → planning → execution → verification → bounded iteration. Do not perform open-ended exploration unless explicitly requested.
+- Start discovery with `git status -sb`; inspect relevant files and render paths before changing code, and do not edit during discovery.
+- For non-trivial tasks, report a planning table before patching: `Failure / Goal → file or render path → minimal planned change → verification method`.
+- Make surgical changes only: every changed line must map to the explicit goal or acceptance criteria. Do not broaden scope, refactor adjacent code, or add speculative abstractions/features unless explicitly requested.
+- Respect safety boundaries: no backend, schema, migration, dependency, Docker, CI, or lockfile changes unless explicitly allowed. If backend files appear modified during a frontend-only task, stop and report.
+- Do not use `git add .`; do not stage, commit, or push unless explicitly approved; do not stash pop/apply; never touch `artifacts/`.
+- UI changes are not accepted by lint/build alone. Require targeted manual screenshots or explicit visual approval, and do not claim a visual pass without seeing the UI.
+- Use relevant `rg` checks for raw strings, localization leaks, and acceptance criteria. Run validation commands appropriate to the touched area; for frontend changes, run lint, typecheck, and build unless the user explicitly narrows validation.
+- Self-review loops must have a maximum iteration count. If still failing after the limit, stop and report remaining blockers instead of expanding scope.
+- Final reports must include exact modified files, diff stat, validation commands/results, remaining blockers, and safety confirmations: no backend changes, no artifacts touched, no stash pop/apply, and nothing staged/committed/pushed.
+
 ## Commit and Screenshot Rules
 - Do not use `git add .`.
 - Stage exact files only.

@@ -24,22 +24,26 @@ Example:
 import asyncio
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from uuid import UUID
 
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from config.settings import settings
+from core.enums import DistributionChannel
 from core.exceptions import (
     InsufficientContextError,
     ProjectNotFoundError,
     TokenBudgetExceededError,
     WorkflowError,
+    is_retryable,
 )
 from core.models import ContentPlan, GeneratedArticle, InferredPatterns, Keyword, Project, Rulebook
+from execution.article_quality_gate import evaluate_article_quality
 from execution.content_generator import ContentGenerator
 from execution.content_planner import ContentPlanner
+from execution.keyword_researcher import Keyword as ResearchedKeyword
 from execution.keyword_researcher import KeywordResearcher
 from infrastructure.database import DatabaseManager
 from infrastructure.llm_usage import llm_usage_context
@@ -65,6 +69,46 @@ class WorkflowState(str, Enum):
     DISTRIBUTION = "distribution"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+KeywordInput = Keyword | ResearchedKeyword
+
+
+def _quality_diagnostics_from_release_gate(
+    release_gate: Dict[str, Any], *, regeneration_attempted: bool
+) -> Dict[str, Any]:
+    """Map the existing release-gate result to the task-detail API contract."""
+    field_map = {
+        "word_count": "actual_word_count",
+        "minimum_word_count": "min_word_count",
+        "maximum_word_count": "max_word_count",
+        "heading_count": "headings_count",
+        "paragraph_count": "paragraphs_count",
+        "language": "language",
+        "findings": "findings",
+    }
+    diagnostics = {
+        target: release_gate[source]
+        for source, target in field_map.items()
+        if source in release_gate
+    }
+    diagnostics["regeneration_attempted"] = regeneration_attempted
+    return diagnostics
+
+
+def _wrap_workflow_error(error: Exception, *, workflow_step: str) -> WorkflowError:
+    """Preserve structured retry metadata when crossing the agent boundary."""
+    wrapped_error = WorkflowError(
+        f"Workflow execution failed at {workflow_step}: {str(error)}",
+        workflow_step=workflow_step,
+    )
+    wrapped_error.retryable = is_retryable(error)
+    if isinstance(error, WorkflowError):
+        wrapped_error.context.update(error.context)
+    source_error_code = getattr(error, "error_code", None)
+    if source_error_code:
+        wrapped_error.context["source_error_code"] = source_error_code
+    return wrapped_error
 
 
 class WorkflowEvent(BaseModel):
@@ -152,7 +196,7 @@ class ContentAgent:
         custom_instructions: Optional[str] = None,
         project_context: Optional[Dict] = None,
         language: str = "fa",  # Default to Persian
-        **kwargs,  # Extended parameters (word_count, tone, seo_settings, etc.)
+        **kwargs: Any,  # Extended parameters (word_count, tone, seo_settings, etc.)
     ) -> GeneratedArticle:
         """
         Execute complete content creation workflow from topic to published article.
@@ -165,6 +209,7 @@ class ContentAgent:
             language: Content language - 'fa' for Persian (default), 'en' for English
             **kwargs: Additional parameters like word_count_range, tone, seo_settings
         """
+        defer_finalization = bool(kwargs.pop("_defer_finalization", False))
         workflow_id = f"workflow_{datetime.now(timezone.utc).timestamp()}"
         start_time = datetime.now(timezone.utc)
         usage_context = llm_usage_context(
@@ -256,36 +301,98 @@ class ContentAgent:
                 topic=topic,
                 **kwargs,  # Propagate extended params
             )
+            article.total_cost_usd += max(
+                0.0, float(getattr(content_plan, "estimated_cost_usd", 0.0) or 0.0)
+            )
 
             # Stage 5: Quality validation
             await self._transition_state(WorkflowState.QUALITY_VALIDATION)
-            validation_result = await self._validate_article_quality(article)
+            validation_result = await self._validate_article_quality(
+                article,
+                language=language,
+                target_word_count=content_plan.target_word_count,
+                require_faq=bool(kwargs.get("include_faq")),
+            )
 
-            if not validation_result["passed"] and not self.config.require_manual_approval:
+            if not validation_result["passed"]:
                 logger.warning(
                     f"Article failed quality validation | workflow_id={workflow_id} | "
                     f"issues={validation_result['issues']}"
                 )
 
                 # Attempt regeneration if retries available
-                if self.current_workflow.get("retry_count", 0) < self.config.max_generation_retries:
+                if self.current_workflow.get("retry_count", 0) < min(
+                    self.config.max_generation_retries, 1
+                ):
                     logger.info("Attempting article regeneration with enhanced parameters")
                     self.current_workflow["retry_count"] = (
                         self.current_workflow.get("retry_count", 0) + 1
                     )
 
                     try:
+                        consumed_tokens = article.total_tokens_used
+                        consumed_cost = article.total_cost_usd
+                        consumed_time = article.generation_time_seconds
                         # Regenerate with stricter parameters
                         article = await self._regenerate_with_feedback(
                             content_plan=content_plan,
                             project=project_context["project"],
                             feedback=validation_result["issues"],
+                            release_gate=validation_result["release_gate"],
                             model_override=kwargs.get("model_override"),
                         )
-                    except Exception as regen_err:
-                        logger.error(
-                            f"Regeneration failed, proceeding with original article: {regen_err}"
+                        article.total_tokens_used += consumed_tokens
+                        article.total_cost_usd += consumed_cost
+                        article.generation_time_seconds += consumed_time
+                        validation_result = await self._validate_article_quality(
+                            article,
+                            language=language,
+                            target_word_count=content_plan.target_word_count,
+                            require_faq=bool(kwargs.get("include_faq")),
                         )
+                    except Exception as regen_err:
+                        diagnostics = validation_result["release_gate"]
+                        error = WorkflowError(
+                            f"Article regeneration failed: {regen_err}",
+                            workflow_step=WorkflowState.QUALITY_VALIDATION.value,
+                        )
+                        error.context["release_gate"] = diagnostics
+                        error.context["regeneration_attempted"] = True
+                        error.context["quality_diagnostics"] = (
+                            _quality_diagnostics_from_release_gate(
+                                diagnostics,
+                                regeneration_attempted=True,
+                            )
+                        )
+                        error.retryable = is_retryable(regen_err)
+                        raise error from regen_err
+
+            if not validation_result["passed"]:
+                findings = "; ".join(validation_result["issues"])
+                diagnostics = validation_result["release_gate"]
+                regeneration_attempted = self.current_workflow.get("retry_count", 0) > 0
+                error = WorkflowError(
+                    f"Article failed release gate: {findings} | "
+                    f"regeneration_attempted={regeneration_attempted}",
+                    workflow_step=WorkflowState.QUALITY_VALIDATION.value,
+                )
+                error.context["release_gate"] = diagnostics
+                error.context["regeneration_attempted"] = regeneration_attempted
+                error.context["quality_diagnostics"] = _quality_diagnostics_from_release_gate(
+                    diagnostics,
+                    regeneration_attempted=regeneration_attempted,
+                )
+                error.context["terminal_reason"] = "release_quality"
+                error.retryable = False
+                raise error
+
+            if defer_finalization:
+                # Celery commits accepted content together with its durable task
+                # result and export request. Keeping this method side-effect-free
+                # on that path prevents duplicate persistence on redelivery.
+                return article
+
+            await self.content_generator.finalize_article(article, content_plan)
 
             # Stage 6: Distribution (if enabled)
             if self.config.enable_auto_distribution:
@@ -321,6 +428,12 @@ class ContentAgent:
             )
             raise
         except Exception as e:
+            current_state = self.current_workflow["state"]
+            failed_step = (
+                current_state.value
+                if isinstance(current_state, WorkflowState)
+                else str(current_state)
+            )
             await self._transition_state(WorkflowState.FAILED)
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
 
@@ -338,9 +451,8 @@ class ContentAgent:
                 f"Content creation failed | workflow_id={workflow_id} | "
                 f"state={self.current_workflow['state']} | error={e}"
             )
-            raise WorkflowError(
-                f"Workflow execution failed at {self.current_workflow['state']}: {str(e)}"
-            ) from e
+            wrapped_error = _wrap_workflow_error(e, workflow_step=failed_step)
+            raise wrapped_error from e
         finally:
             usage_context.__exit__(None, None, None)
 
@@ -375,23 +487,28 @@ class ContentAgent:
             project_repo = ProjectRepository(self.database_manager)
 
             # Parallel data loading
-            project, patterns = await asyncio.gather(
+            gathered = await asyncio.gather(
                 project_repo.get_by_id(project_id),
                 self.project_repo.get_inferred_patterns(project_id),
                 return_exceptions=True,
             )
+            project_result = cast(Project | None | Exception, gathered[0])
+            patterns_result = cast(InferredPatterns | None | Exception, gathered[1])
 
             # Handle exceptions from parallel execution
-            if isinstance(project, Exception):
-                raise ProjectNotFoundError(f"Project not found: {project_id}")
-            if not project:
-                raise ProjectNotFoundError(f"Project not found: {project_id}")
+            if isinstance(project_result, Exception):
+                raise ProjectNotFoundError(project_id)
+            if project_result is None:
+                raise ProjectNotFoundError(project_id)
+            project = project_result
 
-            if isinstance(patterns, Exception):
-                logger.warning(f"Failed to load patterns: {patterns}")
+            if isinstance(patterns_result, Exception):
+                logger.warning(f"Failed to load patterns: {patterns_result}")
                 patterns = None
+            else:
+                patterns = patterns_result
 
-            context = {
+            context: Dict[str, Any] = {
                 "project": project,
                 "rulebook": None,
                 "inferred_patterns": None,
@@ -450,7 +567,7 @@ class ContentAgent:
 
     async def _conduct_keyword_research(
         self, project: Project, topic: str
-    ) -> Dict[str, List[Keyword]]:
+    ) -> Dict[str, List[KeywordInput]]:
         """
         Execute keyword research with semantic clustering.
 
@@ -467,10 +584,10 @@ class ContentAgent:
             keywords = keywords.unwrap_or([])
 
         # Categorize keywords by search intent and volume
-        categorized = {
-            "primary": keywords[:5],  # Top performers
-            "secondary": keywords[5:15],  # Supporting keywords
-            "long_tail": keywords[15:],  # Niche, specific queries
+        categorized: Dict[str, List[KeywordInput]] = {
+            "primary": [keyword for keyword in keywords[:5]],  # Top performers
+            "secondary": [keyword for keyword in keywords[5:15]],  # Supporting keywords
+            "long_tail": [keyword for keyword in keywords[15:]],  # Niche, specific queries
         }
 
         self._record_event(
@@ -495,10 +612,10 @@ class ContentAgent:
         self,
         project: Project,
         topic: str,
-        keywords: Dict[str, List[Keyword]],
+        keywords: Dict[str, List[KeywordInput]],
         custom_instructions: Optional[str],
         language: str = "fa",
-        **kwargs,
+        **kwargs: Any,
     ) -> ContentPlan:
         """
         Generate strategic content plan with outline and metadata.
@@ -548,7 +665,7 @@ class ContentAgent:
         content_plan = await self.content_planner.create_content_plan(
             project=project,
             topic=topic,
-            keywords=keywords["primary"],
+            keywords=cast(List[Keyword], keywords["primary"]),
             custom_instructions=custom_instructions,
             language=language,
             target_word_count=target_word_count,
@@ -580,7 +697,7 @@ class ContentAgent:
         content_plan: ContentPlan,
         priority: str,
         topic: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> GeneratedArticle:
         """
         Generate complete article using content generator.
@@ -603,6 +720,7 @@ class ContentAgent:
             planning_model=planning_model,
             writing_model=writing_model,
             verification_model=verification_model,
+            persist=False,
             **kwargs,
         )
 
@@ -624,7 +742,14 @@ class ContentAgent:
 
         return article
 
-    async def _validate_article_quality(self, article: GeneratedArticle) -> Dict:
+    async def _validate_article_quality(
+        self,
+        article: GeneratedArticle,
+        *,
+        language: str,
+        target_word_count: int,
+        require_faq: bool = False,
+    ) -> Dict:
         """
         Comprehensive quality validation using multi-metric analysis.
 
@@ -632,36 +757,54 @@ class ContentAgent:
         """
         logger.debug(f"Validating article quality | article_id={article.id}")
 
-        issues = []
+        release_gate = evaluate_article_quality(
+            article.content or "",
+            language=language,
+            target_word_count=target_word_count,
+            require_faq=require_faq,
+        )
+        article.quality_metrics.word_count = release_gate.word_count
+        issues = [finding.message for finding in release_gate.findings]
+        title_present = bool(article.title and article.title.strip())
+        release_gate_data = release_gate.to_dict()
+        if not title_present:
+            issues.append("Article title is required.")
+            release_gate_data["passed"] = False
+            release_gate_data["findings"].append(
+                {
+                    "code": "missing_title",
+                    "severity": "error",
+                    "message": "Article title is required.",
+                    "expected": "a non-empty article title",
+                    "actual": "empty title",
+                }
+            )
+        advisories = []
 
         # Readability check (null-safe)
         readability = 0.0
         if article.quality_metrics and hasattr(article.quality_metrics, "readability_score"):
             readability = article.quality_metrics.readability_score or 0.0
         else:
-            issues.append("Quality metrics unavailable - manual review required")
+            advisories.append("Quality metrics unavailable - manual review required")
 
-        if readability < 60.0:
-            issues.append(f"Low readability: {readability:.1f} (target: 60+)")
+        if language.lower().startswith("en") and readability < 60.0:
+            advisories.append(f"Low readability: {readability:.1f} (target: 60+)")
 
-        # Length validation
-        word_count = len(article.content.split()) if article.content else 0
-        if word_count < 800:
-            issues.append(f"Article too short: {word_count} words (minimum: 800)")
-        elif word_count > 3500:
-            issues.append(f"Article too long: {word_count} words (maximum: 3500)")
+        word_count = release_gate.word_count
 
         # Keyword density validation
         avg_density = self._calculate_keyword_density(article.content, article.keywords)
 
         if avg_density < 0.005:
-            issues.append(f"Keyword density too low: {avg_density:.4f} (minimum: 0.005)")
+            advisories.append(f"Keyword density too low: {avg_density:.4f} (minimum: 0.005)")
         elif avg_density > 0.025:
-            issues.append(f"Keyword over-optimization: {avg_density:.4f} (maximum: 0.025)")
+            advisories.append(f"Keyword over-optimization: {avg_density:.4f} (maximum: 0.025)")
 
         # Plagiarism / Uniqueness Check (Requested Feature)
-        settings = self.current_workflow.get("settings", {})
-        if settings.get("check_plagiarism", False):
+        workflow = cast(Dict[str, Any], self.current_workflow)
+        workflow_settings = workflow.get("settings", {})
+        if workflow_settings.get("check_plagiarism", False):
             # Internal Uniqueness Check (Repetition Detection)
             # Detects if AI is looping or repeating phrases (internal plagiarism)
             grams = [article.content[i : i + 50] for i in range(0, len(article.content) - 50, 50)]
@@ -669,7 +812,7 @@ class ContentAgent:
             repetition_ratio = 1.0 - (len(unique_grams) / len(grams)) if grams else 0
 
             if repetition_ratio > 0.2:  # More than 20% repetitive chunks
-                issues.append(
+                advisories.append(
                     f"High repetition detected (Pseudo-Plagiarism): {repetition_ratio:.1%} content overlap"
                 )
             else:
@@ -677,11 +820,13 @@ class ContentAgent:
                     f"Plagiarism/Uniqueness check passed | article_id={article.id} | score={1-repetition_ratio:.2f}"
                 )
 
-        passed = len(issues) == 0
+        passed = release_gate.passed and title_present
 
         validation_result = {
             "passed": passed,
             "issues": issues,
+            "advisories": advisories,
+            "release_gate": release_gate_data,
             "metrics": {
                 "readability": readability,
                 "word_count": word_count,
@@ -710,6 +855,7 @@ class ContentAgent:
         content_plan: ContentPlan,
         project: Project,
         feedback: List[str],
+        release_gate: Optional[Dict[str, Any]] = None,
         model_override: Optional[str] = None,
     ) -> GeneratedArticle:
         """
@@ -726,39 +872,19 @@ class ContentAgent:
                 project=project, content_plan=None, priority="medium", topic="Regenerated content"
             )
 
-        # Enhance content plan based on feedback
+        # Preserve the request target; regeneration corrects output rather than
+        # silently changing the user's contract.
         enhanced_plan = content_plan.model_copy(deep=True)
 
-        # Adjust parameters based on feedback
-        for issue in feedback:
-            issue_lower = issue.lower()
-            if "too short" in issue_lower:
-                enhanced_plan.target_word_count = int(enhanced_plan.target_word_count * 1.3)
-                logger.info(f"Increased target word count to {enhanced_plan.target_word_count}")
-            elif "too long" in issue_lower:
-                enhanced_plan.target_word_count = int(enhanced_plan.target_word_count * 0.8)
-                logger.info(f"Decreased target word count to {enhanced_plan.target_word_count}")
-            elif "keyword density too low" in issue_lower:
-                # Add more keyword-focused sections
-                if hasattr(enhanced_plan, "sections") and enhanced_plan.sections:
-                    for section in enhanced_plan.sections:
-                        if hasattr(section, "keywords"):
-                            section.keywords = enhanced_plan.keywords[
-                                :3
-                            ]  # Ensure primary keywords in sections
-                logger.info("Enhanced keyword focus in sections")
-            elif "keyword over-optimization" in issue_lower:
-                # Reduce keyword count in sections
-                if hasattr(enhanced_plan, "sections") and enhanced_plan.sections:
-                    for section in enhanced_plan.sections:
-                        if hasattr(section, "keywords") and section.keywords:
-                            section.keywords = section.keywords[:1]  # Keep only primary keyword
-                logger.info("Reduced keyword density in sections")
-            elif "readability" in issue_lower:
-                # Request simpler language
-                if hasattr(enhanced_plan, "tone"):
-                    enhanced_plan.tone = "conversational"
-                logger.info("Adjusted tone for better readability")
+        gate = release_gate or {}
+        generation_feedback = (
+            "The previous candidate failed the release gate. "
+            f"Actual words: {gate.get('word_count', 'unknown')}; "
+            f"allowed range: {gate.get('minimum_word_count', 'unknown')}-"
+            f"{gate.get('maximum_word_count', 'unknown')}; "
+            f"requested target: {enhanced_plan.target_word_count}. "
+            f"Correct these findings without changing the requested target: {'; '.join(feedback)}"
+        )
 
         # Regenerate with adjusted plan
         article = await self.content_generator.generate_article(
@@ -767,21 +893,23 @@ class ContentAgent:
             planning_model=model_override or settings.llm.planning_model,
             writing_model=model_override or settings.llm.writing_model,
             verification_model=model_override or settings.llm.verification_model,
+            generation_feedback=generation_feedback,
+            persist=False,
         )
 
         return article
 
     async def _distribute_article(
         self, article: GeneratedArticle, project: Project
-    ) -> tuple[list[str], list[dict[str, Any]]]:
+    ) -> tuple[list[DistributionChannel], list[dict[str, Any]]]:
         """
         Distributes the article to all configured channels for the project.
         """
         if not self.config.enable_auto_distribution:
             return [], []
 
-        channels = []
-        results = []
+        channels: list[DistributionChannel] = []
+        results: list[dict[str, Any]] = []
 
         # 1. WordPress Distribution
         # Phase 3A: ContentAgent does not own the publishing audit/idempotency
@@ -802,10 +930,11 @@ class ContentAgent:
 
         return channels, results
 
-    async def _transition_state(self, new_state: WorkflowState):
+    async def _transition_state(self, new_state: WorkflowState) -> None:
         """Transition workflow to new state with event recording."""
-        old_state = self.current_workflow.get("state")
-        self.current_workflow["state"] = new_state
+        workflow = cast(Dict[str, Any], self.current_workflow)
+        old_state = workflow.get("state")
+        workflow["state"] = new_state
 
         logger.debug(f"Workflow state transition | {old_state} → {new_state}")
 
@@ -816,7 +945,12 @@ class ContentAgent:
             metadata={"previous_state": str(old_state) if old_state else None},
         )
 
-    def _record_event(self, state: WorkflowState, message: str, metadata: Dict = None):
+    def _record_event(
+        self,
+        state: WorkflowState,
+        message: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Record workflow event for audit trail."""
         event = WorkflowEvent(
             timestamp=datetime.now(timezone.utc),
@@ -876,7 +1010,9 @@ class ContentAgent:
         avg_density = total_density / len(keywords) if keywords else 0.0
         return avg_density
 
-    async def _record_workflow_metrics(self, article: GeneratedArticle, execution_time: float):
+    async def _record_workflow_metrics(
+        self, article: GeneratedArticle, execution_time: float
+    ) -> None:
         """Record comprehensive workflow metrics for monitoring."""
         self.metrics.record_workflow_completion(
             project_id=str(article.project_id),

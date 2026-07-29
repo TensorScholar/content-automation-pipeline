@@ -16,6 +16,10 @@ def set_required_settings(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "x" * 48)
     monkeypatch.setenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
     monkeypatch.setenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+    monkeypatch.setenv(
+        "CREDENTIAL_ENCRYPTION_KEY",
+        "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+    )
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("LLM_PRIMARY_MODEL", "gemini-2.5-flash-lite")

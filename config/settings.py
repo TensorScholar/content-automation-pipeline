@@ -25,7 +25,7 @@ Environment Variables:
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Callable, Dict, Literal, Optional, cast
 from urllib.parse import urlparse, urlunparse
 
 from dotenv import load_dotenv
@@ -206,6 +206,16 @@ class LLMSettings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "LLM_OPENAI_API_KEY"),
     )
     openai_org_id: Optional[str] = Field(default=None, alias="OPENAI_ORG_ID")
+    openai_compatible_base_url: Optional[str] = Field(
+        default=None, alias="OPENAI_COMPATIBLE_BASE_URL"
+    )
+    openai_compatible_api_key: Optional[SecretStr] = Field(
+        default=None, alias="OPENAI_COMPATIBLE_API_KEY"
+    )
+    openai_compatible_model: str = Field(
+        default="compatible/google/gemini-2.5-flash-lite",
+        alias="LLM_OPENAI_COMPATIBLE_MODEL",
+    )
     local_llm_url: Optional[str] = Field(default=None, alias="LOCAL_LLM_URL")
     primary_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_PRIMARY_MODEL")
     secondary_model: str = Field(default="claude-haiku-4-5-20251001", alias="LLM_SECONDARY_MODEL")
@@ -295,6 +305,8 @@ class LLMSettings(BaseSettings):
                 return "anthropic"
             if model_lower.startswith(("gemini/", "gemini-")):
                 return "gemini"
+            if model_lower.startswith("compatible/"):
+                return "openai_compatible"
             if model_lower.startswith("local-"):
                 return "local"
             return None
@@ -314,9 +326,12 @@ class LLMSettings(BaseSettings):
             or configured(os.getenv("GOOGLE_API_KEY"))
             or configured(os.getenv("LLM_GEMINI_API_KEY"))
         )
+        has_openai_compatible = configured(self.openai_compatible_base_url) and configured(
+            self.openai_compatible_api_key
+        )
         has_local = configured(self.local_llm_url) or configured(os.getenv("LOCAL_LLM_URL"))
         requested_provider = (self.provider or "").strip().lower()
-        supported_providers = {"anthropic", "openai", "gemini", "local"}
+        supported_providers = {"anthropic", "openai", "gemini", "openai_compatible", "local"}
         if requested_provider not in supported_providers:
             raise ValueError(
                 f"Unsupported LLM_PROVIDER '{self.provider}'. "
@@ -331,6 +346,7 @@ class LLMSettings(BaseSettings):
                 "anthropic": has_anthropic,
                 "openai": has_openai,
                 "gemini": has_gemini,
+                "openai_compatible": has_openai_compatible,
                 "local": has_local,
             }[requested_provider]
             if not provider_configured:
@@ -338,6 +354,7 @@ class LLMSettings(BaseSettings):
                     "anthropic": "ANTHROPIC_API_KEY or LLM_ANTHROPIC_API_KEY",
                     "openai": "OPENAI_API_KEY or LLM_OPENAI_API_KEY",
                     "gemini": "GEMINI_API_KEY, GOOGLE_API_KEY, or LLM_GEMINI_API_KEY",
+                    "openai_compatible": "OPENAI_COMPATIBLE_BASE_URL and OPENAI_COMPATIBLE_API_KEY",
                     "local": "LOCAL_LLM_URL",
                 }[requested_provider]
                 raise ValueError(
@@ -352,6 +369,7 @@ class LLMSettings(BaseSettings):
                 ("anthropic", has_anthropic),
                 ("gemini", has_gemini),
                 ("openai", has_openai),
+                ("openai_compatible", has_openai_compatible),
                 ("local", has_local),
             ]
             selected_is_configured = dict(provider_candidates).get(self.provider, False)
@@ -371,6 +389,8 @@ class LLMSettings(BaseSettings):
                 object.__setattr__(
                     self, "primary_model", os.getenv("LLM_OPENAI_MODEL", "gpt-4o-mini")
                 )
+            elif provider == "openai_compatible":
+                object.__setattr__(self, "primary_model", self.openai_compatible_model)
             elif provider == "local":
                 object.__setattr__(
                     self, "primary_model", os.getenv("LOCAL_LLM_MODEL", "local-qwen-turbo")
@@ -381,11 +401,11 @@ class LLMSettings(BaseSettings):
             object.__setattr__(self, "fallback_model", self.primary_model)
 
         # Log warning if no provider available
-        if not has_anthropic and not has_openai and not has_gemini and not has_local:
+        if not has_anthropic and not has_openai and not has_gemini and not has_openai_compatible and not has_local:
             import logging
 
             logging.warning(
-                "No LLM provider configured! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL"
+                "No LLM provider configured! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENAI_COMPATIBLE_BASE_URL/OPENAI_COMPATIBLE_API_KEY, or LOCAL_LLM_URL"
             )
 
         if not os.getenv("LLM_KEYWORD_MODEL"):
@@ -565,12 +585,18 @@ class Settings(BaseSettings):
     app_version: str = Field(default="1.0.0")
 
     # Component configurations
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
-    redis: RedisSettings = Field(default_factory=RedisSettings)
+    database: DatabaseSettings = Field(
+        default_factory=cast(Callable[[], DatabaseSettings], DatabaseSettings)
+    )
+    redis: RedisSettings = Field(
+        default_factory=cast(Callable[[], RedisSettings], RedisSettings)
+    )
     llm: LLMSettings = Field(default_factory=LLMSettings)
     nlp: NLPSettings = Field(default_factory=NLPSettings)
     scraping: ScrapingSettings = Field(default_factory=ScrapingSettings)
-    celery: CelerySettings = Field(default_factory=CelerySettings)
+    celery: CelerySettings = Field(
+        default_factory=cast(Callable[[], CelerySettings], CelerySettings)
+    )
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
 
@@ -760,7 +786,7 @@ def get_settings() -> Settings:
     Returns:
         Settings: Validated, immutable settings instance
     """
-    return Settings()
+    return cast(Callable[[], Settings], Settings)()
 
 
 # Module-level convenience exports

@@ -9,9 +9,7 @@ Shared fixtures for integration tests providing:
 - Authentication helpers
 """
 
-import asyncio
 import os
-from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -23,14 +21,6 @@ import pytest_asyncio
 # Test isolation is provided by the remaining test-specific variables below.
 os.environ["ENVIRONMENT"] = "development"
 os.environ["PYTEST_CURRENT_TEST"] = "true"
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Generator:
-    """Create event loop for session-scoped async fixtures."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture

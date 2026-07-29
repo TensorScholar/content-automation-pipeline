@@ -7,7 +7,7 @@
     "build": "next build",
     "build:tauri": "TAURI_STATIC_EXPORT=1 next build",
     "start": "next start -p 3001",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit --incremental false",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

@@ -16,14 +16,14 @@ import json
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Import dependency functions from new dependencies module
 from api.dependencies import (
@@ -35,7 +35,13 @@ from api.dependencies import (
 )
 from config.settings import settings
 from core.exceptions import WorkflowError
+from core.generation_contract import normalize_target_word_count, normalize_word_count_range
 from core.models import ContentPlan, GeneratedArticle
+from execution.export_safety import (
+    infer_article_language,
+    json_for_html_script,
+    render_safe_article_html,
+)
 from infrastructure.database import DatabaseManager
 from infrastructure.llm_options import validate_model_available
 from infrastructure.redis_client import RedisClient
@@ -90,11 +96,26 @@ class ContentQualityMetrics(BaseModel):
     article_id: str
     readability_score: float
     readability_grade: str
-    keyword_density: dict
-    semantic_coherence: float
-    structure_score: float
-    seo_score: float
-    overall_quality: float
+    keyword_density: float
+    keyword_analysis: dict[str, Any]
+    semantic_coherence: Optional[dict[str, Any]]
+    structure_score: dict[str, Any]
+    seo_score: dict[str, Any]
+    overall_quality: dict[str, Any]
+
+
+class ArticleEditRequest(BaseModel):
+    """Manual text update for an article."""
+
+    content: str = Field(..., min_length=1, max_length=500_000)
+    revision_note: Optional[str] = Field("Manual edit", max_length=500)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Article content cannot be empty.")
+        return value
 
 
 class ContentHistoryResponse(BaseModel):
@@ -129,48 +150,9 @@ class ContentAnalyticsResponse(BaseModel):
 
 def _build_jsonld_schema(title: str, content: str) -> dict:
     """
-    Build a lightweight JSON-LD payload (FAQ or HowTo) from article text.
+    Build a lightweight JSON-LD payload (Article) from article text.
     """
-    plain = re.sub(r"<[^>]+>", " ", content or "")
-    plain = re.sub(r"\s+", " ", plain).strip()
     title_safe = title or "Article"
-
-    # FAQ extraction: simple question-based heuristic.
-    questions = [q.strip() for q in re.findall(r"([^?.!]+[?؟])", plain) if len(q.strip()) > 8][:3]
-    if questions:
-        return {
-            "@context": "https://schema.org",
-            "@type": "FAQPage",
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "name": q,
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": f"See the article section that addresses: {q}",
-                    },
-                }
-                for q in questions
-            ],
-        }
-
-    # HowTo fallback from sentence chunks.
-    chunks = [c.strip() for c in re.split(r"[.!؟?]", plain) if len(c.strip()) > 20][:5]
-    if chunks:
-        return {
-            "@context": "https://schema.org",
-            "@type": "HowTo",
-            "name": title_safe,
-            "step": [
-                {
-                    "@type": "HowToStep",
-                    "position": idx + 1,
-                    "name": step[:90],
-                    "text": step,
-                }
-                for idx, step in enumerate(chunks)
-            ],
-        }
 
     return {
         "@context": "https://schema.org",
@@ -230,6 +212,20 @@ def _safe_task_error(raw_error: object) -> tuple[str, str | None]:
             "AI provider access is denied. Ask a manager to verify the API key, enabled API access, and network or regional restrictions.",
             "LLM_PROVIDER_ACCESS_DENIED",
         )
+    if any(
+        marker in normalized
+        for marker in (
+            "cannot reach",
+            "connection error",
+            "connection refused",
+            "provider is unreachable",
+            "llm_unavailable",
+        )
+    ):
+        return (
+            "The AI provider is temporarily unreachable. Check network access and provider status before retrying.",
+            "LLM_PROVIDER_UNAVAILABLE",
+        )
     if "authentication" in normalized or "api key" in normalized:
         return (
             "AI provider access is not configured correctly. Ask a manager to verify the API key.",
@@ -253,7 +249,7 @@ class GenerateContentRequest(BaseModel):
     custom_instructions: Optional[str] = Field(None, alias="additional_instructions", description="Custom generation instructions")
 
     # Extended fields from dashboard
-    word_count_range: Optional[str] = Field(None, description="Word count range (e.g., '1000-1500')")
+    word_count_range: Optional[str] = Field(None, description="Word count range (e.g., '800-1000')")
     target_word_count: Optional[int] = Field(None, description="Legacy target word count")
     tone: Optional[str] = Field(None, max_length=100, description="Writing tone")
     primary_keyword: Optional[str] = Field(None, max_length=200, description="Primary SEO keyword")
@@ -273,6 +269,16 @@ class GenerateContentRequest(BaseModel):
     include_toc: Optional[bool] = Field(False)
     include_technical_depth: Optional[bool] = Field(False)
     include_cta: Optional[bool] = Field(False)
+
+    @field_validator("word_count_range")
+    @classmethod
+    def validate_word_count_range(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_word_count_range(value)
+
+    @field_validator("target_word_count")
+    @classmethod
+    def validate_target_word_count(cls, value: Optional[int]) -> Optional[int]:
+        return normalize_target_word_count(value)
     language: str = Field("fa", pattern="^(en|fa)$", description="Content language: fa=Persian, en=English")
 
 
@@ -485,6 +491,11 @@ async def get_task_status(
 
     elif state == "FAILURE":
         response["status"] = "Task failed"
+        response["quality_diagnostics"] = None
+        if isinstance(db_result, dict):
+            quality_diagnostics = db_result.get("quality_diagnostics")
+            if isinstance(quality_diagnostics, dict):
+                response["quality_diagnostics"] = quality_diagnostics
         if db_task and db_task.get("error"):
             raw_error = db_task.get("error")
         else:
@@ -999,7 +1010,7 @@ async def get_article_jsonld_schema(
     user: User = Depends(get_current_active_user),
 ):
     """
-    Generate JSON-LD schema payload for rich snippets (FAQ/HowTo fallback).
+    Generate an Article JSON-LD payload from persisted article data.
     """
     article = await content_service.get_article(article_id, include_content=True)
     title = str(article.get("title", "Article"))
@@ -1027,21 +1038,31 @@ async def export_article_html_with_schema(
     article = await content_service.get_article(article_id, include_content=True)
     title = str(article.get("title", "Article"))
     content = str(article.get("content", ""))
+    language = infer_article_language(content, article.get("language"))
+
+    is_rtl = language in {"fa", "ar", "he", "ur"}
+    lang_attr = language
+    dir_attr = "rtl" if is_rtl else "ltr"
+
+    import html
+    title_escaped = html.escape(title)
+    safe_content = render_safe_article_html(content)
+
     schema = _build_jsonld_schema(title=title, content=content)
-    schema_json = json.dumps(schema, ensure_ascii=False)
+    schema_json = json_for_html_script(schema)
 
     html_payload = f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{lang_attr}" dir="{dir_attr}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{title}</title>
+  <title>{title_escaped}</title>
   <script type="application/ld+json">{schema_json}</script>
 </head>
 <body>
   <article>
-    <h1>{title}</h1>
-    <div>{content}</div>
+    <h1>{title_escaped}</h1>
+    <div>{safe_content}</div>
   </article>
 </body>
 </html>"""
@@ -1108,6 +1129,28 @@ async def revise_article(
     )
 
 
+@router.put(
+    "/{article_id}",
+    response_model=dict,
+    summary="Update article content manually",
+)
+async def update_article_content(
+    article_id: UUID,
+    request: ArticleEditRequest,
+    content_service: ContentService = Depends(get_content_service),
+    user: User = Depends(get_current_active_user),
+):
+    """
+    Update article content manually and save the previous version as a revision.
+    """
+    return await content_service.update_article_content(
+        article_id,
+        request.content,
+        str(user.id),
+        request.revision_note,
+    )
+
+
 @router.post(
     "/{article_id}/publish/wordpress",
     response_model=dict,
@@ -1138,7 +1181,7 @@ async def publish_to_wordpress(
     return await publishing_service.publish_to_wordpress(
         article_id=article_id,
         project_id=project_id,
-        user_id=user.id,
+        user_id=UUID(user.id),
         publish_status=post_status,
         scheduled_at=scheduled_at,
         dry_run=dry_run,

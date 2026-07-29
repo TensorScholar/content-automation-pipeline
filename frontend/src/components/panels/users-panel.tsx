@@ -24,7 +24,7 @@ interface UsersPanelProps {
 }
 
 export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,7 +203,7 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
                             {isActive ? t("users.active") : t("users.inactive")}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-[12px] font-medium tabular-nums text-ink-tertiary">{formatDate(user.created_at)}</td>
+                        <td className="px-5 py-4 text-[12px] font-medium tabular-nums text-ink-tertiary">{formatDate(user.created_at, locale)}</td>
                         <td className="px-5 py-4 text-end">
                           <button
                             onClick={() => void toggleActive(user)}
@@ -236,8 +236,9 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
   );
 }
 
-function formatDate(d?: string): string {
+function formatDate(d: string | undefined, locale: string): string {
   if (!d) return "—";
-  try { return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
+  const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
+  try { return new Intl.DateTimeFormat(localeName, { year: "numeric", month: "short", day: "numeric" }).format(new Date(d)); }
   catch { return d; }
 }

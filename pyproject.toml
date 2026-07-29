@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "content-automation-pipeline"
 version = "1.0.0"
-description = "Production-grade NLP-driven content automation with adaptive intelligence"
+description = "NLP-driven content automation with adaptive intelligence"
 authors = ["Mohammad Atashi <mohammadaliatashi@icloud.com>"]
 license = "MIT"
 readme = "README.md"
@@ -10,7 +10,7 @@ repository = "https://github.com/TensorScholar/content-automation-pipeline.git"
 documentation = "https://github.com/TensorScholar/content-automation-pipeline/blob/main/README.md"
 keywords = ["nlp", "content-generation", "automation", "llm", "seo"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
@@ -85,8 +85,6 @@ selenium = "^4.16.0"  # For Dashboard E2E tests
 
 [tool.poetry.scripts]
 load-test = "locust.main:main"
-setup = "scripts.setup_local:main"
-validate = "scripts.setup_local:main"
 
 # Post-install hook to download spacy model
 [tool.poetry.plugins."poetry.plugin"]
@@ -108,6 +106,7 @@ line-ending = "lf"
 
 [tool.mypy]
 python_version = "3.11"
+explicit_package_bases = true
 warn_return_any = true
 warn_unused_configs = true
 # Stricter type checking enabled
@@ -148,6 +147,7 @@ python_functions = ["test_*"]
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",
+    "live: Requires a running API, worker, and configured runtime services",
     "slow: Slow-running tests",
     "chaos: Chaos engineering and fault-injection tests",
 ]

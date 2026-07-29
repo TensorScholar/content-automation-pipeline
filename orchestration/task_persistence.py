@@ -6,6 +6,7 @@ debugging, and result querying. Enables long-term task history beyond
 Redis/result backend expiration.
 """
 
+import json
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -178,6 +179,7 @@ class TaskResultRepository:
         task_id: str,
         error: str,
         traceback: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Update task record on failure.
@@ -216,6 +218,8 @@ class TaskResultRepository:
                 updated_at=end_time,
             )
         )
+        if result is not None:
+            query = query.values(result=result)
 
         await self.db.execute(query)
         return True
@@ -418,7 +422,10 @@ class SyncTaskResultRepository:
             ) ON CONFLICT (task_id) DO UPDATE SET
                 task_name = EXCLUDED.task_name,
                 idempotency_key = COALESCE(EXCLUDED.idempotency_key, task_results.idempotency_key),
-                status = EXCLUDED.status,
+                status = CASE
+                    WHEN task_results.status = %(success_status)s THEN task_results.status
+                    ELSE EXCLUDED.status
+                END,
                 args = EXCLUDED.args,
                 kwargs = EXCLUDED.kwargs,
                 start_time = COALESCE(task_results.start_time, EXCLUDED.start_time),
@@ -433,6 +440,7 @@ class SyncTaskResultRepository:
             "task_name": task_name,
             "idempotency_key": idempotency_key,
             "status": TaskStatus.STARTED.value,
+            "success_status": TaskStatus.SUCCESS.value,
             "args": json.dumps(list(args)),
             "kwargs": json.dumps(kwargs),
             "start_time": now,
@@ -451,7 +459,9 @@ class SyncTaskResultRepository:
             {"task_id": task_id},
             fetch_one=True,
         )
-        return str(existing["id"]) if existing else None
+        if not existing:
+            raise RuntimeError(f"Task record {task_id} was not persisted")
+        return str(existing["id"])
 
     def update_task_success(
         self,
@@ -503,11 +513,55 @@ class SyncTaskResultRepository:
         self.db.execute(query, params)
         return True
 
+    def mark_social_dispatch_completed(
+        self,
+        *,
+        parent_task_id: str,
+        social_task_id: str,
+    ) -> bool:
+        """Idempotently close the parent outbox hand-off from the running child."""
+        now = _utc_now_naive()
+        query = """
+            WITH completed_event AS (
+                UPDATE generation_outbox_events
+                SET status = 'completed',
+                    completed_at = COALESCE(completed_at, %(completed_at)s),
+                    available_at = NULL,
+                    last_error = NULL,
+                    updated_at = %(completed_at)s
+                WHERE task_id = %(parent_task_id)s
+                  AND event_type = 'article.social_drafts.requested'
+                RETURNING task_id
+            )
+            UPDATE task_results
+            SET result = (
+                    (COALESCE(result::jsonb, '{}'::jsonb) - 'social_dispatch_error')
+                    || jsonb_build_object(
+                        'social_task_id', %(social_task_id)s,
+                        'social_dispatch_status', 'dispatched'
+                    )
+                ),
+                updated_at = %(completed_at)s
+            WHERE task_id IN (SELECT task_id FROM completed_event)
+              AND status = %(success_status)s
+        """
+        self.db.execute(
+            query,
+            {
+                "parent_task_id": parent_task_id,
+                "social_task_id": social_task_id,
+                "completed_at": now,
+                "success_status": TaskStatus.SUCCESS.value,
+            },
+        )
+        return True
+
     def update_task_failure(
         self,
         task_id: str,
         error: str,
         traceback: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Update task record on failure (synchronous).
@@ -529,14 +583,15 @@ class SyncTaskResultRepository:
             end_time,
         )
 
-        query = """
+        result_clause = ",\n                result = %(result)s" if result is not None else ""
+        query = f"""
             UPDATE task_results
             SET status = %(status)s,
                 error = %(error)s,
                 traceback = %(traceback)s,
                 end_time = %(end_time)s,
                 duration_seconds = %(duration)s,
-                updated_at = %(updated_at)s
+                updated_at = %(updated_at)s{result_clause}
             WHERE task_id = %(task_id)s
         """
 
@@ -549,6 +604,8 @@ class SyncTaskResultRepository:
             "duration": duration,
             "updated_at": end_time,
         }
+        if result is not None:
+            params["result"] = json.dumps(result)
 
         self.db.execute(query, params)
         return True

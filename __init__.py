@@ -1,7 +1,7 @@
 """
 Content Automation Engine
 
-Production-grade NLP-driven content automation with adaptive intelligence.
+NLP-driven content automation with adaptive intelligence.
 """
 
 __version__ = "1.0.0"

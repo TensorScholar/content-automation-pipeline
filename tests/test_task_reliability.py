@@ -15,6 +15,7 @@ Test Categories:
 """
 
 import asyncio
+import os
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -26,14 +27,24 @@ import redis
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = [pytest.mark.integration, pytest.mark.live, pytest.mark.slow]
 
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
 
-API_BASE = "http://127.0.0.1:9001"
-REDIS_URL = "redis://127.0.0.1:6379/0"
+API_BASE = os.getenv("LIVE_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+REDIS_URL = os.getenv("LIVE_REDIS_URL", "redis://127.0.0.1:6379/0")
+MANAGER_EMAIL = os.getenv("LIVE_MANAGER_EMAIL")
+MANAGER_PASSWORD = os.getenv("LIVE_MANAGER_PASSWORD")
+
+
+def _live_credentials() -> dict[str, str]:
+    if not MANAGER_EMAIL or not MANAGER_PASSWORD:
+        pytest.fail(
+            "Set LIVE_MANAGER_EMAIL and LIVE_MANAGER_PASSWORD when running with --run-live."
+        )
+    return {"username": MANAGER_EMAIL, "password": MANAGER_PASSWORD}
 
 
 # ==============================================================================
@@ -51,10 +62,7 @@ class TestTaskLifecycle:
         """Get authentication token"""
         response = httpx.post(
             f"{API_BASE}/auth/token",
-            data={
-                "username": "manager@smarlux.com",
-                "password": "Manager@123456789"
-            },
+            data=_live_credentials(),
             timeout=10
         )
         assert response.status_code == 200
@@ -392,10 +400,7 @@ def auth_token():
     """Session-scoped auth token"""
     response = httpx.post(
         f"{API_BASE}/auth/token",
-        data={
-            "username": "manager@smarlux.com",
-            "password": "Manager@123456789"
-        },
+        data=_live_credentials(),
         timeout=10
     )
 

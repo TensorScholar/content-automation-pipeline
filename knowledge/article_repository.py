@@ -12,11 +12,12 @@ Design Pattern: Repository Pattern with SQLAlchemy Core
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
-from uuid import UUID
+from typing import Any, Dict, List, Optional, cast
+from uuid import UUID, uuid4
 
 from loguru import logger
 from sqlalchemy import delete, func, insert, or_, select, text, update
+from sqlalchemy.engine import CursorResult
 
 from core.models import ContentPlan, GeneratedArticle
 from infrastructure.database import DatabaseManager
@@ -147,6 +148,60 @@ class ArticleRepository:
         await self.db.execute(query)
 
         return await self.get_by_id(article_id)
+
+    async def update_content_with_revision(
+        self,
+        *,
+        article_id: UUID,
+        content: str,
+        word_count: int,
+        revision_note: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Atomically snapshot the current article and apply a manual edit."""
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        async with self.db.transaction() as session:
+            current_result = await session.execute(
+                select(generated_articles_table)
+                .where(generated_articles_table.c.id == article_id)
+                .with_for_update()
+            )
+            current = current_result.mappings().one_or_none()
+            if current is None:
+                return None
+
+            await session.execute(
+                insert(article_revisions_table).values(
+                    id=uuid4(),
+                    article_id=article_id,
+                    title=current["title"],
+                    content=current["content"],
+                    revision_note=revision_note,
+                    word_count=current["word_count"],
+                    created_at=now,
+                )
+            )
+            updated_result = await session.execute(
+                update(generated_articles_table)
+                .where(generated_articles_table.c.id == article_id)
+                .values(
+                    content=content,
+                    word_count=word_count,
+                    readability_score=None,
+                    keyword_density={},
+                    review_status="pending_review",
+                    review_note=None,
+                    reviewed_by=None,
+                    reviewed_at=None,
+                    review_updated_at=now,
+                    updated_at=now,
+                )
+                .returning(generated_articles_table)
+            )
+            updated = updated_result.mappings().one()
+
+        if self.redis_client:
+            await self.redis_client.delete_pattern("article:get_by_id:*")
+        return dict(updated)
 
     async def get_review_state(self, article_id: UUID) -> Optional[Dict[str, Any]]:
         """Return durable review state with a safe reviewer display label."""
@@ -461,6 +516,7 @@ class ArticleRepository:
                 {
                     "id": str(rev["id"]),
                     "title": rev["title"],
+                    "content": rev["content"],
                     "revision_note": rev["revision_note"],
                     "created_at": rev["created_at"],
                     "word_count": rev["word_count"],
@@ -560,7 +616,9 @@ class ArticleRepository:
         )
         revision = await self.db.fetch_one(revision_query)
 
-        return dict(revision) if revision else None
+        if revision is None:
+            raise RuntimeError(f"Article revision {created_id} was not persisted")
+        return dict(revision)
 
     async def save_content_plan(self, plan: ContentPlan) -> None:
         """
@@ -642,7 +700,7 @@ class ArticleRepository:
                         updated_at=activity_time,
                     )
                 )
-                counter_result = await session.execute(counter_update)
+                counter_result = cast(CursorResult[Any], await session.execute(counter_update))
                 if counter_result.rowcount != 1:
                     raise ValueError(
                         f"Project {article.project_id} not found while saving generated article"

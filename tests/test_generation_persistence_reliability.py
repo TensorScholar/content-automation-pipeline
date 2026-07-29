@@ -1,3 +1,4 @@
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -88,6 +89,22 @@ def test_sync_task_failure_calculates_duration_for_naive_db_timestamp():
     update_params = db.calls[-1][1]
     assert update_params["duration"] >= 0
     assert update_params["status"] == TaskStatus.FAILURE.value
+
+
+def test_sync_task_failure_persists_existing_quality_diagnostics_in_result_json():
+    db = FakeSyncDatabase(start_time=datetime(2026, 1, 1, 12, 0, 0))
+    repo = SyncTaskResultRepository(sync_db=db)
+    diagnostics = {"actual_word_count": 22, "language": "fa", "findings": []}
+
+    assert repo.update_task_failure(
+        "task-1",
+        "Article failed release gate",
+        result={"quality_diagnostics": diagnostics},
+    ) is True
+
+    query, params, _ = db.calls[-1]
+    assert "result = %(result)s" in query
+    assert json.loads(params["result"]) == {"quality_diagnostics": diagnostics}
 
 
 class FakeTaskRepository:

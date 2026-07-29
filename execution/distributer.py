@@ -15,6 +15,7 @@ from loguru import logger
 
 from core.exceptions import DistributionError
 from core.models import GeneratedArticle, Project
+from execution.export_safety import json_for_html_script, sanitize_html_fragment
 from infrastructure.credential_encryption import decrypt_credential
 from infrastructure.redaction import redact_text
 
@@ -142,7 +143,7 @@ class Distributor:
                 return "".join(self._out)
 
         parser = GutenbergParser()
-        parser.feed(html_content)
+        parser.feed(sanitize_html_fragment(html_content))
         result = parser.result
         logger.debug("Converted HTML to Gutenberg blocks via html.parser")
         return result
@@ -151,7 +152,7 @@ class Distributor:
         """
         Generate schema.org JSON-LD structured data for SEO.
 
-        Creates Article schema and FAQPage schema if FAQ section detected.
+        Creates an Article schema that reflects only persisted article metadata.
 
         Args:
             article: Generated article with metadata
@@ -160,8 +161,6 @@ class Distributor:
         Returns:
             JSON-LD script tag for insertion in <head> or article
         """
-        import json
-
         # Base Article schema
         schema = {
             "@context": "https://schema.org",
@@ -182,17 +181,11 @@ class Distributor:
             schema["url"] = article_url
             schema["mainEntityOfPage"] = {"@type": "WebPage", "@id": article_url}
 
-        # Check for FAQ section and add FAQPage schema
-        content_lower = article.content.lower() if article.content else ""
-        if (
-            "سوالات متداول" in content_lower
-            or "faq" in content_lower
-            or "frequently asked" in content_lower
-        ):
-            # Add FAQ indicator - actual FAQ extraction would require parsing
-            schema["@type"] = ["Article", "FAQPage"]
-
-        json_ld = f'<script type="application/ld+json">\n{json.dumps(schema, ensure_ascii=False, indent=2)}\n</script>'
+        json_ld = (
+            '<script type="application/ld+json">\n'
+            f"{json_for_html_script(schema, indent=2)}\n"
+            "</script>"
+        )
 
         logger.debug(f"Generated schema.org markup: {schema['@type']}")
         return json_ld
@@ -297,14 +290,17 @@ class Distributor:
             return False, f"WordPress connection error: {str(e)}"
 
     async def _resolve_tag_ids(
-        self, tag_names: list[str], project: Project, auth: httpx.BasicAuth
+        self,
+        tag_names: list[str],
+        wordpress_url: str,
+        auth: httpx.BasicAuth,
     ) -> list[int]:
         """Resolve tag names to WordPress tag IDs, creating missing tags as needed."""
         if not tag_names:
             return []
 
         tag_ids = []
-        tags_url = f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/tags"
+        tags_url = f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/tags"
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -435,16 +431,22 @@ class Distributor:
             )
             return {"status": "error", "reason": error_msg}
 
-        api_url = f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts"
+        wordpress_url = project.wordpress_url
+        wordpress_username = project.wordpress_username
+        if not wordpress_url or not wordpress_username:
+            return {"status": "error", "reason": "WordPress credentials not configured"}
 
-        auth = httpx.BasicAuth(project.wordpress_username, self._wordpress_password(project))
+        api_url = f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/posts"
+        auth = httpx.BasicAuth(wordpress_username, self._wordpress_password(project))
 
         # Convert content to Gutenberg blocks for modern WordPress
         gutenberg_content = self.convert_to_gutenberg_blocks(article.content)
 
         # Resolve keyword strings to WordPress tag IDs
         tag_ids = await self._resolve_tag_ids(
-            article.keywords if article.keywords else [], project, auth
+            article.keywords if article.keywords else [],
+            wordpress_url,
+            auth,
         )
 
         slug = self._wordpress_slug(article)
@@ -471,7 +473,7 @@ class Distributor:
         import asyncio
         import random
 
-        last_error = None
+        last_error: Exception | None = None
 
         for attempt in range(self.max_retries):
             try:
@@ -498,7 +500,7 @@ class Distributor:
                             )
 
                     target_url = (
-                        f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{target_post_id}"
+                        f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{target_post_id}"
                         if target_post_id
                         else api_url
                     )
@@ -515,7 +517,7 @@ class Distributor:
 
                 try:
                     update_url = (
-                        f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}"
+                        f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}"
                     )
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         await client.post(
@@ -541,7 +543,7 @@ class Distributor:
                     "wp_url": post_url,
                     "post_status": post_status,
                     "attempts": attempt + 1,
-                    "timestamp": _dt.utcnow().isoformat() + "Z",
+                    "timestamp": _dt.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 }
                 logger.info(f"DISTRIBUTION_AUDIT | {distribution_audit}")
 

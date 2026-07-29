@@ -176,6 +176,21 @@ export interface TaskStatusResponse {
   error_code?: string;
   manager_error_detail?: string;
   last_error?: string;
+  quality_diagnostics?: {
+    actual_word_count?: number;
+    min_word_count?: number;
+    max_word_count?: number;
+    headings_count?: number;
+    paragraphs_count?: number;
+    language?: string;
+    regeneration_attempted?: boolean;
+    findings?: Array<{
+      code?: string;
+      message?: string;
+      expected?: string;
+      actual?: string;
+    }>;
+  } | null;
   result?: {
     article_id?: string;
     social_task_id?: string;

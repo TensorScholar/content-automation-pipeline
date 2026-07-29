@@ -25,13 +25,13 @@
 
     /* Background hierarchy */
     --bg-primary: 255 255 255;
-    --bg-secondary: 249 250 251;
-    --bg-tertiary: 243 244 246;
+    --bg-secondary: 247 248 250;
+    --bg-tertiary: 239 241 244;
     --bg-elevated: 255 255 255;
-    --bg-primary-dark: 17 24 39;
-    --bg-secondary-dark: 31 41 55;
-    --bg-tertiary-dark: 55 65 81;
-    --bg-elevated-dark: 31 41 55;
+    --bg-primary-dark: 17 19 23;
+    --bg-secondary-dark: 27 31 37;
+    --bg-tertiary-dark: 42 47 55;
+    --bg-elevated-dark: 31 35 42;
 
     /* Brand compatibility */
     --color-brand: var(--color-primary);
@@ -57,8 +57,8 @@
 
     /* Text */
     --color-text-primary: 17 24 39;
-    --color-text-secondary: 107 114 128;
-    --color-text-placeholder: 156 163 175;
+    --color-text-secondary: 82 91 105;
+    --color-text-placeholder: 132 141 154;
 
     /* Borders and elevation */
     --color-border: 0 0 0;
@@ -158,8 +158,8 @@
     --color-surface-alt: var(--bg-primary-dark);
     --color-surface-tertiary: var(--bg-tertiary-dark);
     --color-text-primary: 255 255 255;
-    --color-text-secondary: 226 232 240;
-    --color-text-placeholder: 184 188 196;
+    --color-text-secondary: 209 215 224;
+    --color-text-placeholder: 148 156 168;
     --color-border: 255 255 255;
     --color-border-alpha: 0.08;
 
@@ -311,15 +311,15 @@
   }
 
   .macos-main-material {
-    background-color: rgb(245 245 247);
-    border-color: rgb(0 0 0 / 0.06);
+    background-color: rgb(var(--bg-secondary));
+    border-color: rgb(0 0 0 / 0.08);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
 
   .dark .macos-main-material {
-    background-color: rgb(31 31 32);
-    border-color: rgb(255 255 255 / 0.08);
+    background-color: rgb(var(--bg-primary-dark));
+    border-color: rgb(255 255 255 / 0.1);
   }
 
   .macos-grouped-surface {
@@ -343,7 +343,7 @@
 
   .smx-panel {
     background-color: rgb(var(--bg-elevated));
-    border: 1px solid rgb(0 0 0 / 0.06);
+    border: 1px solid rgb(0 0 0 / 0.08);
     border-radius: 14px;
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.72),
@@ -352,7 +352,7 @@
 
   .dark .smx-panel {
     background-color: rgb(var(--bg-elevated-dark));
-    border-color: rgb(255 255 255 / 0.08);
+    border-color: rgb(255 255 255 / 0.1);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.05),
       0 14px 28px -24px rgb(0 0 0 / 0.75);

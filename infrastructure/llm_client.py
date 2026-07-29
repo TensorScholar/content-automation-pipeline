@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional, Protocol
 
 import litellm
 from litellm import acompletion
@@ -54,6 +54,26 @@ from core.exceptions import (
     TokenBudgetExceededError,
 )
 from infrastructure.llm_usage import LLMUsageService, get_llm_usage_context
+
+
+class CacheManager(Protocol):
+    async def get(self, key: str) -> Any: ...
+
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool: ...
+
+
+class MetricsCollector(Protocol):
+    def record_llm_api_call(
+        self,
+        *,
+        model: str,
+        provider: str,
+        status: str,
+        tokens_used: int,
+        cost: float,
+        latency_seconds: float,
+    ) -> None: ...
+
 
 # ============================================================================
 # CONSTANTS & CONFIGURATION
@@ -303,6 +323,7 @@ class ModelProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    OPENAI_COMPATIBLE = "openai_compatible"
     LOCAL = "local"
 
 
@@ -460,7 +481,10 @@ class LLMRequest(BaseModel):
     model_config = {"frozen": True}
 
     prompt: str = Field(..., min_length=1, max_length=100000)
-    model: str = Field(..., pattern=r"^(gpt-|claude-|gemini-|local-|openai/|anthropic/|gemini/)")
+    model: str = Field(
+        ...,
+        pattern=r"^(gpt-|claude-|gemini-|local-|compatible/|openai/|anthropic/|gemini/)",
+    )
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(..., ge=1, le=32000)
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -494,8 +518,8 @@ class UnifiedLLMClient:
 
     def __init__(
         self,
-        cache_manager: Optional[object] = None,
-        metrics_collector: Optional[object] = None,
+        cache_manager: CacheManager | None = None,
+        metrics_collector: MetricsCollector | None = None,
         usage_service: Optional[LLMUsageService] = None,
     ):
         """
@@ -509,7 +533,9 @@ class UnifiedLLMClient:
         self.metrics = metrics_collector
         self.usage_service = usage_service
 
-        # Track local LLM configuration for special handling
+        # Custom OpenAI-compatible and local endpoints need explicit routing.
+        self._openai_compatible_base_url: str | None = None
+        self._openai_compatible_api_key: str | None = None
         self._local_base_url: str | None = None
         self._active_provider: str | None = None  # Track which provider is active
 
@@ -518,6 +544,7 @@ class UnifiedLLMClient:
             ModelProvider.OPENAI: CircuitBreaker("openai"),
             ModelProvider.ANTHROPIC: CircuitBreaker("anthropic"),
             ModelProvider.GEMINI: CircuitBreaker("gemini"),
+            ModelProvider.OPENAI_COMPATIBLE: CircuitBreaker("openai_compatible"),
             ModelProvider.LOCAL: CircuitBreaker("local"),
         }
 
@@ -606,11 +633,28 @@ class UnifiedLLMClient:
         else:
             logger.warning("⚠ GEMINI_API_KEY not found - Gemini models unavailable")
 
-        # Local (Ollama/OpenAI-compatible) - needs special handling
+        compatible_url = os.getenv("OPENAI_COMPATIBLE_BASE_URL") or getattr(
+            llm_settings, "openai_compatible_base_url", None
+        )
+        compatible_key = os.getenv("OPENAI_COMPATIBLE_API_KEY") or _secret_value(
+            getattr(llm_settings, "openai_compatible_api_key", None)
+        )
+        if compatible_url and compatible_key:
+            self._openai_compatible_base_url = compatible_url.rstrip("/")
+            self._openai_compatible_api_key = compatible_key
+            logger.info("OpenAI-compatible LLM provider configured")
+            if not self._active_provider:
+                self._active_provider = "openai_compatible"
+        else:
+            logger.warning(
+                "OpenAI-compatible provider unavailable; set OPENAI_COMPATIBLE_BASE_URL and OPENAI_COMPATIBLE_API_KEY"
+            )
+
+        # Local (for example Ollama) - kept as an explicit fallback route.
         local_url = os.getenv("LOCAL_LLM_URL")
         if local_url:
             self._local_base_url = local_url.rstrip("/")
-            logger.info(f"✓ Local LLM configured | base_url={self._local_base_url}")
+            logger.info("Local LLM endpoint configured")
             if not self._active_provider:
                 self._active_provider = "local"
         else:
@@ -624,7 +668,7 @@ class UnifiedLLMClient:
             logger.info("✓ LiteLLM ready | providers available")
         else:
             logger.error(
-                "✗ No LLM provider available! Set GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOCAL_LLM_URL"
+                "No LLM provider available. Configure a managed provider, an OpenAI-compatible endpoint, or LOCAL_LLM_URL."
             )
 
     def _provider_has_credentials(self, provider: ModelProvider) -> bool:
@@ -655,6 +699,8 @@ class UnifiedLLMClient:
                 or os.getenv("LLM_GEMINI_API_KEY")
                 or _secret_value(getattr(llm_settings, "gemini_api_key", None))
             )
+        if provider == ModelProvider.OPENAI_COMPATIBLE:
+            return bool(self._openai_compatible_base_url and self._openai_compatible_api_key)
         if provider == ModelProvider.LOCAL:
             return bool(self._local_base_url)
         return False
@@ -670,6 +716,9 @@ class UnifiedLLMClient:
         except LLMError:
             return []
 
+        local_fallback_enabled = os.getenv(
+            "LLM_ENABLE_LOCAL_FALLBACK", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
         candidates = [
             os.getenv("LLM_FALLBACK_MODEL"),
             os.getenv("LLM_OPENAI_FALLBACK_MODEL") or "gpt-4o-mini",
@@ -679,7 +728,9 @@ class UnifiedLLMClient:
             os.getenv("LLM_GEMINI_FALLBACK_MODEL")
             or os.getenv("LLM_GEMINI_MODEL")
             or "gemini-2.5-flash-lite",
-            os.getenv("LLM_LOCAL_FALLBACK_MODEL"),
+            os.getenv("LLM_OPENAI_COMPATIBLE_FALLBACK_MODEL")
+            or os.getenv("LLM_OPENAI_COMPATIBLE_MODEL"),
+            os.getenv("LLM_LOCAL_FALLBACK_MODEL") if local_fallback_enabled else None,
         ]
 
         usable: list[str] = []
@@ -770,6 +821,8 @@ class UnifiedLLMClient:
             return ModelProvider.ANTHROPIC
         elif model_lower.startswith("gemini-"):
             return ModelProvider.GEMINI
+        elif model_lower.startswith("compatible/"):
+            return ModelProvider.OPENAI_COMPATIBLE
         elif model_lower.startswith("local-"):
             return ModelProvider.LOCAL
         else:
@@ -793,6 +846,8 @@ class UnifiedLLMClient:
 
     def _pricing_key(self, model: str) -> str:
         """Normalize provider-prefixed model names for local pricing lookup."""
+        if model.lower().startswith("compatible/"):
+            model = model.split("/", 1)[1]
         if "/" in model:
             return model.split("/", 1)[1]
         return model
@@ -852,16 +907,28 @@ class UnifiedLLMClient:
             LLMProviderError: When provider is unavailable or authentication fails.
             LLMError: For other API errors.
         """
-        # Special handling for local models
+        # Explicit endpoints require custom LiteLLM routing.
         is_local = model.lower().startswith("local-")
-        if is_local:
-            if not self._local_base_url:
-                raise LLMProviderError(
-                    "Local LLM not configured. Set LOCAL_LLM_URL and start the Ollama container"
+        is_openai_compatible = model.lower().startswith("compatible/")
+        if is_local or is_openai_compatible:
+            if is_openai_compatible:
+                base_url = self._openai_compatible_base_url
+                api_key = self._openai_compatible_api_key
+                actual_model = model.split("/", 1)[1]
+                provider_label = "OpenAI-compatible provider"
+            else:
+                base_url = self._local_base_url
+                api_key = os.getenv("LOCAL_LLM_API_KEY", "ollama")
+                actual_model = model.removeprefix("local-")
+                provider_label = "Local LLM"
+
+            if not base_url or not api_key:
+                required = (
+                    "OPENAI_COMPATIBLE_BASE_URL and OPENAI_COMPATIBLE_API_KEY"
+                    if is_openai_compatible
+                    else "LOCAL_LLM_URL"
                 )
-            # Strip local- prefix for local models
-            actual_model = model.removeprefix("local-")
-            # Use litellm with custom_llm_provider for local endpoint
+                raise LLMProviderError(f"{provider_label} not configured. Set {required}.")
             try:
                 response = await acompletion(
                     model=f"openai/{actual_model}",
@@ -870,15 +937,38 @@ class UnifiedLLMClient:
                     max_tokens=max_tokens,
                     top_p=top_p,
                     stop=stop_sequences,
-                    api_base=self._local_base_url,
-                    api_key=os.getenv("LOCAL_LLM_API_KEY", "ollama"),
+                    api_base=base_url,
+                    api_key=api_key,
                     timeout=DEFAULT_TIMEOUT,
                 )
-            except Exception as e:
-                logger.error(f"Local LLM error via {self._local_base_url}: {e}")
+            except litellm.AuthenticationError as e:
+                logger.error(f"Authentication failed for {provider_label}: {e}")
                 raise LLMProviderError(
-                    f"Local LLM unreachable at {self._local_base_url}. Ensure the Ollama container is running."
+                    f"Authentication failed for {provider_label}. Check provider credentials.",
+                    error_code="LLM_AUTHENTICATION_FAILED",
+                    retryable=False,
+                    context={"model": model, "provider": provider_label},
                 ) from e
+            except (litellm.Timeout, APITimeoutError) as e:
+                logger.warning(f"Request timed out for {provider_label}: {e}")
+                raise LLMTimeoutError(f"Request timed out for {provider_label}.") from e
+            except litellm.APIConnectionError as e:
+                logger.error(f"Cannot connect to {provider_label}: {e}")
+                raise LLMConnectionError(
+                    f"Cannot reach {provider_label}. Check network access and provider status."
+                ) from e
+            except Exception as e:
+                if _is_provider_request_error(e):
+                    message = _provider_request_message(model, e)
+                    logger.error(f"Provider request rejected for {provider_label}: {e}")
+                    raise LLMProviderError(
+                        message,
+                        error_code="LLM_PROVIDER_REQUEST_FAILED",
+                        retryable=False,
+                        context={"model": model, "provider": provider_label},
+                    ) from e
+                logger.error(f"{provider_label} request failed: {e}")
+                raise LLMError(f"{provider_label} request failed.") from e
         else:
             # Standard models (OpenAI/Anthropic) - litellm handles routing automatically
             try:
@@ -1064,7 +1154,12 @@ class UnifiedLLMClient:
                     # Ensure we return an object, not a dict
                     if isinstance(cached, dict):
                         return LLMResponse.from_dict(cached)
-                    return cached
+                    if isinstance(cached, LLMResponse):
+                        return cached
+                    logger.warning(
+                        f"Ignoring invalid cached response type for {model}: "
+                        f"{type(cached).__name__}"
+                    )
             except Exception as e:
                 logger.warning(f"Cache read error: {e}")
 
@@ -1094,7 +1189,8 @@ class UnifiedLLMClient:
             if circuit_breaker:
                 await circuit_breaker.record_success()
 
-            # Calculate cost (local models are free)
+            # Local models are free. External-compatible calls use the existing
+            # model price reference as an estimate, never as a billed total.
             if provider == ModelProvider.LOCAL:
                 cost = 0.0
             else:
@@ -1268,8 +1364,8 @@ class UnifiedLLMClient:
 
 
 def get_llm_client(
-    cache_manager: Optional[object] = None,
-    metrics_collector: Optional[object] = None,
+    cache_manager: CacheManager | None = None,
+    metrics_collector: MetricsCollector | None = None,
     usage_service: Optional[LLMUsageService] = None,
     **kwargs,
 ) -> UnifiedLLMClient:

@@ -24,7 +24,7 @@ import json
 import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -40,6 +40,8 @@ from orchestration.task_persistence import TaskResultRepository, TaskStatus
 from orchestration.task_state import normalize_db_status, reconcile_task_state
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from intelligence.semantic_analyzer import SemanticAnalyzer
 
 
@@ -501,6 +503,47 @@ class ContentService:
 
         return article
 
+    async def update_article_content(
+        self,
+        article_id: UUID,
+        content: str,
+        updated_by_user_id: str,
+        revision_note: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Save a manual edit while preserving the previous version."""
+        normalized_content = content.strip()
+        if not normalized_content:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Article content cannot be empty.",
+            )
+
+        plain_text = re.sub(r"<[^>]+>", " ", normalized_content)
+        word_count = len(re.findall(r"\S+", plain_text))
+        normalized_note = (revision_note or "").strip() or "Manual edit"
+        updated = await self.articles.update_content_with_revision(
+            article_id=article_id,
+            content=normalized_content,
+            word_count=word_count,
+            revision_note=normalized_note,
+        )
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+
+        logger.info(
+            "Manual article edit saved | article_id={} | user_id={} | word_count={}",
+            article_id,
+            updated_by_user_id,
+            word_count,
+        )
+        return {
+            "article_id": str(article_id),
+            "content": updated["content"],
+            "word_count": updated["word_count"],
+            "review_status": updated["review_status"],
+            "updated_at": updated["updated_at"],
+        }
+
     async def get_article_review(self, article_id: UUID) -> Dict[str, Any]:
         """Return current review state and a deterministic readiness checklist."""
         from services.draft_risk_service import DraftRiskService
@@ -792,7 +835,7 @@ class ContentService:
 
         # Calculate scores for each criterion
         scores = []
-        details = {
+        details: Dict[str, Any] = {
             "word_count": word_count,
             "h1_count": h1_count,
             "h2_count": h2_count,
@@ -873,8 +916,8 @@ class ContentService:
             return {"overall_density": 0.0, "keywords": {}, "issues": ["No words found"]}
 
         word_freq = Counter(words)
-        keyword_analysis = {}
-        issues = []
+        keyword_analysis: Dict[str, Dict[str, Any]] = {}
+        issues: List[str] = []
 
         for keyword in target_keywords:
             keyword_lower = keyword.lower()
@@ -910,7 +953,7 @@ class ContentService:
 
         # Overall density (sum of all target keywords)
         overall_density = sum(
-            kw["density"] for kw in keyword_analysis.values()
+            float(analysis["density"]) for analysis in keyword_analysis.values()
         )
 
         return {
@@ -941,7 +984,10 @@ class ContentService:
                 return {"score": 0.85, "details": {"message": "Content too short for coherence analysis"}}
 
             # Generate embeddings for each section
-            embeddings = await self.semantic_analyzer.embed(sections, normalize=True)
+            embeddings = cast(
+                "List[np.ndarray]",
+                await self.semantic_analyzer.embed(sections, normalize=True),
+            )
 
             # Compute embedding statistics
             stats = self.semantic_analyzer.compute_embedding_statistics(embeddings)
@@ -1251,7 +1297,7 @@ class ContentService:
         generated_article = self._article_dict_to_generated_article(article)
 
         distributor = Distributor()
-        delivery_confirmations = {}
+        delivery_confirmations: Dict[str, Dict[str, Any]] = {}
         errors = []
         successful_channels: list[str] = []
 

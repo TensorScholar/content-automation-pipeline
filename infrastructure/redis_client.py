@@ -18,7 +18,7 @@ import hashlib
 import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Dict, List, Optional, TypeVar, Union
+from typing import Any, AsyncGenerator, Awaitable, Dict, List, Optional, TypeVar, Union, cast
 
 import numpy as np
 import redis.asyncio as aioredis
@@ -32,6 +32,11 @@ from config.settings import settings
 from core.exceptions import CacheError, InfrastructureError
 
 T = TypeVar("T")
+
+
+async def _await_redis(value: Awaitable[T] | T) -> T:
+    """Narrow redis-py's sync/async stub union at the async client boundary."""
+    return await cast(Awaitable[T], value)
 
 
 class RedisConnectionPool:
@@ -49,7 +54,7 @@ class RedisConnectionPool:
         self._circuit_breaker_open = False
         self._failure_count = 0
         self._last_failure_time: Optional[float] = None
-        self._backoff_multiplier = 1
+        self._backoff_multiplier = 1.0
         self._max_backoff = 300  # 5 minutes max backoff
 
     async def initialize(self) -> None:
@@ -119,7 +124,7 @@ class RedisConnectionPool:
             if self._failure_count > 0:
                 logger.info(f"Redis connection successful, resetting circuit breaker")
             self._failure_count = 0
-            self._backoff_multiplier = 1
+            self._backoff_multiplier = 1.0
             self._circuit_breaker_open = False
 
         except (ConnectionError, TimeoutError) as e:
@@ -146,7 +151,7 @@ class RedisConnectionPool:
 
         finally:
             if connection:
-                await connection.close()
+                await connection.aclose()
 
     async def close(self) -> None:
         """Gracefully close connection pool."""
@@ -403,7 +408,7 @@ class RedisClient:
         """Prepend one or multiple values to a list."""
         try:
             async with self._pool.get_connection() as conn:
-                return await conn.lpush(key, *values)
+                return await _await_redis(conn.lpush(key, *values))
         except Exception as e:
             logger.error(f"Failed lpush on {key}: {e}")
             raise CacheError(f"lpush failed: {e}")
@@ -412,7 +417,7 @@ class RedisClient:
         """Trim an existing list so that it will contain only the specified range of elements."""
         try:
             async with self._pool.get_connection() as conn:
-                result = await conn.ltrim(key, start, stop)
+                result = await _await_redis(conn.ltrim(key, start, stop))
             return bool(result)
         except Exception as e:
             logger.error(f"Failed ltrim on {key}: {e}")
@@ -422,7 +427,7 @@ class RedisClient:
         """Get a range of elements from a list."""
         try:
             async with self._pool.get_connection() as conn:
-                return await conn.lrange(key, start, stop)
+                return await _await_redis(conn.lrange(key, start, stop))
         except Exception as e:
             logger.error(f"Failed lrange on {key}: {e}")
             raise CacheError(f"lrange failed: {e}")
@@ -503,6 +508,18 @@ class RedisClient:
         except Exception as e:
             logger.error(f"Failed to delete key {key}: {e}")
             return False
+
+    async def delete_pattern(self, pattern: str) -> int:
+        """Delete matching cache keys without blocking Redis with KEYS."""
+        deleted = 0
+        try:
+            async with self._pool.get_connection() as conn:
+                async for key in conn.scan_iter(match=pattern, count=100):
+                    deleted += int(await conn.delete(key))
+            return deleted
+        except Exception as e:
+            logger.error(f"Failed to delete keys matching {pattern}: {e}")
+            return 0
 
     async def exists(self, key: str) -> bool:
         """Check if key exists in cache."""
@@ -621,7 +638,7 @@ class RedisClient:
         try:
             serialized = json.dumps(value)
             async with self._pool.get_connection() as conn:
-                await conn.hset(key, field, serialized)
+                await _await_redis(conn.hset(key, field, serialized))
             return True
         except Exception as e:
             logger.error(f"Failed to set hash field {key}.{field}: {e}")
@@ -631,7 +648,7 @@ class RedisClient:
         """Get field from hash."""
         try:
             async with self._pool.get_connection() as conn:
-                data = await conn.hget(key, field)
+                data = await _await_redis(conn.hget(key, field))
 
             if data is None:
                 return None
@@ -645,7 +662,7 @@ class RedisClient:
         """Get all fields from hash."""
         try:
             async with self._pool.get_connection() as conn:
-                data = await conn.hgetall(key)
+                data = await _await_redis(conn.hgetall(key))
 
             # Deserialize all values
             return {field.decode(): json.loads(value) for field, value in data.items()}
@@ -674,6 +691,7 @@ class RedisClient:
                 ),
                 "used_memory_mb": memory.get("used_memory", 0) / (1024 * 1024),
                 "used_memory_peak_mb": memory.get("used_memory_peak", 0) / (1024 * 1024),
+                "max_memory_mb": memory.get("maxmemory", 0) / (1024 * 1024),
             }
         except Exception as e:
             logger.error(f"Failed to retrieve cache stats: {e}")
