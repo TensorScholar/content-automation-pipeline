@@ -14,6 +14,7 @@ Purpose: Super strict multi-pipeline testing to find mission-critical issues in:
 This is NOT about making tests pass - it's about finding REAL issues and fixing them.
 """
 
+import json
 import os
 import random
 import string
@@ -55,27 +56,14 @@ def _live_credentials() -> dict[str, str]:
 @pytest.fixture(scope="session")
 def api_client():
     """Session-wide HTTP client"""
-    return httpx.Client(timeout=30.0)
-
-
-@pytest.fixture(scope="session")
-def manager_token(api_client):
-    """Authenticate as manager for session"""
-    response = api_client.post(
-        f"{API_BASE}/auth/token",
-        data=_live_credentials(),
-    )
-
-    if response.status_code != 200:
-        pytest.skip(f"Authentication failed: {response.status_code}")
-
-    return response.json()["access_token"]
+    with httpx.Client(timeout=30.0) as client:
+        yield client
 
 
 @pytest.fixture
-def auth_headers(manager_token):
+def auth_headers(live_auth_token):
     """Authorization headers"""
-    return {"Authorization": f"Bearer {manager_token}"}
+    return {"Authorization": f"Bearer {live_auth_token}"}
 
 
 # ==============================================================================
@@ -332,8 +320,10 @@ class TestTaskHistoryAndAttributes:
             json={"name": f"History Test {uuid.uuid4().hex[:6]}"}
         )
 
-        if project_resp.status_code != 201:
-            pytest.skip("Project creation failed")
+        assert project_resp.status_code == 201, (
+            f"Project creation failed: {project_resp.status_code} - "
+            f"{project_resp.text}"
+        )
 
         project_id = project_resp.json()["id"]
 
@@ -345,13 +335,15 @@ class TestTaskHistoryAndAttributes:
                 json={
                     "project_id": project_id,
                     "topic": f"History Test Task {i}",
-                    "keywords": [f"test{i}"],
-                    "word_count": 100
+                    "primary_keyword": f"test{i}",
+                    "word_count_range": "800-1000",
                 }
             )
 
-            if resp.status_code == 202:
-                task_ids.append(resp.json()["task_id"])
+            assert resp.status_code == 202, (
+                f"Task creation failed: {resp.status_code} - {resp.text}"
+            )
+            task_ids.append(resp.json()["task_id"])
 
         assert len(task_ids) > 0, "No tasks created"
 
@@ -383,8 +375,12 @@ class TestTaskHistoryAndAttributes:
             if task["task_id"] in task_ids:
                 # Required attributes
                 assert "task_id" in task
-                assert "state" in task
-                assert "project_id" in task
+                assert "status" in task
+                task_args = task.get("args")
+                if isinstance(task_args, str):
+                    task_args = json.loads(task_args)
+                assert isinstance(task_args, list) and task_args
+                assert task_args[0] == project_id
 
                 # Optional but expected attributes
                 if "created_at" in task:
@@ -409,8 +405,9 @@ class TestTaskHistoryAndAttributes:
             json={"name": f"State Test {uuid.uuid4().hex[:6]}"}
         )
 
-        if proj_resp.status_code != 201:
-            pytest.skip("Project creation failed")
+        assert proj_resp.status_code == 201, (
+            f"Project creation failed: {proj_resp.status_code} - {proj_resp.text}"
+        )
 
         project_id = proj_resp.json()["id"]
 
@@ -420,13 +417,14 @@ class TestTaskHistoryAndAttributes:
             json={
                 "project_id": project_id,
                 "topic": "State Transition Test",
-                "keywords": ["test"],
-                "word_count": 100
+                "primary_keyword": "test",
+                "word_count_range": "800-1000",
             }
         )
 
-        if task_resp.status_code != 202:
-            pytest.skip("Task creation failed")
+        assert task_resp.status_code == 202, (
+            f"Task creation failed: {task_resp.status_code} - {task_resp.text}"
+        )
 
         task_id = task_resp.json()["task_id"]
 
@@ -525,8 +523,7 @@ class TestMonitoringAccuracy:
         inspect = app.control.inspect(timeout=5)
         actual_workers = inspect.active()
 
-        if actual_workers is None:
-            pytest.skip("Workers not responding")
+        assert actual_workers is not None, "Workers not responding"
 
         actual_worker_count = len(actual_workers)
         actual_active_tasks = sum(len(tasks) for tasks in actual_workers.values())
@@ -679,7 +676,7 @@ class TestProjectManagementWorkflow:
         assert update_resp.status_code == 200, \
             f"Project update failed: {update_resp.status_code}"
 
-        updated_project = update_resp.json()
+        updated_project = update_resp.json()["project"]
 
         # Validate update
         assert updated_project["name"] == update_payload["name"]
@@ -725,33 +722,30 @@ class TestProjectManagementWorkflow:
             json={
                 "project_id": project_id,
                 "topic": "Referential Integrity Test",
-                "keywords": ["test"],
-                "word_count": 100
+                "primary_keyword": "test",
+                "word_count_range": "800-1000",
             }
         )
 
-        if content_resp.status_code != 202:
-            pytest.skip("Content generation failed")
+        assert content_resp.status_code == 202, (
+            f"Content generation failed: {content_resp.status_code} - "
+            f"{content_resp.text}"
+        )
 
         task_id = content_resp.json()["task_id"]
 
-        # Wait for completion
-        time.sleep(15)
-
-        # Check task
+        # Lifecycle detail retains the `state` contract and project linkage.
         task_resp = api_client.get(
             f"{API_BASE}/content/task/{task_id}",
             headers=auth_headers
         )
 
-        if task_resp.status_code == 200:
-            task_data = task_resp.json()
+        assert task_resp.status_code == 200
+        task_data = task_resp.json()
+        assert "state" in task_data
+        assert task_data["project_id"] == project_id, "Task lost project_id reference!"
 
-            # Verify project_id in task metadata
-            assert task_data.get("project_id") == project_id, \
-                "Task lost project_id reference!"
-
-            print(f"✓ Referential integrity maintained: task → project")
+        print(f"✓ Referential integrity maintained: task → project")
 
 
 # ==============================================================================
@@ -838,8 +832,9 @@ class TestDataConsistency:
             json={"name": f"Consistency Test {uuid.uuid4().hex[:6]}"}
         )
 
-        if proj_resp.status_code != 201:
-            pytest.skip("Project creation failed")
+        assert proj_resp.status_code == 201, (
+            f"Project creation failed: {proj_resp.status_code} - {proj_resp.text}"
+        )
 
         project_id = proj_resp.json()["id"]
 
@@ -849,13 +844,14 @@ class TestDataConsistency:
             json={
                 "project_id": project_id,
                 "topic": "Data Consistency Test",
-                "keywords": ["consistency"],
-                "word_count": 150
+                "primary_keyword": "consistency",
+                "word_count_range": "800-1000",
             }
         )
 
-        if task_resp.status_code != 202:
-            pytest.skip("Task creation failed")
+        assert task_resp.status_code == 202, (
+            f"Task creation failed: {task_resp.status_code} - {task_resp.text}"
+        )
 
         task_id = task_resp.json()["task_id"]
 
