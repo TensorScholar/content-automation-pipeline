@@ -58,7 +58,7 @@ function ThemeSwitcher() {
           type="button"
           onClick={() => setTheme(mode)}
           className={clsx(
-            "min-h-[32px] rounded-[8px] px-3 text-[13px] font-medium tracking-normal transition-[background-color,color,box-shadow,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none",
+            "min-h-[32px] rounded-[8px] px-2 text-[12px] font-medium tracking-normal transition-[background-color,color,box-shadow,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none sm:px-3 sm:text-[13px]",
             currentTheme === mode
               ? "bg-white text-slate-950 shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/10 dark:text-white"
               : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900 dark:text-gray-400 dark:hover:bg-white/[0.05] dark:hover:text-gray-100"
@@ -144,9 +144,22 @@ export function AppShell({ token, user }: AppShellProps) {
 
   const navigate = (next: AppPage) => { setPage(next); setMobileOpen(false); };
 
-  const drawerTransform = mobileOpen
-    ? "translateX(0)"
-    : direction === "rtl" ? "translateX(100%)" : "translateX(-100%)";
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
+
+  const mobileDrawerOffset = mobileOpen
+    ? "0px"
+    : direction === "rtl"
+      ? "calc(100% + 1rem)"
+      : "calc(-100% - 1rem)";
 
   return (
     <div className="macos-content-scope macos-app-bg flex h-dvh min-h-0 w-full overflow-hidden pt-10 text-sm tracking-normal text-ink" dir={direction}>
@@ -158,7 +171,9 @@ export function AppShell({ token, user }: AppShellProps) {
 
       {/* ── Mobile overlay ── */}
       {mobileOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="Close navigation"
           className="fixed inset-0 z-overlay animate-fade-in bg-ink/40 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -166,18 +181,19 @@ export function AppShell({ token, user }: AppShellProps) {
 
       {/* Sidebar */}
       <aside
+        id="primary-navigation"
         className={clsx(
           "fixed start-3 top-12 bottom-3 z-modal flex flex-col",
           "lg:relative lg:start-auto lg:top-auto lg:bottom-auto lg:m-3 lg:me-0 lg:mt-2 lg:h-[calc(100dvh-60px)] lg:shrink-0",
           "macos-sidebar rounded-[18px] border",
-          "transition-all duration-300 overflow-hidden",
+          "translate-x-[var(--mobile-drawer-x)] overflow-hidden transition-all duration-300 lg:translate-x-0",
+          mobileOpen ? "pointer-events-auto" : "pointer-events-none lg:pointer-events-auto",
           collapsed ? "w-[64px]" : "w-[248px]",
-          "lg:translate-x-0",
         )}
         style={{
-          transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
+          "--mobile-drawer-x": mobileDrawerOffset,
           transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
-        }}
+        } as React.CSSProperties}
       >
         {/* Sidebar Header */}
         <div className={clsx(
@@ -303,11 +319,22 @@ export function AppShell({ token, user }: AppShellProps) {
       {/* ═══ MAIN CONTENT AREA (Offset by Sidebar width + Margin Geometry) ═══ */}
       <div className="macos-main-material relative m-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-s border-black/5 transition-all duration-300 dark:border-white/10 lg:m-3 lg:ms-0 lg:mt-2 lg:rounded-[18px]">
         {/* ── Header Utilities ─ */}
-        <header className="relative z-50 flex h-12 shrink-0 items-center justify-end border-b border-black/5 bg-white px-3 dark:border-white/10 dark:bg-surface lg:px-4">
-          <div className="flex items-center gap-2">
+        <header className="relative z-50 flex h-12 shrink-0 items-center justify-between border-b border-black/5 bg-white px-2 dark:border-white/10 dark:bg-surface lg:justify-end lg:px-4">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open navigation"
+            aria-controls="primary-navigation"
+            aria-expanded={mobileOpen}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-black/5 bg-white text-gray-600 transition-colors hover:bg-black/[0.03] hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white lg:hidden"
+          >
+            <IconMenu className="h-4 w-4" />
+          </button>
+
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
             <ThemeSwitcher />
-            <div className="relative z-50 flex h-9 items-center gap-1.5 rounded-[10px] border border-black/5 bg-white px-2 shadow-none dark:border-white/10 dark:bg-white/[0.06]">
-              <IconGlobe className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+            <div className="relative z-50 flex h-9 min-w-0 items-center gap-1 rounded-[10px] border border-black/5 bg-white px-1.5 shadow-none dark:border-white/10 dark:bg-white/[0.06] sm:gap-1.5 sm:px-2">
+              <IconGlobe className="hidden h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-gray-400 sm:block" />
               <LanguageToggle />
             </div>
           </div>
