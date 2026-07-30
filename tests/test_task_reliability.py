@@ -57,18 +57,7 @@ class TestTaskLifecycle:
     and reach a terminal state (SUCCESS/FAILURE) within timeout.
     """
 
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = httpx.post(
-            f"{API_BASE}/auth/token",
-            data=_live_credentials(),
-            timeout=10
-        )
-        assert response.status_code == 200
-        return response.json()["access_token"]
-
-    def test_task_never_stuck_in_pending(self, auth_token):
+    def test_task_never_stuck_in_pending(self, live_auth_token, live_project_id):
         """
         CRITICAL: Tasks should NEVER remain in PENDING for > 30 seconds
         If a task is PENDING for > 30s, worker is not processing it.
@@ -81,18 +70,18 @@ class TestTaskLifecycle:
         # Create a simple task
         response = httpx.post(
             f"{API_BASE}/content/generate/async",
-            headers={"Authorization": f"Bearer {auth_token}"},
+            headers={"Authorization": f"Bearer {live_auth_token}"},
             json={
-                "project_id": str(uuid.uuid4()),
+                "project_id": live_project_id,
                 "topic": "Test Task Lifecycle",
-                "keywords": ["test"],
-                "word_count": 100
+                "primary_keyword": "test",
+                "word_count_range": "800-1000",
             },
             timeout=10
         )
 
-        if response.status_code != 202:
-            pytest.skip(f"Task creation failed: {response.status_code}")
+        assert response.status_code == 202, \
+            f"Task creation failed: HTTP {response.status_code}"
 
         task_id = response.json()["task_id"]
 
@@ -103,7 +92,7 @@ class TestTaskLifecycle:
         while time.time() - start_time < max_wait:
             task_response = httpx.get(
                 f"{API_BASE}/content/task/{task_id}",
-                headers={"Authorization": f"Bearer {auth_token}"},
+                headers={"Authorization": f"Bearer {live_auth_token}"},
                 timeout=5
             )
 
@@ -124,7 +113,7 @@ class TestTaskLifecycle:
             f"Check: 1) Worker online? 2) Correct queue? 3) Task registered?"
         )
 
-    def test_task_reaches_terminal_state(self, auth_token):
+    def test_task_reaches_terminal_state(self, live_auth_token, live_project_id):
         """
         Property: Every task MUST reach SUCCESS or FAILURE (never stuck)
 
@@ -136,18 +125,18 @@ class TestTaskLifecycle:
         # Create task
         response = httpx.post(
             f"{API_BASE}/content/generate/async",
-            headers={"Authorization": f"Bearer {auth_token}"},
+            headers={"Authorization": f"Bearer {live_auth_token}"},
             json={
-                "project_id": str(uuid.uuid4()),
+                "project_id": live_project_id,
                 "topic": "Terminal State Test",
-                "keywords": ["test"],
-                "word_count": 100
+                "primary_keyword": "test",
+                "word_count_range": "800-1000",
             },
             timeout=10
         )
 
-        if response.status_code != 202:
-            pytest.skip("Task creation failed")
+        assert response.status_code == 202, \
+            f"Task creation failed: HTTP {response.status_code}"
 
         task_id = response.json()["task_id"]
 
@@ -158,7 +147,7 @@ class TestTaskLifecycle:
         while time.time() - start < 300:  # 5 min timeout
             resp = httpx.get(
                 f"{API_BASE}/content/task/{task_id}",
-                headers={"Authorization": f"Bearer {auth_token}"},
+                headers={"Authorization": f"Bearer {live_auth_token}"},
                 timeout=5
             )
 
@@ -177,7 +166,7 @@ class TestTaskLifecycle:
         )
 
     @given(
-        word_count=st.integers(min_value=1, max_value=5000),
+        word_count=st.integers(min_value=800, max_value=3500),
         keyword_count=st.integers(min_value=0, max_value=20)
     )
     @settings(
@@ -185,7 +174,14 @@ class TestTaskLifecycle:
         deadline=timedelta(seconds=60),
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )
-    def test_task_handles_various_inputs(self, auth_token, word_count, keyword_count):
+    def test_task_handles_various_inputs(
+        self,
+        live_auth_token,
+        live_project_id,
+        reset_live_rate_limits,
+        word_count,
+        keyword_count,
+    ):
         """
         Property-based: Tasks should handle ANY valid input without crashing
 
@@ -196,27 +192,22 @@ class TestTaskLifecycle:
         """
         keywords = [f"keyword_{i}" for i in range(keyword_count)]
 
-        try:
-            response = httpx.post(
-                f"{API_BASE}/content/generate/async",
-                headers={"Authorization": f"Bearer {auth_token}"},
-                json={
-                    "project_id": str(uuid.uuid4()),
-                    "topic": f"Property Test {word_count}w",
-                    "keywords": keywords,
-                    "word_count": word_count
-                },
-                timeout=30  # Increased timeout for large requests
-            )
+        reset_live_rate_limits()
+        response = httpx.post(
+            f"{API_BASE}/content/generate/async",
+            headers={"Authorization": f"Bearer {live_auth_token}"},
+            json={
+                "project_id": live_project_id,
+                "topic": f"Property Test {word_count}w {uuid.uuid4().hex[:8]}",
+                "primary_keyword": keywords[0] if keywords else None,
+                "secondary_keywords": keywords[1:],
+                "word_count_range": f"{word_count}-{word_count}",
+            },
+            timeout=30,
+        )
 
-            # Should either accept or reject cleanly (no 500 errors)
-            assert response.status_code in [200, 202, 400, 422], \
-                f"Unexpected status {response.status_code} for input: word_count={word_count}, keywords={keyword_count}"
-
-        except httpx.ReadTimeout:
-            # Timeout is acceptable - API didn't crash, just took too long
-            # This is a performance issue, not a reliability issue
-            pass
+        assert response.status_code == 202, \
+            f"Unexpected status {response.status_code} for input: word_count={word_count}, keywords={keyword_count}"
 
 
 # ==============================================================================
@@ -287,7 +278,7 @@ class TestQueueReliability:
     Tests for queue routing and serialization issues
     """
 
-    def test_task_serialization(self):
+    def test_task_serialization(self, live_project_id):
         """Tasks must serialize/deserialize correctly"""
         from orchestration.celery_app import app
 
@@ -298,10 +289,10 @@ class TestQueueReliability:
             # This should not raise serialization errors
             result = generate_content_task.apply_async(
                 kwargs={
-                    "project_id": str(uuid.uuid4()),
+                    "project_id": live_project_id,
                     "topic": "Serialization Test",
-                    "keywords": ["test"],
-                    "word_count": 100
+                    "primary_keyword": "test",
+                    "word_count_range": "800-1000",
                 },
                 countdown=9999  # Don't actually run it
             )
@@ -337,77 +328,63 @@ class TestConcurrentTasks:
     Tests for race conditions and concurrent task handling
     """
 
-    def test_multiple_tasks_simultaneously(self, auth_token):
+    def test_multiple_tasks_simultaneously(
+        self,
+        live_auth_token,
+        live_project_id,
+        reset_live_rate_limits,
+    ):
         """System should handle multiple concurrent tasks"""
         # Create 5 tasks at once
         task_ids = []
+        failures = []
 
         for i in range(5):
             try:
+                reset_live_rate_limits()
                 response = httpx.post(
                     f"{API_BASE}/content/generate/async",
-                    headers={"Authorization": f"Bearer {auth_token}"},
+                    headers={"Authorization": f"Bearer {live_auth_token}"},
                     json={
-                        "project_id": str(uuid.uuid4()),
+                        "project_id": live_project_id,
                         "topic": f"Concurrent Test {i}",
-                        "keywords": [f"test{i}"],
-                        "word_count": 100
+                        "primary_keyword": f"test{i}",
+                        "word_count_range": "800-1000",
                     },
                     timeout=30
                 )
 
                 if response.status_code == 202:
                     task_ids.append(response.json()["task_id"])
-            except httpx.ReadTimeout:
-                # API slow under load - acceptable
-                pass
+                else:
+                    failures.append(f"Task {i}: HTTP {response.status_code}")
+            except httpx.ReadTimeout as exc:
+                failures.append(f"Task {i}: {exc.__class__.__name__}")
 
-        assert len(task_ids) > 0, "No tasks were created"
+        assert len(task_ids) == 5, \
+            f"Only {len(task_ids)}/5 concurrent tasks were accepted: {failures}"
 
-        # All should eventually move out of PENDING (2 minute wait for concurrent processing)
-        time.sleep(120)
-
-        stuck_tasks = []
-        for task_id in task_ids:
-            try:
+        pending = set(task_ids)
+        deadline = time.time() + 120
+        while pending and time.time() < deadline:
+            for task_id in list(pending):
                 resp = httpx.get(
                     f"{API_BASE}/content/task/{task_id}",
-                    headers={"Authorization": f"Bearer {auth_token}"},
+                    headers={"Authorization": f"Bearer {live_auth_token}"},
                     timeout=10
                 )
+                assert resp.status_code == 200, \
+                    f"Task status failed with HTTP {resp.status_code}"
+                if resp.json()["state"] != "PENDING":
+                    pending.remove(task_id)
+            if pending:
+                time.sleep(2)
 
-                if resp.status_code == 200:
-                    state = resp.json()["state"]
-                    if state == "PENDING":
-                        stuck_tasks.append(task_id)
-            except Exception:
-                # Can't check status - might be a transient issue
-                pass
-
-        assert len(stuck_tasks) == 0, \
-            f"Tasks stuck in PENDING after 120s: {stuck_tasks}\n" \
+        assert not pending, \
+            f"Tasks stuck in PENDING after 120s: {sorted(pending)}\n" \
             f"This indicates a concurrency or worker capacity issue"
 
         print(f"✓ {len(task_ids)} concurrent tasks handled correctly")
-
-
-# ==============================================================================
-# FIXTURES
-# ==============================================================================
-
-@pytest.fixture(scope="session")
-def auth_token():
-    """Session-scoped auth token"""
-    response = httpx.post(
-        f"{API_BASE}/auth/token",
-        data=_live_credentials(),
-        timeout=10
-    )
-
-    if response.status_code != 200:
-        pytest.skip("Cannot authenticate - check credentials")
-
-    return response.json()["access_token"]
 
 
 # ==============================================================================

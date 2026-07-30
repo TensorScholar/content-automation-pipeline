@@ -57,17 +57,6 @@ class TestInputValidationEdgeCases:
     Test extreme input variations to find validation bugs
     """
 
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = httpx.post(
-            f"{API_BASE}/auth/token",
-            data=_live_credentials(),
-            timeout=30
-        )
-        assert response.status_code == 200
-        return response.json()["access_token"]
-
     @given(
         topic_length=st.integers(min_value=1, max_value=500),
         unicode_level=st.integers(min_value=0, max_value=3)
@@ -77,7 +66,14 @@ class TestInputValidationEdgeCases:
         deadline=timedelta(seconds=30),
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )
-    def test_extreme_topic_lengths_and_unicode(self, auth_token, topic_length, unicode_level):
+    def test_extreme_topic_lengths_and_unicode(
+        self,
+        live_auth_token,
+        live_project_factory,
+        reset_live_rate_limits,
+        topic_length,
+        unicode_level,
+    ):
         """
         Property: API should handle ANY valid topic length and Unicode characters
 
@@ -106,34 +102,22 @@ class TestInputValidationEdgeCases:
         if not topic.strip():
             topic = "Test Topic"  # Ensure not empty
 
-        try:
-            response = httpx.post(
-                f"{API_BASE}/content/generate/async",
-                headers={"Authorization": f"Bearer {auth_token}"},
-                json={
-                    "project_id": str(uuid.uuid4()),
-                    "topic": topic,
-                    "keywords": ["test"],
-                    "word_count": 100
-                },
-                timeout=30
-            )
+        reset_live_rate_limits()
+        project_id = live_project_factory()
+        response = httpx.post(
+            f"{API_BASE}/content/generate/async",
+            headers={"Authorization": f"Bearer {live_auth_token}"},
+            json={
+                "project_id": project_id,
+                "topic": topic,
+                "primary_keyword": "test",
+                "word_count_range": "800-1000",
+            },
+            timeout=30,
+        )
 
-            # Should either accept gracefully or reject with validation error
-            assert response.status_code in [200, 202, 400, 422, 500], \
-                f"Unexpected status {response.status_code} for topic_length={topic_length}, unicode={unicode_level}"
-
-            # 500 errors indicate server crash - CRITICAL
-            if response.status_code == 500:
-                pytest.fail(
-                    f"CRITICAL: Server crashed with 500 error\n"
-                    f"Topic length: {topic_length}, Unicode level: {unicode_level}\n"
-                    f"Topic sample: {topic[:50]}..."
-                )
-
-        except httpx.ReadTimeout:
-            # Timeout is acceptable
-            pass
+        assert response.status_code in [202, 422], \
+            f"Unexpected status {response.status_code} for topic_length={topic_length}, unicode={unicode_level}"
 
     @given(
         keyword_count=st.integers(min_value=0, max_value=50),
@@ -144,7 +128,14 @@ class TestInputValidationEdgeCases:
         deadline=timedelta(seconds=30),
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )
-    def test_extreme_keyword_variations(self, auth_token, keyword_count, keyword_length):
+    def test_extreme_keyword_variations(
+        self,
+        live_auth_token,
+        live_project_id,
+        reset_live_rate_limits,
+        keyword_count,
+        keyword_length,
+    ):
         """
         Property: API should handle extreme keyword configurations
 
@@ -160,29 +151,22 @@ class TestInputValidationEdgeCases:
             for _ in range(min(keyword_count, 30))
         ]
 
-        try:
-            response = httpx.post(
-                f"{API_BASE}/content/generate/async",
-                headers={"Authorization": f"Bearer {auth_token}"},
-                json={
-                    "project_id": str(uuid.uuid4()),
-                    "topic": "Test Topic",
-                    "keywords": keywords,
-                    "word_count": 100
-                },
-                timeout=30
-            )
+        reset_live_rate_limits()
+        response = httpx.post(
+            f"{API_BASE}/content/generate/async",
+            headers={"Authorization": f"Bearer {live_auth_token}"},
+            json={
+                "project_id": live_project_id,
+                "topic": f"Keyword Edge {keyword_count}-{keyword_length}-{uuid.uuid4().hex[:8]}",
+                "primary_keyword": keywords[0] if keywords else None,
+                "secondary_keywords": keywords[1:],
+                "word_count_range": "800-1000",
+            },
+            timeout=30,
+        )
 
-            assert response.status_code in [200, 202, 400, 422, 500]
-
-            if response.status_code == 500:
-                pytest.fail(
-                    f"CRITICAL: Server crashed\n"
-                    f"Keyword count: {keyword_count}, Keyword length: {keyword_length}"
-                )
-
-        except httpx.ReadTimeout:
-            pass
+        assert response.status_code in [202, 422], \
+            f"Unexpected status {response.status_code} for keyword_count={keyword_count}, keyword_length={keyword_length}"
 
 
 # ==============================================================================
@@ -194,7 +178,12 @@ class TestDatabaseEdgeCases:
     Test database connection handling under stress
     """
 
-    def test_rapid_task_creation_database_pool(self):
+    def test_rapid_task_creation_database_pool(
+        self,
+        live_auth_token,
+        live_project_id,
+        reset_live_rate_limits,
+    ):
         """
         CRITICAL: Rapid task creation should not exhaust database connection pool
 
@@ -203,46 +192,36 @@ class TestDatabaseEdgeCases:
         - Connections not being returned to pool
         - Database deadlocks
         """
-        # Authenticate
-        response = httpx.post(
-            f"{API_BASE}/auth/token",
-            data=_live_credentials(),
-            timeout=10
-        )
-        token = response.json()["access_token"]
-
         # Create 20 tasks rapidly (faster than they can execute)
         created = 0
         failures = []
 
         for i in range(20):
             try:
+                reset_live_rate_limits()
                 resp = httpx.post(
                     f"{API_BASE}/content/generate/async",
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers={"Authorization": f"Bearer {live_auth_token}"},
                     json={
-                        "project_id": str(uuid.uuid4()),
+                        "project_id": live_project_id,
                         "topic": f"DB Pool Test {i}",
-                        "keywords": ["test"],
-                        "word_count": 50
+                        "primary_keyword": "test",
+                        "word_count_range": "800-1000",
                     },
                     timeout=5
                 )
 
                 if resp.status_code == 202:
                     created += 1
-                elif resp.status_code == 500:
-                    failures.append(f"Task {i}: {resp.text[:100]}")
-                elif resp.status_code in [503, 504]:
-                    failures.append(f"Task {i}: Service unavailable (DB pool exhausted?)")
+                else:
+                    failures.append(f"Task {i}: HTTP {resp.status_code}")
 
             except httpx.ReadTimeout:
                 failures.append(f"Task {i}: Timeout")
             except Exception as e:
                 failures.append(f"Task {i}: {str(e)[:100]}")
 
-        # Should create at least 15 tasks successfully
-        assert created >= 15, \
+        assert created == 20, \
             f"Database connection pool may be exhausted\n" \
             f"Created: {created}/20\n" \
             f"Failures: {failures[:5]}"
@@ -356,16 +335,7 @@ class TestTaskRetryLogic:
     Test task retry and error handling
     """
 
-    @pytest.fixture
-    def auth_token(self):
-        response = httpx.post(
-            f"{API_BASE}/auth/token",
-            data=_live_credentials(),
-            timeout=10
-        )
-        return response.json()["access_token"]
-
-    def test_invalid_project_id_fails_immediately(self, auth_token):
+    def test_invalid_project_id_fails_immediately(self, live_auth_token):
         """
         Property: Tasks with invalid project IDs should fail fast (not retry)
 
@@ -374,40 +344,18 @@ class TestTaskRetryLogic:
         # Create task with random UUID (won't exist in DB)
         response = httpx.post(
             f"{API_BASE}/content/generate/async",
-            headers={"Authorization": f"Bearer {auth_token}"},
+            headers={"Authorization": f"Bearer {live_auth_token}"},
             json={
                 "project_id": str(uuid.uuid4()),
                 "topic": "Test Invalid Project",
-                "keywords": ["test"],
-                "word_count": 100
+                "primary_keyword": "test",
+                "word_count_range": "800-1000",
             },
             timeout=30
         )
 
-        if response.status_code != 202:
-            pytest.skip("Task not created")
-
-        task_id = response.json()["task_id"]
-
-        # Wait for task to be processed
-        time.sleep(10)
-
-        # Check task status
-        resp = httpx.get(
-            f"{API_BASE}/content/task/{task_id}",
-            headers={"Authorization": f"Bearer {auth_token}"},
-            timeout=5
-        )
-
-        if resp.status_code == 200:
-            state = resp.json()["state"]
-
-            # Should fail quickly, not retry forever
-            assert state in ["FAILURE", "PENDING"], \
-                f"Task with invalid project should fail, got state: {state}"
-
-            if state == "FAILURE":
-                print("✓ Task failed fast without retrying (expected behavior)")
+        assert response.status_code == 404, \
+            f"Invalid project should fail before queueing, got HTTP {response.status_code}"
 
 
 # ==============================================================================
@@ -418,15 +366,6 @@ class TestConcurrentOperations:
     """
     Test race conditions and concurrent access
     """
-
-    @pytest.fixture
-    def auth_token(self):
-        response = httpx.post(
-            f"{API_BASE}/auth/token",
-            data=_live_credentials(),
-            timeout=10
-        )
-        return response.json()["access_token"]
 
     def test_concurrent_authentication_requests(self):
         """
@@ -447,35 +386,16 @@ class TestConcurrentOperations:
             except Exception:
                 return False
 
-        # 10 concurrent auth requests
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(authenticate) for _ in range(10)]
+        # Stay below the authentication rate limit while exercising concurrency.
+        request_count = 4
+        with concurrent.futures.ThreadPoolExecutor(max_workers=request_count) as executor:
+            futures = [executor.submit(authenticate) for _ in range(request_count)]
             results = [f.result() for f in concurrent.futures.as_completed(futures)]
 
         success_count = sum(results)
 
-        # At least 8/10 should succeed
-        assert success_count >= 8, \
-            f"Concurrent auth failures: {success_count}/10 succeeded\n" \
+        assert success_count == request_count, \
+            f"Concurrent auth failures: {success_count}/{request_count} succeeded\n" \
             f"Possible database connection race condition"
 
-        print(f"✓ {success_count}/10 concurrent auth requests succeeded")
-
-
-# ==============================================================================
-# FIXTURES
-# ==============================================================================
-
-@pytest.fixture(scope="session")
-def auth_token():
-    """Session-scoped auth token"""
-    response = httpx.post(
-        f"{API_BASE}/auth/token",
-        data=_live_credentials(),
-        timeout=30
-    )
-
-    if response.status_code != 200:
-        pytest.skip("Cannot authenticate")
-
-    return response.json()["access_token"]
+        print(f"✓ {success_count}/{request_count} concurrent auth requests succeeded")
