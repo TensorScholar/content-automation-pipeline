@@ -173,6 +173,23 @@ def _parse_json_object(value: object) -> dict:
     return {}
 
 
+def _known_task_project_id(task: dict | None, result: dict | None = None) -> str | None:
+    if task:
+        args = task.get("args")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = None
+        if isinstance(args, (list, tuple)) and args and args[0]:
+            return str(args[0])
+
+    if result and result.get("project_id"):
+        return str(result["project_id"])
+
+    return None
+
+
 def _task_submitted_by_user_id(task: dict | None) -> str | None:
     if not task:
         return None
@@ -469,6 +486,14 @@ async def get_task_status(
             except Exception:
                 db_result = None
 
+    project_id = _known_task_project_id(db_task, db_result)
+    if (
+        project_id is None
+        and state == "SUCCESS"
+        and isinstance(celery_result.result, dict)
+    ):
+        project_id = _known_task_project_id(None, celery_result.result)
+
     # Base response
     response = {
         "task_id": task_id,
@@ -476,6 +501,8 @@ async def get_task_status(
         "ready": state in ("SUCCESS", "FAILURE", "REVOKED"),
         "state_source": state_source,
     }
+    if project_id is not None:
+        response["project_id"] = project_id
 
     # Handle different states
     if state == "SUCCESS":
@@ -483,11 +510,8 @@ async def get_task_status(
         if db_result is not None:
             response["result"] = db_result
             response["completed_at"] = db_task.get("end_time") if db_task else None
-            response["project_id"] = db_result.get("project_id")
         else:
             response["result"] = celery_result.result
-            if isinstance(celery_result.result, dict):
-                response["project_id"] = celery_result.result.get("project_id")
 
     elif state == "FAILURE":
         response["status"] = "Task failed"
