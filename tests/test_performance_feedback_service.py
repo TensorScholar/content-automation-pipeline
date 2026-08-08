@@ -41,6 +41,22 @@ class FakePerformanceRepository:
         self.snapshots_by_key[key] = stored
         return stored
 
+    async def bulk_upsert_snapshots(self, snapshots, *, batch_size=1000):
+        return [await self.upsert_snapshot(snapshot) for snapshot in snapshots]
+
+    async def resolve_missing_performance_opportunities(self, *, project_id, article_ids):
+        assert project_id == self.project_id
+        resolved = 0
+        for opportunity in self.opportunities_by_key.values():
+            if (
+                opportunity.get("type") == "missing_performance_data"
+                and opportunity.get("article_id") in article_ids
+                and opportunity.get("status") == "open"
+            ):
+                opportunity["status"] = "resolved"
+                resolved += 1
+        return resolved
+
     async def list_snapshots(self, project_id, *, limit=50):
         assert project_id == self.project_id
         return list(self.snapshots_by_key.values())[:limit]
@@ -57,6 +73,15 @@ class FakePerformanceRepository:
         assert project_id == self.project_id
         return self.previous_snapshots.get(url)
 
+    async def latest_previous_snapshots(self, *, project_id, urls, before_date):
+        assert project_id == self.project_id
+        return {
+            url: snapshot
+            for url in urls
+            if (snapshot := self.previous_snapshots.get(url)) is not None
+            and snapshot.get("date_to", date.min) < before_date
+        }
+
     async def upsert_opportunity(self, opportunity):
         key = (opportunity["project_id"], opportunity["url"], opportunity["type"])
         existing = self.opportunities_by_key.get(key, {})
@@ -70,6 +95,9 @@ class FakePerformanceRepository:
         }
         self.opportunities_by_key[key] = stored
         return stored
+
+    async def bulk_upsert_opportunities(self, opportunities, *, batch_size=1000):
+        return [await self.upsert_opportunity(opportunity) for opportunity in opportunities]
 
     async def resolve_opportunity(self, *, project_id, article_id, opportunity_type):
         assert project_id == self.project_id
@@ -144,6 +172,30 @@ async def test_duplicate_import_updates_single_snapshot():
     snapshot = next(iter(repository.snapshots_by_key.values()))
     assert snapshot["clicks"] == 20
     assert snapshot["ctr"] == 0.02
+
+
+
+
+@pytest.mark.asyncio
+async def test_duplicate_rows_in_one_import_are_collapsed_before_bulk_upsert():
+    project_id = uuid4()
+    repository = FakePerformanceRepository(project_id=project_id)
+    service = PerformanceFeedbackService(repository)
+
+    result = await service.import_csv(
+        project_id=project_id,
+        csv_text=csv_payload(
+            "https://example.com/a,10,1000,0.01,15,2026-06-01,2026-06-07",
+            "https://example.com/a,20,1000,0.02,14,2026-06-01,2026-06-07",
+        ),
+    )
+
+    assert result["imported_count"] == 1
+    assert result["deduplicated_input_count"] == 1
+    assert len(repository.snapshots_by_key) == 1
+    snapshot = next(iter(repository.snapshots_by_key.values()))
+    assert snapshot["clicks"] == 20
+    assert snapshot["average_position"] == 14.0
 
 
 @pytest.mark.asyncio

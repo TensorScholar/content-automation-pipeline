@@ -283,9 +283,9 @@ start_api() {
     print_step "Step 4/6: Starting Content Automation API on port $API_PORT..."
 
     if [ -x "$UVICORN_BIN" ]; then
-        api_cmd=("$UVICORN_BIN" api.main:app --host 0.0.0.0 --port "$API_PORT")
+        api_cmd=("$UVICORN_BIN" api.main:create_app --factory --host 0.0.0.0 --port "$API_PORT")
     else
-        api_cmd=(poetry run uvicorn api.main:app --host 0.0.0.0 --port "$API_PORT")
+        api_cmd=(poetry run uvicorn api.main:create_app --factory --host 0.0.0.0 --port "$API_PORT")
     fi
 
     "$PYTHON_BIN" "$DETACH_HELPER" \

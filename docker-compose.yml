@@ -73,6 +73,8 @@ services:
 
       # Redis configuration — L-5: authenticated URL to match requirepass
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
 
       # LLM configuration - Anthropic is the default provider
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
@@ -83,9 +85,15 @@ services:
       # Application configuration
       MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-localhost,127.0.0.1,api}"
 
       # Security - REQUIRED: No default allowed
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY required - run openssl rand -hex 32}"
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      GOOGLE_SEARCH_CONSOLE_CLIENT_ID: ${GOOGLE_SEARCH_CONSOLE_CLIENT_ID:-}
+      GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: ${GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET:-}
+      GOOGLE_SEARCH_CONSOLE_REDIRECT_URI: ${GOOGLE_SEARCH_CONSOLE_REDIRECT_URI:-}
+      GOOGLE_SEARCH_CONSOLE_FRONTEND_RETURN_URL: ${GOOGLE_SEARCH_CONSOLE_FRONTEND_RETURN_URL:-http://localhost:3001/?search_console=connected}
 
       # Performance tuning
       WORKERS: ${WORKERS:-4}
@@ -145,11 +153,11 @@ services:
       dockerfile: Dockerfile
     container_name: content-automation-celery
     restart: unless-stopped
-    command: celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4 -Q critical,high,medium,default,low
+    command: celery -A orchestration.celery_app.app worker --loglevel=info --concurrency=4 -Q critical,high,medium,default,low,integrations
     healthcheck:
-      test: [ "CMD", "celery", "-A", "orchestration.celery_app.app", "inspect", "ping", "-d", "celery@$$HOSTNAME" ]
+      test: [ "CMD-SHELL", "celery -A orchestration.celery_app.app inspect ping -d \"celery@$$HOSTNAME\" --timeout=15" ]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 3
       start_period: 30s
     depends_on:
@@ -165,6 +173,11 @@ services:
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      GOOGLE_SEARCH_CONSOLE_CLIENT_ID: ${GOOGLE_SEARCH_CONSOLE_CLIENT_ID:-}
+      GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: ${GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET:-}
+      GOOGLE_SEARCH_CONSOLE_REDIRECT_URI: ${GOOGLE_SEARCH_CONSOLE_REDIRECT_URI:-}
+      GOOGLE_SEARCH_CONSOLE_FRONTEND_RETURN_URL: ${GOOGLE_SEARCH_CONSOLE_FRONTEND_RETURN_URL:-http://localhost:3001/?search_console=connected}
       # LLM configuration - Anthropic is the default provider
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -199,14 +212,22 @@ services:
     restart: unless-stopped
     command: celery -A orchestration.celery_app.app beat --loglevel=info
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
+      DATABASE_URL: postgresql://content_user:${POSTGRES_PASSWORD:?Required}@postgres:5432/content_automation
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       # Celery broker and result backend must match the worker configuration
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      GOOGLE_SEARCH_CONSOLE_CLIENT_ID: ${GOOGLE_SEARCH_CONSOLE_CLIENT_ID:-}
+      GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: ${GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET:-}
+      GOOGLE_SEARCH_CONSOLE_REDIRECT_URI: ${GOOGLE_SEARCH_CONSOLE_REDIRECT_URI:-}
+      GOOGLE_SEARCH_CONSOLE_FRONTEND_RETURN_URL: ${GOOGLE_SEARCH_CONSOLE_FRONTEND_RETURN_URL:-http://localhost:3001/?search_console=connected}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
     volumes:
@@ -263,18 +284,19 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:8000}
     container_name: content-automation-frontend
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     environment:
-      API_PROXY_TARGET: http://api:8000
+      API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:8000}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     ports:
       - "${FRONTEND_PORT:-3001}:3001"
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3001/" ]
+      test: [ "CMD", "wget", "-q", "--spider", "--timeout=10", "http://localhost:3001/" ]
       interval: 30s
       timeout: 10s
       retries: 3

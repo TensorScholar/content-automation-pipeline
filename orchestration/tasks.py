@@ -27,7 +27,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
@@ -1533,7 +1533,7 @@ def analyze_website_task(self, project_id: str, domain: str) -> Dict:
     )
     loop = None
     try:
-        from uuid import UUID
+        from uuid import UUID, uuid4
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -1666,3 +1666,354 @@ def process_dead_letter(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "instructions": "Query task_results table and replay after fixing root cause",
     }
+
+# ============================================================================
+# P0 external integration tasks
+# ============================================================================
+
+
+def _run_integration_async(coro):
+    """Run integration work on the worker process event loop.
+
+    The database engine is initialized during ``worker_process_init`` and is
+    bound to that process loop. Creating and closing a fresh loop per task can
+    strand asyncpg/SQLAlchemy futures on a different loop, so P0 integration
+    tasks deliberately reuse the worker loop. A fallback loop is created only
+    for direct task execution outside a normal Celery worker lifecycle.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("event loop is closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    if loop.is_running():
+        raise RuntimeError("Integration Celery task cannot run inside an active event loop")
+    return loop.run_until_complete(coro)
+
+
+@app.task(
+    name="content_automation.sync_search_console",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=4,
+    queue="integrations",
+    soft_time_limit=840,
+    time_limit=900,
+)
+def sync_search_console_task(self, run_id: str) -> Dict[str, Any]:
+    """Execute one durable, idempotent Search Console date-window sync."""
+    from api.dependencies import get_search_console_service
+    from services.search_console_service import SearchConsoleError
+
+    service = get_search_console_service()
+    parsed_run_id = UUID(run_id)
+    try:
+        return _run_integration_async(
+            service.execute_sync(parsed_run_id, task_id=str(self.request.id))
+        )
+    except SearchConsoleError as exc:
+        retry_count = int(getattr(self.request, "retries", 0))
+        if exc.retryable and retry_count < int(self.max_retries or 0):
+            recorded = _run_integration_async(
+                service.repository.mark_sync_retry(
+                    run_id=parsed_run_id,
+                    task_id=str(self.request.id),
+                    category=exc.category,
+                    message=exc.safe_message,
+                    retry_count=retry_count + 1,
+                )
+            )
+            if not recorded:
+                return {
+                    "status": "superseded",
+                    "run_id": run_id,
+                    "message": "Retry ignored because task ownership changed",
+                }
+            countdown = min(30 * (2**retry_count), 600)
+            raise self.retry(exc=exc, countdown=countdown)
+        recorded = _run_integration_async(
+            service.repository.mark_sync_failure(
+                run_id=parsed_run_id,
+                task_id=str(self.request.id),
+                category=exc.category,
+                message=exc.safe_message,
+                retry_count=retry_count,
+            )
+        )
+        if not recorded:
+            return {
+                "status": "superseded",
+                "run_id": run_id,
+                "message": "Failure ignored because task ownership changed",
+            }
+        raise
+    except Exception as exc:
+        retry_count = int(getattr(self.request, "retries", 0))
+        safe_message = "Unexpected Search Console synchronization failure"
+        if retry_count < int(self.max_retries or 0):
+            recorded = _run_integration_async(
+                service.repository.mark_sync_retry(
+                    run_id=parsed_run_id,
+                    task_id=str(self.request.id),
+                    category="unexpected_error",
+                    message=safe_message,
+                    retry_count=retry_count + 1,
+                )
+            )
+            if not recorded:
+                return {
+                    "status": "superseded",
+                    "run_id": run_id,
+                    "message": "Retry ignored because task ownership changed",
+                }
+            raise self.retry(exc=exc, countdown=min(30 * (2**retry_count), 600))
+        recorded = _run_integration_async(
+            service.repository.mark_sync_failure(
+                run_id=parsed_run_id,
+                task_id=str(self.request.id),
+                category="unexpected_error",
+                message=safe_message,
+                retry_count=retry_count,
+            )
+        )
+        if not recorded:
+            return {
+                "status": "superseded",
+                "run_id": run_id,
+                "message": "Failure ignored because task ownership changed",
+            }
+        raise
+
+
+@app.task(
+    name="content_automation.sync_all_search_console",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    queue="integrations",
+)
+def sync_all_search_console_connections() -> Dict[str, Any]:
+    """Queue the default finalized window for every active selected property."""
+    from api.dependencies import get_search_console_service
+
+    service = get_search_console_service()
+    connections = _run_integration_async(service.repository.list_active_connections())
+    queued = 0
+    skipped = 0
+    failed = 0
+    for connection in connections:
+        try:
+            result = _run_integration_async(service.queue_sync(project_id=UUID(str(connection["project_id"]))))
+            if result.get("idempotent"):
+                skipped += 1
+            else:
+                queued += 1
+        except Exception as exc:
+            failed += 1
+            logger.error(
+                "Scheduled Search Console queueing failed | project_id={} | error={}",
+                connection.get("project_id"),
+                type(exc).__name__,
+            )
+    return {"connections": len(connections), "queued": queued, "skipped": skipped, "failed": failed}
+
+
+@app.task(
+    name="content_automation.reconcile_search_console_syncs",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    queue="integrations",
+)
+def reconcile_search_console_syncs() -> Dict[str, Any]:
+    """Requeue Search Console runs stranded by worker or broker interruption."""
+    from api.dependencies import get_search_console_service
+
+    service = get_search_console_service()
+    stale_runs = _run_integration_async(
+        service.repository.list_stale_sync_runs(stale_after_minutes=30, limit=100)
+    )
+    recovered = 0
+    skipped = 0
+    failed = 0
+    for run in stale_runs:
+        task_id = str(uuid4())
+        try:
+            claimed = _run_integration_async(
+                service.repository.requeue_stale_sync_run(
+                    run_id=UUID(str(run["id"])),
+                    task_id=task_id,
+                    stale_after_minutes=30,
+                )
+            )
+            if not claimed:
+                skipped += 1
+                continue
+            app.send_task(
+                "content_automation.sync_search_console",
+                kwargs={"run_id": str(run["id"])},
+                task_id=task_id,
+                queue="integrations",
+            )
+            recovered += 1
+        except Exception:
+            failed += 1
+            logger.exception(
+                "Search Console reconciliation failed | run_id={}", run.get("id")
+            )
+    return {
+        "stale": len(stale_runs),
+        "recovered": recovered,
+        "skipped": skipped,
+        "failed": failed,
+    }
+
+
+@app.task(
+    name="content_automation.cleanup_search_console_oauth_states",
+    acks_late=True,
+    queue="low",
+)
+def cleanup_search_console_oauth_states() -> Dict[str, Any]:
+    from api.dependencies import get_search_console_repository
+
+    deleted = _run_integration_async(get_search_console_repository().delete_expired_oauth_states())
+    return {"deleted": int(deleted)}
+
+@app.task(
+    name="content_automation.refresh_integration_operational_metrics",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    queue="integrations",
+)
+def refresh_integration_operational_metrics() -> Dict[str, Any]:
+    """Refresh the shared, bounded integration operations snapshot."""
+    from api.dependencies import get_integration_operations_service
+
+    result = _run_integration_async(
+        get_integration_operations_service().get_summary(lookback_hours=24)
+    )
+    return {
+        "status": "succeeded",
+        "overall_status": result.get("overall_status"),
+        "generated_at": str(result.get("generated_at")),
+    }
+
+
+@app.task(
+    name="content_automation.publish_wordpress",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=3,
+    queue="integrations",
+    soft_time_limit=840,
+    time_limit=900,
+)
+def publish_wordpress_task(self, attempt_id: str) -> Dict[str, Any]:
+    """Execute a durable WordPress publish claim with bounded outer retries."""
+    from api.dependencies import get_publishing_service
+    from execution.distributer import WordPressPublishError
+
+    service = get_publishing_service()
+    parsed_attempt_id = UUID(attempt_id)
+    attempt = _run_integration_async(service.publishing.get_attempt(parsed_attempt_id))
+    if not attempt:
+        raise ValueError("Publishing attempt not found")
+    article_id = UUID(str(attempt["article_id"]))
+    try:
+        return _run_integration_async(
+            service.execute_publish_attempt(
+                parsed_attempt_id,
+                task_id=str(self.request.id),
+            )
+        )
+    except WordPressPublishError as exc:
+        retry_count = int(getattr(self.request, "retries", 0))
+        if exc.retryable and retry_count < int(self.max_retries or 0):
+            recorded = _run_integration_async(
+                service.publishing.record_retry(
+                    article_id=article_id,
+                    attempt_id=parsed_attempt_id,
+                    error_category=exc.category,
+                    error_message=exc.safe_message,
+                    retry_count=retry_count + 1,
+                    task_id=str(self.request.id),
+                )
+            )
+            if not recorded:
+                return {
+                    "status": "superseded",
+                    "attempt_id": attempt_id,
+                    "message": "Retry ignored because task ownership changed",
+                }
+            raise self.retry(exc=exc, countdown=min(30 * (2**retry_count), 600))
+        recorded = _run_integration_async(
+            service.publishing.record_failure(
+                article_id=article_id,
+                attempt_id=parsed_attempt_id,
+                error_category=exc.category,
+                error_message=exc.safe_message,
+                retry_count=retry_count,
+                task_id=str(self.request.id),
+            )
+        )
+        if not recorded:
+            return {
+                "status": "superseded",
+                "attempt_id": attempt_id,
+                "message": "Failure ignored because task ownership changed",
+            }
+        raise
+    except Exception as exc:
+        retry_count = int(getattr(self.request, "retries", 0))
+        if retry_count < int(self.max_retries or 0):
+            recorded = _run_integration_async(
+                service.publishing.record_retry(
+                    article_id=article_id,
+                    attempt_id=parsed_attempt_id,
+                    error_category="unexpected_error",
+                    error_message="Unexpected WordPress publication failure",
+                    retry_count=retry_count + 1,
+                    task_id=str(self.request.id),
+                )
+            )
+            if not recorded:
+                return {
+                    "status": "superseded",
+                    "attempt_id": attempt_id,
+                    "message": "Retry ignored because task ownership changed",
+                }
+            raise self.retry(exc=exc, countdown=min(30 * (2**retry_count), 600))
+        recorded = _run_integration_async(
+            service.publishing.record_failure(
+                article_id=article_id,
+                attempt_id=parsed_attempt_id,
+                error_category="unexpected_error",
+                error_message="Unexpected WordPress publication failure",
+                retry_count=retry_count,
+                task_id=str(self.request.id),
+            )
+        )
+        if not recorded:
+            return {
+                "status": "superseded",
+                "attempt_id": attempt_id,
+                "message": "Failure ignored because task ownership changed",
+            }
+        raise
+
+
+@app.task(
+    name="content_automation.reconcile_wordpress_publishes",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    queue="integrations",
+)
+def reconcile_wordpress_publishes() -> Dict[str, Any]:
+    """Recover stale queued/running attempts after worker or broker interruption."""
+    from api.dependencies import get_publishing_service
+
+    return _run_integration_async(get_publishing_service().reconcile_stale_attempts(limit=100))

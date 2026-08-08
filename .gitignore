@@ -139,7 +139,7 @@ secrets/
 *.pem
 *.key
 *.crt
-# Kubernetes secrets file — never commit real values; see k8s/secrets.yaml for instructions
+# Kubernetes secrets file — never commit real values; see k8s/secrets.example.yaml for instructions
 k8s/secrets.yaml
 
 # Benchmark results

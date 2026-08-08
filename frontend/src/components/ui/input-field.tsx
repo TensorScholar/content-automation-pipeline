@@ -17,22 +17,22 @@ export interface InputFieldProps
 }
 
 export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function InputField(
-    { label, helperText, showCharCount, errorText, successText, maxLength, inputSize = "md", className, id: providedId, value, prefix, suffix, fullWidth, ...rest },
+    { label, error = false, helperText, showCharCount, errorText, successText, maxLength, inputSize = "md", className, id: providedId, value, prefix, suffix, fullWidth, ...rest },
     ref
 ) {
     const autoId = useId();
     const id = providedId ?? autoId;
     const helperId = `${id}-helper`;
     const errorId = `${id}-error`;
-    const hasError = Boolean(errorText);
+    const hasError = error || Boolean(errorText);
     const hasSuccess = Boolean(successText) && !hasError;
 
-    const heights = { sm: "h-10", md: "h-11", lg: "h-11" };
+    const heights = { sm: "h-10", md: "h-11", lg: "h-12" };
 
     return (
-        <div className={clsx("flex flex-col gap-1", fullWidth && "w-full")}>
+        <div className={clsx("flex flex-col gap-1.5", fullWidth && "w-full")}>
             {label ? (
-                <label htmlFor={id} className="text-[12px] font-medium tracking-normal text-ink-secondary">
+                <label htmlFor={id} className="text-[12px] font-semibold tracking-normal text-ink-secondary">
                     {label}
                     {rest.required && <span className="ms-1 text-danger" aria-hidden>*</span>}
                 </label>
@@ -40,7 +40,7 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function
 
             <div className="relative">
                 {prefix ? (
-                    <span className="pointer-events-none absolute inset-y-0 start-3 inline-flex items-center text-ink-tertiary">
+                    <span className="pointer-events-none absolute inset-y-0 start-3.5 inline-flex items-center text-ink-tertiary">
                         {prefix}
                     </span>
                 ) : null}
@@ -54,7 +54,7 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function
                     aria-required={rest.required}
                     aria-describedby={hasError ? errorId : helperText ? helperId : undefined}
                     className={clsx(
-                        "smx-input rounded-md",
+                        "smx-input",
                         heights[inputSize],
                         prefix && "ps-10",
                         suffix && "pe-10",
@@ -66,24 +66,24 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function
                 />
 
                 {suffix ? (
-                    <span className="pointer-events-none absolute inset-y-0 end-3 inline-flex items-center text-ink-tertiary">
+                    <span className="pointer-events-none absolute inset-y-0 end-3.5 inline-flex items-center text-ink-tertiary">
                         {suffix}
                     </span>
                 ) : null}
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex min-h-[16px] items-start justify-between gap-3">
                 {hasError ? (
-                    <p id={errorId} className="flex items-center gap-1 text-[11px] text-danger" role="alert">
-                        <span aria-hidden>⚠</span> {errorText}
+                    <p id={errorId} className="text-[11px] font-medium text-danger" role="alert">
+                        {errorText}
                     </p>
                 ) : hasSuccess ? (
-                    <p className="text-[11px] text-success">{successText}</p>
+                    <p className="text-[11px] font-medium text-success">{successText}</p>
                 ) : helperText ? (
-                    <p id={helperId} className="text-[11px] text-ink-tertiary">{helperText}</p>
+                    <p id={helperId} className="text-[11px] leading-4 text-ink-tertiary">{helperText}</p>
                 ) : <span />}
                 {showCharCount && maxLength && (
-                    <span className={clsx("text-[11px]", (String(value ?? "").length) >= maxLength * 0.8 ? "text-warning" : "text-ink-tertiary")}>
+                    <span className={clsx("shrink-0 text-[11px] tabular-nums", (String(value ?? "").length) >= maxLength * 0.8 ? "text-warning" : "text-ink-tertiary")}>
                         {String(value ?? "").length}/{maxLength}
                     </span>
                 )}

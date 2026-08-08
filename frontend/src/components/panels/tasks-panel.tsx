@@ -366,16 +366,28 @@ const PUBLISH_COPY = {
     wordpressRequired: "WordPress connection required",
     checkingWordPress: "Checking WordPress",
     wordpressBlocked: "Configure WordPress before public publishing.",
+    queued: "Publication queued. Waiting for WordPress verification…",
+    retrying: "WordPress is temporarily unavailable. Retrying safely…",
+    completed: "Published and verified on WordPress.",
+    accepted: "Publication is still running in the background. You can safely close this view.",
   },
   fa: {
     wordpressRequired: "اتصال وردپرس لازم است",
     checkingWordPress: "در حال بررسی وردپرس",
     wordpressBlocked: "پیش از انتشار عمومی، وردپرس را متصل کنید.",
+    queued: "انتشار در صف قرار گرفت؛ منتظر تأیید وردپرس هستیم…",
+    retrying: "وردپرس موقتاً در دسترس نیست؛ تلاش مجدد امن در حال انجام است…",
+    completed: "مطلب در وردپرس منتشر و تأیید شد.",
+    accepted: "انتشار در پس‌زمینه ادامه دارد و بستن این صفحه امن است.",
   },
   ar: {
     wordpressRequired: "يلزم ربط ووردبريس",
     checkingWordPress: "جارٍ فحص ووردبريس",
     wordpressBlocked: "اربط ووردبريس قبل النشر العام.",
+    queued: "تمت إضافة النشر إلى الطابور؛ جارٍ التحقق من ووردبريس…",
+    retrying: "ووردبريس غير متاح مؤقتًا؛ تجري إعادة المحاولة بأمان…",
+    completed: "تم النشر والتحقق في ووردبريس.",
+    accepted: "يستمر النشر في الخلفية ويمكن إغلاق هذه الصفحة بأمان.",
   },
 } as const;
 
@@ -833,13 +845,36 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
     setWpPublishing(true);
     setWpResult(null);
     try {
-      await apiRequest(`/content/${detailArticle.id}/publish/wordpress`, {
-        method: "POST", token
-      }, {
-        project_id: publishProjectId,
-        post_status: status,
-      });
-      setWpResult(t("tasks.wpPublished") || "Published to WordPress successfully.");
+      const queued = await apiRequest<{ status: string; publish_status?: string }>(
+        `/content/${detailArticle.id}/publish/wordpress`,
+        { method: "POST", token, timeoutMs: 15000 },
+        { project_id: publishProjectId, post_status: status },
+      );
+      if (queued.status === "success") {
+        setWpResult(PUBLISH_COPY[locale].completed);
+        return;
+      }
+      setWpResult(PUBLISH_COPY[locale].queued);
+      const terminalSuccess = new Set(["published_as_draft", "published_scheduled", "published_public"]);
+      const terminalFailure = new Set(["publish_failed", "publish_validation_failed"]);
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        const publishState = await apiRequest<{
+          publish_status: string;
+          publish_error_message?: string | null;
+        }>(`/content/${detailArticle.id}/publish/status`, { token, timeoutMs: 10000 });
+        if (terminalSuccess.has(publishState.publish_status)) {
+          setWpResult(PUBLISH_COPY[locale].completed);
+          return;
+        }
+        if (terminalFailure.has(publishState.publish_status)) {
+          throw new Error(publishState.publish_error_message || (t("tasks.wpPublishError") || "Failed to publish"));
+        }
+        if (publishState.publish_status === "publish_retrying") {
+          setWpResult(PUBLISH_COPY[locale].retrying);
+        }
+      }
+      setWpResult(PUBLISH_COPY[locale].accepted);
     } catch (e) {
       setWpResult(formatPublishResult(e instanceof ApiError ? e.detail : e, t("tasks.wpPublishError") || "Failed to publish"));
     } finally {
@@ -917,16 +952,16 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
      Master-Detail Layout: Smooth Dynamic Drawers and Logical Properties Only
      ════════════════════════════════════════════════════════════════════════ */
   return (
-    <section className="macos-content-scope animate-fade-in relative flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden bg-transparent p-3 md:p-4" dir="auto">
+    <section className="smx-page !max-w-none relative flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden" dir="auto">
 
       {/* ── Apple-Style Header & Toolbar ── */}
-      <div className="flex flex-col justify-between gap-4 pb-1 md:flex-row md:items-start">
+      <div className="smx-page-header">
         <div className="min-w-0 flex-1">
-          <h2 className="text-[20px] font-semibold text-gray-900 dark:text-gray-100">{t("tasks.title") || "Task History"}</h2>
+          <h2 className="smx-page-title">{t("tasks.title") || "Task History"}</h2>
           <p className="mt-1 text-[13px] text-gray-500 dark:text-gray-300">{t("tasks.subtitle") || "Review, export, and monitor pipeline progress."}</p>
         </div>
 
-        <div className="flex min-w-0 w-full flex-wrap items-center gap-2 rounded-xl border border-black/5 bg-white/[0.95] p-1.5 dark:border-white/10 dark:bg-surface md:mt-0 md:w-auto">
+        <div className="smx-toolbar min-w-0 flex-wrap md:w-auto">
           {/* iOS Toggle Switch for Auto Refresh */}
           <div className="flex items-center gap-3 px-3">
             <span className="text-[13px] font-semibold text-gray-700 dark:text-gray-200">{t("tasks.autoRefresh") || "Auto-refresh"}</span>
@@ -955,7 +990,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
           <button
             type="button"
             onClick={() => void loadTasks()}
-            className="flex h-8 w-8 items-center justify-center rounded-md bg-gray-50 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:bg-surface-alt dark:text-gray-200 dark:hover:bg-white/[0.12] dark:hover:text-gray-100"
+            className="smx-icon-button"
             title={t("common.refresh")}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -963,7 +998,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 
           {kpis.success > 0 && (
             <Button variant="outlined" onClick={() => void onBulkDownload()} className="h-8 rounded-md border-gray-200 bg-white px-3 text-[13px] shadow-none hover:border-teal-500 hover:bg-teal-50/50 hover:text-teal-700 dark:border-white/10 dark:bg-surface-alt dark:hover:bg-teal-500/10 dark:hover:text-teal-300">
-              <svg className="w-4 h-4 mie-2 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              <svg className="w-4 h-4 me-2 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
               {t("tasks.bulkDownload") || "Bulk Download"}
             </Button>
           )}
@@ -976,7 +1011,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
             { key: "all", label: t("tasks.kpiTotal") || "Total", value: kpis.total, text: "text-slate-900 dark:text-gray-100", icon: <svg className="w-5 h-5 text-slate-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg> },
             { key: "SUCCESS", label: t("tasks.kpiSuccess") || "Success", value: kpis.success, text: "text-emerald-700 dark:text-emerald-300", icon: <svg className="w-5 h-5 text-emerald-500 dark:text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
             { key: "FAILURE", label: t("tasks.kpiFailure") || "Failed", value: kpis.failure, text: "text-red-700 dark:text-red-300", icon: <svg className="w-5 h-5 text-red-500 dark:text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-            { key: "RUNNING", label: t("tasks.kpiRunning") || "Running", value: kpis.running, text: "text-teal-700 dark:text-teal-300", icon: <svg className="w-5 h-5 text-teal-500 dark:text-teal-300 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
+            { key: "RUNNING", label: t("tasks.kpiRunning") || "Running", value: kpis.running, text: "text-teal-700 dark:text-teal-300", icon: <svg className="w-5 h-5 text-teal-500 dark:text-teal-300 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
           ].map((card) => {
           const isActive = filter === card.key;
           return (
@@ -984,9 +1019,8 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
               key={card.key}
               onClick={() => setFilter(card.key as FilterTab)}
               className={clsx(
-                "group flex min-h-[68px] items-center gap-3 rounded-xl border px-3 py-2.5 text-start transition-colors duration-150 outline-none focus:ring-2 focus:ring-teal-500/20",
-                "border-black/5 dark:border-white/10",
-                isActive ? "bg-white ring-1 ring-teal-400/50 dark:bg-surface-alt" : "cursor-pointer bg-white hover:bg-gray-50 dark:bg-surface dark:hover:bg-surface-alt"
+                "smx-panel group flex min-h-[72px] items-center gap-3 px-3.5 py-3 text-start outline-none focus-visible:ring-4 focus-visible:ring-brand/[0.12]",
+                isActive ? "border-brand/25 bg-brand/[0.045] dark:bg-brand/[0.08]" : "cursor-pointer"
               )}
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/5 bg-gray-50 dark:border-white/10 dark:bg-white/[0.06]">
@@ -1067,7 +1101,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
         <div className="relative w-full md:w-80 shrink-0 group">
           <input
             placeholder={t("tasks.searchPlaceholder") || "Search tasks..."}
-            className="w-full rounded-xl border border-black/5 bg-white ps-10 pe-3 py-2 text-[14px] font-medium text-slate-700 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-white/10 dark:bg-surface dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:bg-surface-alt"
+            className="smx-input w-full ps-10 pe-3 text-[13px] font-medium"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -1086,8 +1120,16 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
       )}>
 
         {/* Master: Data Table */}
-        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
+        <div className="smx-panel flex min-h-0 min-w-0 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-auto rounded-xl">
+            {!loading && filtered.length === 0 ? (
+              <div className="flex w-full flex-col items-center justify-center px-6 py-24 text-center">
+                <svg className="w-16 h-16 text-gray-200 dark:text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+                <p className="text-[15px] font-semibold text-gray-500 dark:text-gray-300">{t("tasks.noTasks") || "No tasks found"}</p>
+              </div>
+            ) : (
             <table
               className={clsx(
                 "w-full text-start border-collapse",
@@ -1134,15 +1176,6 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                       )}
                     </tr>
                   ))
-                ) : filtered.length === 0 ? (
-                  <tr className="hover:bg-transparent">
-                    <td colSpan={selectedTaskId ? 2 : 4} className="px-6 py-24 text-center">
-                      <svg className="mx-auto w-16 h-16 text-gray-200 dark:text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                      </svg>
-                      <p className="text-[15px] font-semibold text-gray-500 dark:text-gray-300">{t("tasks.noTasks") || "No tasks found"}</p>
-                    </td>
-                  </tr>
                 ) : (
                   filtered.map((task) => {
                     const isSelected = task.task_id === selectedTaskId;
@@ -1202,12 +1235,13 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                 )}
               </tbody>
             </table>
+            )}
           </div>
         </div>
 
         {/* Detail: Slide-over Context Panel */}
         {selectedTaskId && (
-          <aside className="animate-slide-in-end flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface lg:sticky lg:top-0 lg:max-h-[calc(100vh-2rem)]">
+          <aside className="smx-panel animate-slide-in-end flex min-h-0 min-w-0 flex-col overflow-hidden lg:sticky lg:top-0 lg:max-h-[calc(100vh-2rem)]">
             <div className="flex items-center justify-between border-b border-black/5 p-5 dark:border-white/10 lg:p-6">
               <h3 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">{t("tasks.detail") || "Task Analysis"}</h3>
               <div className="flex gap-2">
@@ -1426,7 +1460,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
 
                         return (
                           <div className="space-y-4">
-                            <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+                            <section className="smx-panel-subtle p-4">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                   <h4 className="text-[14px] font-bold text-gray-900 dark:text-gray-100">{t("tasks.seoTab") || "SEO"}</h4>
@@ -1455,7 +1489,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                             )}
 
                             {Object.keys(componentScores).length > 0 && (
-                              <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+                              <section className="smx-panel-subtle p-4">
                                 <h5 className="mb-3 text-[13px] font-bold text-gray-900 dark:text-gray-100">{t("tasks.seoScore") || "SEO Score"}</h5>
                                 <div className="grid gap-2">
                                   {Object.entries(componentScores).map(([key, value]) => (
@@ -1469,7 +1503,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                             )}
 
                             {checklist.length > 0 && (
-                              <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+                              <section className="smx-panel-subtle p-4">
                                 <h5 className="mb-3 text-[13px] font-bold text-gray-900 dark:text-gray-100">{t("tasks.seoChecklist") || "Checklist"}</h5>
                                 <div className="space-y-2">
                                   {checklist.map((item) => (
@@ -1486,7 +1520,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                             )}
 
                             {recommendations.length > 0 && (
-                              <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+                              <section className="smx-panel-subtle p-4">
                                 <h5 className="mb-3 text-[13px] font-bold text-gray-900 dark:text-gray-100">{t("tasks.recommendations") || "Recommendations"}</h5>
                                 <div className="space-y-2">
                                   {recommendations.map((recommendation) => (
@@ -1508,7 +1542,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                       })()}
                       {detailTab === "export" && (
                         <div className="space-y-4">
-                          <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+                          <div className="smx-panel-subtle p-4">
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <h4 className="text-[14px] font-bold text-gray-900 dark:text-gray-100">{riskCopy.title}</h4>
@@ -1554,18 +1588,18 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                           </div>
                           <div className="grid grid-cols-2 gap-3">
                             <Button variant="outlined" onClick={() => downloadContent(detailArticle, "txt")}>
-                              <svg className="w-4 h-4 mie-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              <svg className="w-4 h-4 me-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                               {t("tasks.downloadTxt") || "Text"}
                             </Button>
                             <Button
                               variant="outlined"
                               onClick={() => downloadContent(detailArticle, sourceIsHtml ? "html" : "markdown")}
                             >
-                              <svg className="w-4 h-4 mie-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              <svg className="w-4 h-4 me-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                               {sourceIsHtml ? TASK_COPY[locale].downloadHtml : TASK_COPY[locale].downloadMarkdown}
                             </Button>
                             <Button variant="outlined" onClick={() => void navigator.clipboard.writeText(contentView === "edit" ? editContent : detailArticle.content)} className="col-span-2">
-                              <svg className="w-4 h-4 mie-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                              <svg className="w-4 h-4 me-2 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                               {t("tasks.copyContent") || "Copy Full Content"}
                             </Button>
                           </div>
@@ -1611,7 +1645,7 @@ export function TasksPanel({ token, canReview = false }: TasksPanelProps) {
                           ) : (
                             <div className="space-y-3">
                               {articleHistory.revisions.map((rev) => (
-                                <div key={rev.id} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+                                <div key={rev.id} className="smx-panel-subtle p-4">
                                   <div className="flex justify-between items-start mb-2">
                                     <div className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
                                       {rev.revision_note || TASK_COPY[locale].manualEdit}
@@ -1702,7 +1736,7 @@ function ReviewPanel({
 }) {
   if (loading) {
     return (
-      <section className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+      <section className="smx-panel-subtle p-4">
         <div className="h-4 w-28 rounded bg-gray-100 dark:bg-white/10" />
         <div className="mt-4 grid gap-2">
           <div className="h-8 rounded-lg bg-gray-100 dark:bg-white/10" />
@@ -1724,7 +1758,7 @@ function ReviewPanel({
   const approveBlocked = !reviewState.can_approve;
 
   return (
-    <section className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-white/[0.05]">
+    <section className="smx-panel-subtle p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">

@@ -43,3 +43,34 @@ have passed for one immutable release commit and image digest:
 
 Until every gate is satisfied, documentation and user communication must refer
 to the system as a staging candidate, not as production ready.
+
+## P0 Production Candidate Addendum — 2026-08-01
+
+The P0 candidate adds durable WordPress publication, read-only Search Console
+synchronization, focused reliability tests, release gates, and deployment/
+rollback/canary runbooks. This improves release readiness but does not supersede
+the approval gates above. Public promotion still requires a clean Python
+3.11/3.12 full gate, real external integration canaries, a proven disposable
+backup restore, browser acceptance, and an explicit production decision for the
+immutable release commit and image digest.
+
+## P1/P2 Launch Candidate Addendum — 2026-08-01
+
+The P1/P2 candidate adds bounded integration operations intelligence,
+low-cardinality metrics and alerts, partial-failure-safe Monitoring UI,
+client-side GET retry/de-duplication/correlation, and deterministic first-party
+SEO prioritization. The SEO engine performs no LLM call, external request,
+content rewrite, or publication.
+
+Operational aggregates are refreshed centrally by Celery Beat, persisted as a
+bounded JSON-safe Redis snapshot, and rendered by the API metrics endpoint with
+fixed allow-listed labels. Prometheus scrapes never trigger integration database
+aggregation, and process-local worker counters are not used for cross-process
+health. P1/P2 adds no new runtime dependency and no database migration beyond
+the P0 head.
+
+The source is classified as a launch-ready production candidate only after the
+unified full release gate, real WordPress and Google canaries, browser
+acceptance, backup/restore proof, alert routing, and controlled staging rollout
+pass for one immutable commit and image digest. This addendum does not replace
+the production approval gates above.

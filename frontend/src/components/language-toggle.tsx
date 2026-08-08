@@ -16,49 +16,46 @@ export interface LanguageToggleProps {
 
 export function LanguageToggle({ variant = "light" }: LanguageToggleProps) {
   const { locale, setLocale, t } = useI18n();
-
   const isDark = variant === "dark";
-  const isMacos = variant === "macos";
 
   return (
     <div
+      dir="ltr"
       className={clsx(
-        "inline-flex w-full items-center gap-0.5 justify-between p-1 sm:w-auto",
-        isMacos
-          ? "macos-segmented rounded-[10px]"
+        "inline-flex items-center gap-0.5 rounded-[10px] p-0.5",
+        variant === "macos"
+          ? "macos-segmented"
           : isDark
             ? "border border-white/10 bg-black/20"
-            : "rounded-[10px] border border-black/5 bg-white/70 dark:border-white/10 dark:bg-white/[0.04]"
+            : "border border-black/[0.055] bg-black/[0.025] dark:border-white/[0.075] dark:bg-white/[0.045]",
       )}
-      role="tablist"
+      role="group"
       aria-label={t("lang.select")}
     >
-      {locales.map((entry) => (
-        <button
-          key={entry.code}
-          type="button"
-          onClick={() => setLocale(entry.code)}
-          role="tab"
-          aria-selected={locale === entry.code}
-          aria-label={t(`lang.${entry.code}` as const)}
-          className={clsx(
-            "flex-1 rounded-[8px] px-3 py-1.5 text-center text-[13px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none",
-            isMacos
-              ? locale === entry.code
-                ? "bg-white text-ink shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/10 dark:text-white"
-                : "text-ink-secondary hover:text-ink dark:text-gray-300 dark:hover:text-white"
-              : locale === entry.code
+      {locales.map((entry) => {
+        const selected = locale === entry.code;
+        return (
+          <button
+            key={entry.code}
+            type="button"
+            onClick={() => setLocale(entry.code)}
+            aria-pressed={selected}
+            aria-label={t(`lang.${entry.code}` as const)}
+            className={clsx(
+              "min-h-[30px] min-w-[34px] rounded-[8px] px-2 text-[11px] font-semibold transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none sm:min-w-[38px]",
+              selected
                 ? isDark
-                ? "bg-white/15 text-white shadow-[0_1px_2px_rgb(255_255_255/0.05)] border border-white/10"
-                : "bg-brand text-white shadow-[0_1px_2px_rgb(0_0_0/0.06)]"
-              : isDark
-                ? "text-white/60 hover:bg-white/5 hover:text-white"
-                : "text-ink-tertiary hover:bg-surface-alt hover:text-ink-secondary",
-          )}
-        >
-          {entry.nativeLabel}
-        </button>
-      ))}
+                  ? "bg-white/[0.14] text-white"
+                  : "bg-white text-ink shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/[0.1] dark:text-white"
+                : isDark
+                  ? "text-white/60 hover:text-white"
+                  : "text-ink-tertiary hover:text-ink",
+            )}
+          >
+            {entry.nativeLabel}
+          </button>
+        );
+      })}
     </div>
   );
 }

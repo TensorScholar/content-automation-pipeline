@@ -75,6 +75,148 @@ class PerformanceRepository:
             row = result.mappings().one()
         return dict(row)
 
+    async def bulk_upsert_snapshots(
+        self,
+        snapshots: list[dict[str, Any]],
+        *,
+        batch_size: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Idempotently persist large Search Console result sets in bounded batches."""
+        if not snapshots:
+            return []
+        normalized_batch_size = max(100, min(batch_size, 5000))
+        imported: list[dict[str, Any]] = []
+        for start in range(0, len(snapshots), normalized_batch_size):
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            chunk = [
+                {
+                    **snapshot,
+                    "id": snapshot.get("id") or uuid4(),
+                    "imported_at": now,
+                }
+                for snapshot in snapshots[start : start + normalized_batch_size]
+            ]
+            insert_stmt = pg_insert(content_performance_snapshots_table).values(chunk)
+            query = (
+                insert_stmt.on_conflict_do_update(
+                    index_elements=[
+                        content_performance_snapshots_table.c.project_id,
+                        content_performance_snapshots_table.c.url,
+                        content_performance_snapshots_table.c.date_from,
+                        content_performance_snapshots_table.c.date_to,
+                        content_performance_snapshots_table.c.source,
+                    ],
+                    set_={
+                        "article_id": insert_stmt.excluded.article_id,
+                        "clicks": insert_stmt.excluded.clicks,
+                        "impressions": insert_stmt.excluded.impressions,
+                        "ctr": insert_stmt.excluded.ctr,
+                        "average_position": insert_stmt.excluded.average_position,
+                        "imported_at": now,
+                    },
+                )
+                .returning(content_performance_snapshots_table)
+            )
+            async with self.db.session() as session:
+                result = await session.execute(query)
+                imported.extend(dict(row) for row in result.mappings().all())
+        return imported
+
+    async def resolve_missing_performance_opportunities(
+        self,
+        *,
+        project_id: UUID,
+        article_ids: set[UUID],
+    ) -> int:
+        if not article_ids:
+            return 0
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        result = await self.db.execute(
+            update(content_improvement_opportunities_table)
+            .where(
+                content_improvement_opportunities_table.c.project_id == project_id,
+                content_improvement_opportunities_table.c.article_id.in_(article_ids),
+                content_improvement_opportunities_table.c.type == "missing_performance_data",
+                content_improvement_opportunities_table.c.status == "open",
+            )
+            .values(status="resolved", updated_at=now)
+        )
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    async def latest_previous_snapshots(
+        self,
+        *,
+        project_id: UUID,
+        urls: set[str],
+        before_date: date,
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch at most one latest earlier snapshot per URL in one PostgreSQL query."""
+        if not urls:
+            return {}
+        rows = await self.db.fetch_all(
+            select(content_performance_snapshots_table)
+            .where(
+                content_performance_snapshots_table.c.project_id == project_id,
+                content_performance_snapshots_table.c.url.in_(urls),
+                content_performance_snapshots_table.c.date_to < before_date,
+            )
+            .distinct(content_performance_snapshots_table.c.url)
+            .order_by(
+                content_performance_snapshots_table.c.url.asc(),
+                content_performance_snapshots_table.c.date_to.desc(),
+                content_performance_snapshots_table.c.imported_at.desc(),
+            )
+        )
+        return {str(row["url"]): dict(row) for row in rows}
+
+    async def bulk_upsert_opportunities(
+        self,
+        opportunities: list[dict[str, Any]],
+        *,
+        batch_size: int = 1000,
+    ) -> list[dict[str, Any]]:
+        if not opportunities:
+            return []
+        normalized_batch_size = max(100, min(batch_size, 5000))
+        persisted: list[dict[str, Any]] = []
+        for start in range(0, len(opportunities), normalized_batch_size):
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            chunk = [
+                {
+                    **item,
+                    "id": item.get("id") or uuid4(),
+                    "status": item.get("status") or "open",
+                    "created_at": item.get("created_at") or now,
+                    "updated_at": now,
+                }
+                for item in opportunities[start : start + normalized_batch_size]
+            ]
+            insert_stmt = pg_insert(content_improvement_opportunities_table).values(chunk)
+            query = (
+                insert_stmt.on_conflict_do_update(
+                    index_elements=[
+                        content_improvement_opportunities_table.c.project_id,
+                        content_improvement_opportunities_table.c.url,
+                        content_improvement_opportunities_table.c.type,
+                    ],
+                    set_={
+                        "article_id": insert_stmt.excluded.article_id,
+                        "snapshot_id": insert_stmt.excluded.snapshot_id,
+                        "severity": insert_stmt.excluded.severity,
+                        "reason": insert_stmt.excluded.reason,
+                        "suggested_action": insert_stmt.excluded.suggested_action,
+                        "supporting_metrics": insert_stmt.excluded.supporting_metrics,
+                        "status": "open",
+                        "updated_at": now,
+                    },
+                )
+                .returning(content_improvement_opportunities_table)
+            )
+            async with self.db.session() as session:
+                result = await session.execute(query)
+                persisted.extend(dict(row) for row in result.mappings().all())
+        return persisted
+
     async def list_snapshots(
         self,
         project_id: UUID,

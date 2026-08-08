@@ -118,6 +118,189 @@ export interface PerformanceImportResponse {
   opportunities_created_or_updated: number;
 }
 
+export interface SearchConsoleProperty {
+  site_url: string;
+  permission_level: string;
+  last_seen_at?: string | null;
+}
+
+export interface SearchConsoleSyncRun {
+  id: string;
+  project_id: string;
+  site_url: string;
+  date_from: string;
+  date_to: string;
+  status: "queued" | "running" | "retrying" | "succeeded" | "failed";
+  task_id?: string | null;
+  row_count: number;
+  pages_fetched: number;
+  truncated: boolean;
+  retry_count: number;
+  error_category?: string | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface SearchConsoleStatus {
+  configured: boolean;
+  connected: boolean;
+  status: string;
+  selected_site_url?: string | null;
+  permission_level?: string | null;
+  last_sync_at?: string | null;
+  last_error_category?: string | null;
+  last_error_message?: string | null;
+  properties: SearchConsoleProperty[];
+  recent_sync_runs: SearchConsoleSyncRun[];
+  scope: string;
+}
+
+export type IntegrationHealthStatus =
+  | "healthy"
+  | "idle"
+  | "warning"
+  | "degraded"
+  | "critical"
+  | string;
+
+export interface IntegrationFailure {
+  id: string;
+  project_id?: string | null;
+  article_id?: string | null;
+  site_url?: string | null;
+  requested_publish_mode?: string | null;
+  error_category: string;
+  error_message: string;
+  retry_count: number;
+  updated_at?: string | null;
+}
+
+export interface IntegrationOperationalSummary {
+  status: IntegrationHealthStatus;
+  reasons: string[];
+  active_count: number;
+  stale_count: number;
+  recent_total: number;
+  recent_succeeded: number;
+  recent_failed: number;
+  failure_rate: number;
+  p95_duration_seconds?: number;
+  latest_success_at?: string | null;
+  status_counts: Record<string, number>;
+  recent_failures: IntegrationFailure[];
+  connected_count?: number;
+  attention_connection_count?: number;
+  recent_truncated?: number;
+  connection_counts?: Record<string, number>;
+}
+
+export interface IntegrationOperationsResponse {
+  generated_at: string;
+  project_id?: string | null;
+  lookback_hours: number;
+  overall_status: IntegrationHealthStatus;
+  integrations: {
+    wordpress: IntegrationOperationalSummary;
+    search_console: IntegrationOperationalSummary;
+  };
+  recommendations: Array<{
+    priority: string;
+    integration: "wordpress" | "search_console" | string;
+    code: string;
+    message: string;
+  }>;
+  slo: {
+    stale_active_items: number;
+    warning_failure_rate: number;
+    critical_failure_rate: number;
+    maximum_sync_age_hours: number;
+  };
+}
+
+export interface SeoIntelligenceAction {
+  order: string;
+  title: string;
+  rationale: string;
+  kind: string;
+}
+
+export interface SeoIntelligenceOpportunity extends PerformanceOpportunity {
+  priority_score: number;
+  confidence: number;
+  priority: "critical" | "high" | "medium" | "low" | string;
+  estimated_impact: string;
+  estimated_effort: string;
+  freshness_factor: number;
+  score_factors: Record<string, number>;
+  action_plan: SeoIntelligenceAction[];
+}
+
+export interface SeoIntelligenceResponse {
+  project_id: string;
+  engine_version: string;
+  generated_at: string;
+  method: string;
+  portfolio: {
+    health_score: number;
+    health_status: string;
+    article_count: number;
+    measured_article_count: number;
+    coverage_ratio: number;
+    latest_url_count: number;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    average_position: number;
+    open_opportunity_count: number;
+    high_priority_count: number;
+    trend: {
+      comparable_url_count: number;
+      clicks_change_percent?: number | null;
+      impressions_change_percent?: number | null;
+      ctr_change_points: number;
+      average_position_change: number;
+    };
+  };
+  data_quality: {
+    status: "good" | "limited" | "insufficient" | string;
+    latest_period_end?: string | null;
+    age_days?: number | null;
+    source_count: number;
+    measured_url_count: number;
+    mapped_url_count: number;
+    unmapped_url_count: number;
+    article_count: number;
+    recent_sync_run_count: number;
+    truncated_run_count: number;
+    failed_run_count: number;
+    warnings: Array<{ code: string; severity: string; message: string }>;
+  };
+  recommended_queue: Array<{
+    rank: number;
+    opportunity_id: string;
+    article_id?: string | null;
+    article_title?: string | null;
+    url: string;
+    type: string;
+    priority: string;
+    priority_score: number;
+    confidence: number;
+    estimated_impact: string;
+    estimated_effort: string;
+    next_action?: SeoIntelligenceAction | null;
+  }>;
+  opportunities: SeoIntelligenceOpportunity[];
+  guardrails: {
+    uses_llm: boolean;
+    performs_network_requests: boolean;
+    rewrites_content: boolean;
+    publishes_content: boolean;
+    explanation_available: boolean;
+  };
+}
+
 export interface LlmModelOption {
   provider: string;
   model: string;

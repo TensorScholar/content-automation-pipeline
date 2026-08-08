@@ -37,6 +37,10 @@
 - Self-review loops must have a maximum iteration count. If still failing after the limit, stop and report remaining blockers instead of expanding scope.
 - Final reports must include exact modified files, diff stat, validation commands/results, remaining blockers, and safety confirmations: no backend changes, no artifacts touched, no stash pop/apply, and nothing staged/committed/pushed.
 
+## UI Copy Policy
+- UI descriptions: Do not add subtitles, helper text, or descriptive copy beneath headings, labels, cards, or settings by default. Prefer one concise, self-explanatory heading or label. Only add supporting copy when the user explicitly asks for it or when it is necessary to prevent misunderstanding or error, and never use it to restate the heading.
+- Review criterion: supporting copy must contain necessary information that is not already communicated by the heading, label, control, state, or layout.
+
 ## Commit and Screenshot Rules
 - Do not use `git add .`.
 - Stage exact files only.

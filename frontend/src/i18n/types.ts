@@ -167,6 +167,7 @@ export type MessageKey =
   | "projects.projectNameHelper"
   | "projects.domain"
   | "projects.domainHelper"
+  | "projects.domainWithoutProtocol"
   | "projects.domainValid"
   | "projects.domainInvalid"
   | "projects.industry"

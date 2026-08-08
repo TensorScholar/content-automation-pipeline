@@ -24,6 +24,7 @@ from api.dependencies import (
     get_performance_feedback_service,
     get_project_readiness_service,
     get_project_service,
+    get_seo_intelligence_service,
 )
 from api.schemas import CreateProjectRequest
 from core.exceptions import ProjectNotFoundError
@@ -36,6 +37,7 @@ from services.content_memory_service import ContentMemoryService
 from services.performance_feedback_service import PerformanceFeedbackService
 from services.project_readiness_service import ProjectReadinessService
 from services.project_service import ProjectService
+from services.seo_intelligence_service import SeoIntelligenceService
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -333,6 +335,21 @@ async def get_project_performance_feedback(
 ):
     del user
     return await service.get_project_performance(project_id)
+
+
+@router.get(
+    "/{project_id:uuid}/seo-intelligence",
+    response_model=dict,
+    summary="Get deterministic SEO portfolio intelligence",
+)
+async def get_project_seo_intelligence(
+    project_id: UUID,
+    service: SeoIntelligenceService = Depends(get_seo_intelligence_service),
+    user: User = Depends(get_current_active_user),
+):
+    """Return explainable, read-only prioritization from first-party metrics."""
+    del user
+    return await service.get_project_intelligence(project_id)
 
 
 @router.post(

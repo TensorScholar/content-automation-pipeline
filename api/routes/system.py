@@ -11,12 +11,18 @@ Architectural Pattern: System API + Health Check Pattern
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from api.dependencies import get_database, get_metrics, get_redis
+from api.dependencies import (
+    get_database,
+    get_integration_operations_service,
+    get_metrics,
+    get_redis,
+)
 from api.schemas import HealthCheckResponse
 from infrastructure.database import DatabaseManager
 from infrastructure.health import (
@@ -24,6 +30,7 @@ from infrastructure.health import (
     check_llm_health,
     get_health_checker,
 )
+from infrastructure.integration_metrics import render_integration_snapshot_metrics
 from infrastructure.llm_options import (
     build_llm_warnings,
     get_llm_provider_options,
@@ -34,6 +41,7 @@ from infrastructure.monitoring import MetricsCollector
 from infrastructure.redis_client import RedisClient
 from orchestration.celery_app import app as celery_app
 from security import User, get_current_active_user, get_current_superuser, is_manager_user
+from services.integration_operations_service import IntegrationOperationsService
 
 router = APIRouter(prefix="/system", tags=["System"])
 
@@ -268,6 +276,9 @@ async def get_llm_options(
 )
 async def get_system_metrics(
     metrics: MetricsCollector = Depends(get_metrics),
+    operations_service: IntegrationOperationsService = Depends(
+        get_integration_operations_service
+    ),
     user: User = Depends(get_current_superuser),
 ) -> Response:
     """
@@ -282,7 +293,10 @@ async def get_system_metrics(
     """
     try:
         # Generate Prometheus-formatted metrics
-        metrics_content = metrics.export_metrics()
+        raw_metrics = metrics.export_metrics()
+        metrics_content = raw_metrics.decode("utf-8", errors="replace")
+        snapshot = await operations_service.get_cached_snapshot()
+        metrics_content += render_integration_snapshot_metrics(snapshot)
         content_type = metrics.get_content_type()
 
         # If metrics_content is empty, provide default metrics
@@ -302,18 +316,19 @@ system_uptime_seconds 0
 
         return Response(content=metrics_content, media_type=content_type)
 
-    except Exception as e:
-        # Return basic metrics if there's an error
-        fallback_metrics = f"""# HELP system_error System error occurred
+    except Exception:
+        # Keep the endpoint scrapeable without placing exception text in labels.
+        fallback_metrics = """# HELP system_error System error occurred
 # TYPE system_error gauge
-system_error{{error="{str(e)}"}} 1
+system_error{component="metrics"} 1
 
 # HELP system_info System information
 # TYPE system_info gauge
-system_info{{version="1.0.0",status="error"}} 1
+system_info{version="1.0.0",status="error"} 1
 """
         return Response(
-            content=fallback_metrics, media_type="text/plain; version=0.0.4; charset=utf-8"
+            content=fallback_metrics,
+            media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
 
@@ -409,6 +424,25 @@ async def get_system_status(
         status_info["overall_status"] = "unknown"
 
     return status_info
+
+
+@router.get(
+    "/integrations/operations",
+    response_model=dict,
+    summary="External integration operations summary",
+    description="Manager-only WordPress and Search Console health, reconciliation, and failure signals.",
+)
+async def get_integration_operations(
+    project_id: UUID | None = Query(None),
+    lookback_hours: int = Query(24, ge=1, le=168),
+    service: IntegrationOperationsService = Depends(get_integration_operations_service),
+    user: User = Depends(get_current_superuser),
+) -> Dict[str, Any]:
+    del user
+    return await service.get_summary(
+        project_id=project_id,
+        lookback_hours=lookback_hours,
+    )
 
 
 @router.get(

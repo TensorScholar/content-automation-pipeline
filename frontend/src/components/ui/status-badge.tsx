@@ -34,15 +34,15 @@ export function StatusBadge({ variant, children, dot = true, icon, className, si
     return (
         <span
             className={clsx(
-                "inline-flex items-center rounded-md font-medium",
-                size === "sm" ? "gap-1.5 px-2.5 py-1 text-[12px]" : "gap-2 px-3 py-1.5 text-[13px]",
+                "inline-flex items-center rounded-full font-medium",
+                size === "sm" ? "gap-1.5 px-2.5 py-0.5 text-[11px]" : "gap-2 px-3 py-1 text-[12px]",
                 variantStyles[variant],
                 className,
             )}
             aria-label={`${variant}: ${typeof children === "string" ? children : ""}`}
         >
             {icon ? <span className="shrink-0">{icon}</span> : null}
-            {dot && !icon ? <span className={clsx("h-2 w-2 shrink-0 rounded-full", dotColors[variant])} aria-hidden /> : null}
+            {dot && !icon ? <span className={clsx("h-1.5 w-1.5 shrink-0 rounded-full", dotColors[variant])} aria-hidden /> : null}
             {children}
         </span>
     );
@@ -50,5 +50,5 @@ export function StatusBadge({ variant, children, dot = true, icon, className, si
 
 /** Status dot only (no label), for metric cards */
 export function StatusDot({ color, className }: { color: string; className?: string }) {
-    return <span className={clsx("h-2 w-2 rounded-full", color, className)} aria-hidden />;
+    return <span className={clsx("h-1.5 w-1.5 rounded-full", color, className)} aria-hidden />;
 }

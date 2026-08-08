@@ -402,13 +402,20 @@ async def test_distributor_updates_existing_slug_instead_of_creating_duplicate()
     client.get.return_value = lookup_response
     client.post.side_effect = [update_response, schema_response]
 
+    verified = {
+        "id": 777,
+        "slug": "smarlux-" + generated.id.hex,
+        "status": "draft",
+        "link": "https://example.com/p/777",
+    }
     with patch.object(distributor, "validate_wordpress_connection", AsyncMock(return_value=(True, ""))):
-        with patch("execution.distributer.httpx.AsyncClient", return_value=client):
-            result = await distributor.distribute_to_wordpress(
-                generated,
-                project,
-                idempotency_key="wp:test",
-            )
+        with patch.object(distributor, "_verify_wordpress_post", AsyncMock(return_value=verified)):
+            with patch("execution.distributer.httpx.AsyncClient", return_value=client):
+                result = await distributor.distribute_to_wordpress(
+                    generated,
+                    project,
+                    idempotency_key="wp:test",
+                )
 
     assert result["post_id"] == 777
     assert "/wp-json/wp/v2/posts/777" in client.post.call_args_list[0][0][0]

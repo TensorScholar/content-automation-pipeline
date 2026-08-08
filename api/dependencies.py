@@ -52,6 +52,7 @@ from knowledge.performance_repository import PerformanceRepository
 from knowledge.project_repository import ProjectRepository
 from knowledge.publishing_repository import PublishingRepository
 from knowledge.rulebook_manager import RulebookManager
+from knowledge.search_console_repository import SearchConsoleRepository
 from knowledge.user_repository import UserRepository
 from knowledge.website_analyzer import WebsiteAnalyzer
 from optimization.cache_manager import CacheManager
@@ -62,10 +63,13 @@ from orchestration.content_agent import ContentAgent, ContentAgentConfig
 from orchestration.task_persistence import TaskResultRepository
 from services.content_memory_service import ContentMemoryService
 from services.content_service import ContentService
+from services.integration_operations_service import IntegrationOperationsService
 from services.performance_feedback_service import PerformanceFeedbackService
 from services.project_readiness_service import ProjectReadinessService
 from services.project_service import ProjectService
 from services.publishing_service import PublishingService
+from services.search_console_service import SearchConsoleService
+from services.seo_intelligence_service import SeoIntelligenceService
 from services.user_service import UserService
 
 _redis_registry: dict[int, RedisClient] = {}
@@ -182,6 +186,11 @@ def get_publishing_repository() -> PublishingRepository:
 def get_performance_repository() -> PerformanceRepository:
     """Create PerformanceRepository instance."""
     return PerformanceRepository(db_manager=get_database())
+
+
+def get_search_console_repository() -> SearchConsoleRepository:
+    """Create Search Console repository instance."""
+    return SearchConsoleRepository(db_manager=get_database())
 
 
 def get_user_repository() -> UserRepository:
@@ -394,6 +403,15 @@ def get_publishing_service() -> PublishingService:
     )
 
 
+def get_integration_operations_service() -> IntegrationOperationsService:
+    """Create manager-facing external integration operations service."""
+    return IntegrationOperationsService(
+        publishing_repository=get_publishing_repository(),
+        search_console_repository=get_search_console_repository(),
+        cache=get_redis(),
+    )
+
+
 def get_project_service() -> ProjectService:
     """Create ProjectService instance."""
     return ProjectService(
@@ -417,6 +435,23 @@ def get_project_readiness_service() -> ProjectReadinessService:
 def get_performance_feedback_service() -> PerformanceFeedbackService:
     """Create PerformanceFeedbackService instance."""
     return PerformanceFeedbackService(repository=get_performance_repository())
+
+
+def get_search_console_service() -> SearchConsoleService:
+    """Create the read-only Search Console integration service."""
+    return SearchConsoleService(
+        repository=get_search_console_repository(),
+        performance_service=get_performance_feedback_service(),
+        settings=get_settings_cached(),
+    )
+
+
+def get_seo_intelligence_service() -> SeoIntelligenceService:
+    """Create the deterministic SEO portfolio intelligence service."""
+    return SeoIntelligenceService(
+        performance_repository=get_performance_repository(),
+        search_console_repository=get_search_console_repository(),
+    )
 
 
 def get_user_service() -> UserService:

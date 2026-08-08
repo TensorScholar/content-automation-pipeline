@@ -7,7 +7,6 @@ import httpx
 import pytest
 import redis
 
-
 LIVE_API_BASE_URL = os.getenv("LIVE_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 LIVE_REDIS_URL = os.getenv("LIVE_REDIS_URL", "redis://127.0.0.1:6379/0")
 

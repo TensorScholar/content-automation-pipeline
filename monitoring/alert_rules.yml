@@ -135,6 +135,58 @@ groups:
           description: '{{ $labels.job }} is using {{ $value | printf "%.0f" }}MB of memory'
 
   # ========================================================================
+  # EXTERNAL INTEGRATION ALERTS
+  # ========================================================================
+  - name: external-integration-alerts
+    rules:
+      - alert: IntegrationSnapshotUnavailable
+        expr: integration_snapshot_available == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Integration operations snapshot is unavailable"
+          description: "The shared durable integration snapshot has been missing or invalid for more than ten minutes."
+
+      - alert: IntegrationOperationalSnapshotStale
+        expr: integration_snapshot_age_seconds > 900
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Integration operations snapshot is stale"
+          description: 'The durable operations snapshot is {{ $value | printf "%.0f" }} seconds old.'
+
+      - alert: IntegrationStaleWork
+        expr: integration_durable_stale_items > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.integration }} has stale durable work"
+          description: "{{ $value }} stale operation(s) require reconciliation before unattended publishing or sync."
+
+      - alert: IntegrationHealthCritical
+        expr: integration_durable_health{status="critical"} == 1
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.integration }} integration health is critical"
+          description: "The durable integration state has remained critical for more than three minutes."
+
+      - alert: IntegrationFailureRateHigh
+        expr: |
+          integration_durable_failure_rate > 0.10
+          and on (integration) integration_durable_recent_total >= 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.integration }} failure rate is above 10%"
+          description: 'Failure ratio is {{ $value | humanizePercentage }} in the current durable lookback window.'
+
+  # ========================================================================
   # POSTGRESQL EXPORTER ALERTS (postgres-exporter)
   # ========================================================================
   - name: postgres-alerts

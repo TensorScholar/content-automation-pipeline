@@ -205,7 +205,7 @@ poetry run python scripts/setup/setup_database.py
 
 ```bash
 # API development server
-poetry run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+poetry run uvicorn api.main:create_app --factory --reload --host 0.0.0.0 --port 8000
 
 # Frontend development server (separate terminal)
 cd frontend
@@ -622,6 +622,21 @@ alembic downgrade -1
 3. Add routing logic in `generate()` method
 4. Update the provider and settings tests, including
    `tests/test_llm_provider_fallback.py` and `tests/test_settings_parsing.py`
+
+## P0 Integration Reliability Candidate
+
+The P0 candidate adds durable WordPress publication, strict read-only Google
+Search Console synchronization, and release/restore gates. Start with:
+
+- `P0-IMPLEMENTATION-REPORT.md`
+- `P0-VALIDATION.md`
+- `ops/P0_DEPLOYMENT_RUNBOOK.md`
+- `ops/P0_LIVE_CANARY.md`
+- `ops/P0_ROLLBACK_RUNBOOK.md`
+- `scripts/maintenance/p0_release_gate.sh --full`
+
+The repository remains a production candidate until the live canary and all
+approval gates in `docs/release-status.md` pass for an immutable release.
 
 ## License
 See [LICENSE](LICENSE) file.

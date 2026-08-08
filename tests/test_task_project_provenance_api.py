@@ -7,7 +7,6 @@ import pytest
 from api.routes.content import get_task_history, get_task_status
 from security import User
 
-
 PROJECT_ID = "project-123"
 
 

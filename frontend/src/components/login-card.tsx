@@ -317,14 +317,14 @@ export function LoginCard() {
                 <div className="flex items-center justify-center gap-3 animate-fade-in" style={{ opacity: 0, animationFillMode: 'forwards' }}>
                   <span className="block h-[3px] w-8 rounded-full bg-border" />
                   <span className="text-xs font-bold uppercase tracking-widest text-ink-tertiary">
-                    AI-POWERED PLATFORM
+                    {t("app.name")}
                   </span>
                   <span className="block h-[3px] w-8 rounded-full bg-border" />
                 </div>
 
                 {/* Typography Confidence: text-3xl/4xl */}
                 <h1
-                  className="text-3xl md:text-4xl font-extrabold text-ink tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
+                  className="text-3xl md:text-[38px] font-semibold text-ink tracking-tight leading-snug animate-fade-in w-full text-balance text-center"
                   style={{ opacity: 0, animationDelay: "100ms", animationFillMode: 'forwards' }}
                 >
                   {t("auth.heroHeadline").split("·").length === 2 ? (
@@ -340,7 +340,7 @@ export function LoginCard() {
 
                 {/* Decoupled from Glassmorphic Card */}
                 <p
-                  className="whitespace-pre-line text-lg text-ink-secondary font-medium max-w-md mt-2 leading-relaxed text-center animate-fade-in"
+                  className="whitespace-pre-line text-[16px] text-ink-secondary font-normal max-w-md mt-2 leading-relaxed text-center animate-fade-in"
                   style={{ opacity: 0, animationDelay: "250ms", animationFillMode: 'forwards' }}
                 >
                   {cleanTagline}
@@ -359,7 +359,7 @@ export function LoginCard() {
           <div key={`tb-hero-${locale}`} className="relative z-10 space-y-3 animate-fade-in flex flex-col items-center text-center">
             <div className="flex items-center justify-center gap-3">
               <span className="block h-[2px] w-6 rounded-full bg-border" />
-              <span className="text-[11px] font-bold uppercase tracking-widest text-ink-tertiary">AI-POWERED PLATFORM</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-ink-tertiary">{t("app.name")}</span>
               <span className="block h-[2px] w-6 rounded-full bg-border" />
             </div>
             <p className="text-[22px] font-bold leading-snug text-ink">{cleanTagline}</p>
@@ -373,7 +373,7 @@ export function LoginCard() {
           <div key={`mb-hero-${locale}`} className="relative z-10 flex flex-col items-center justify-center gap-2 animate-fade-in text-center">
             <div className="flex items-center justify-center gap-2">
               <span className="block h-[2px] w-4 rounded-full bg-border" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-ink-tertiary">PLATFORM</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-ink-tertiary">{t("app.name")}</span>
               <span className="block h-[2px] w-4 rounded-full bg-border" />
             </div>
             <span className="inline-flex items-center gap-2 text-[12px] font-medium text-ink-secondary">
@@ -393,7 +393,7 @@ export function LoginCard() {
 
           <div className="w-full max-w-sm mx-auto flex flex-col pt-8 lg:pt-0">
             <div key={`form-title-${locale}`} className="animate-fade-in mb-8">
-              <h3 className="text-[28px] font-bold tracking-tight text-ink">{t("auth.title")}</h3>
+              <h3 className="text-[27px] font-semibold tracking-[-0.02em] text-ink">{t("auth.title")}</h3>
               <p className="mt-2 text-[15px] font-medium text-ink-secondary">{t("auth.subtitle")}</p>
             </div>
 
@@ -470,7 +470,7 @@ export function LoginCard() {
                 {/* Remember me logical property lock (strict flex container) */}
                 <label className="group flex w-full cursor-pointer select-none items-center gap-2 text-[13px] font-medium text-ink-secondary">
                   <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="peer sr-only" />
-                  <span className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-md border-[1.5px] border-black/10 bg-surface text-white transition-all duration-200 peer-checked:border-ink peer-checked:bg-ink peer-focus-visible:ring-2 peer-focus-visible:ring-brand/30 group-hover:border-ink dark:border-white/10 dark:peer-checked:border-white dark:peer-checked:bg-white dark:peer-checked:text-ink">
+                  <span className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-md border-[1.5px] border-black/10 bg-surface text-white transition-all duration-200 peer-checked:border-ink peer-checked:bg-ink peer-focus-visible:ring-2 peer-focus-visible:ring-brand/30 group-hover:border-ink dark:border-white/10 dark:peer-checked:border-white dark:peer-checked:bg-white dark:peer-checked:text-gray-950">
                     <CheckIcon />
                   </span>
                   <span>{t("auth.rememberMe")}</span>
@@ -493,7 +493,7 @@ export function LoginCard() {
                 type="submit"
                 disabled={submitting || cooldownRemaining > 0 || loginSuccess}
                 className={clsx(
-                  "flex w-full animate-fade-in items-center justify-center gap-2 rounded-xl bg-ink px-4 text-[15px] font-medium text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-ink-secondary active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200",
+                  "flex w-full animate-fade-in items-center justify-center gap-2 rounded-[13px] bg-brand px-4 text-[14px] font-semibold text-white shadow-[0_12px_24px_-18px_rgb(0_0_0/0.8)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-hover active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200",
                   shakeButton && "animate-shake",
                   loginSuccess && "!bg-emerald-500 shadow-emerald-500/20",
                 )}

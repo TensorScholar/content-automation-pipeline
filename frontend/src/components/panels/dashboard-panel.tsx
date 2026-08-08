@@ -29,7 +29,7 @@ interface DashboardPanelProps {
   onNavigate?: (page: string) => void;
 }
 
-type Tone = "neutral" | "good" | "warning";
+type Tone = "neutral" | "good" | "warning" | "danger";
 type TelemetryAvailability = "loading" | "available" | "unavailable";
 type HealthState = "loading" | "healthy" | "degraded" | "unhealthy" | "unavailable";
 
@@ -54,6 +54,7 @@ function classifyHealth(
 function toneClasses(tone: Tone) {
   if (tone === "good") return "bg-emerald-500";
   if (tone === "warning") return "bg-amber-400";
+  if (tone === "danger") return "bg-rose-500";
   return "bg-gray-300 dark:bg-white/30";
 }
 
@@ -77,20 +78,20 @@ function StatusTile({
   tone?: Tone;
 }) {
   return (
-    <div className="smx-panel min-w-0 p-5">
-      <div className="mb-2 flex items-center justify-between gap-3">
+    <div className="min-w-0 bg-[rgb(var(--bg-elevated))] px-4 py-4 sm:px-5 sm:py-[18px] dark:bg-[rgb(var(--bg-elevated-dark))]">
+      <div className="flex items-center gap-2">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneClasses(tone)}`} aria-hidden />
         <p className="truncate text-[12px] font-medium text-ink-tertiary">{label}</p>
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_0_3px_rgb(0_0_0/0.03)] dark:shadow-[0_0_0_3px_rgb(255_255_255/0.04)] ${toneClasses(tone)}`} aria-hidden />
       </div>
       <p
-        className={`truncate font-semibold leading-tight tracking-normal text-ink tabular-nums ${
-          kind === "number" ? "text-[20px]" : "text-[16px]"
+        className={`mt-2 truncate font-semibold leading-none tracking-normal text-ink tabular-nums ${
+          kind === "number" ? "text-[22px]" : "text-[17px]"
         }`}
         dir="auto"
       >
         {value}
       </p>
-      <p className="mt-1.5 truncate text-[12px] font-medium text-ink-tertiary">{detail}</p>
+      <p className="mt-2 truncate text-[12px] font-medium text-ink-tertiary">{detail}</p>
     </div>
   );
 }
@@ -107,24 +108,31 @@ function StepRow({
   status: string;
 }) {
   const done = state === "done";
+  const statusClass = done
+    ? "text-emerald-700 dark:text-emerald-300"
+    : state === "unverified"
+      ? "text-amber-700 dark:text-amber-300"
+      : "text-ink-secondary";
+
   return (
-    <li className="flex min-h-11 items-center gap-3 border-t border-black/5 px-4 first:border-t-0 dark:border-white/10">
+    <li className="grid min-h-[54px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-t border-black/5 px-4 py-2.5 first:border-t-0 dark:border-white/10">
       <span
-        className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold ${
+        className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[9px] font-semibold ${
           done
             ? "bg-brand text-white"
             : state === "unverified"
               ? "border border-amber-400/50 text-amber-700 dark:text-amber-300"
               : "border border-black/10 text-ink-tertiary dark:border-white/10"
         }`}
+        aria-hidden
       >
         {done ? "✓" : state === "unverified" ? "?" : "–"}
       </span>
-      <div className="min-w-0 flex-1">
-        <span className={`block truncate text-[13px] ${done ? "text-ink-tertiary line-through" : "text-ink-secondary"}`}>{label}</span>
+      <div className="min-w-0">
+        <span className="block truncate text-[13px] font-medium text-ink">{label}</span>
+        <span className="mt-0.5 block truncate text-[11px] text-ink-tertiary">{context}</span>
       </div>
-      <span className="shrink-0 text-[11px] font-medium text-ink-tertiary">{context}</span>
-      <span className="shrink-0 text-[11px] font-semibold text-ink-secondary">{status}</span>
+      <span className={`max-w-[104px] shrink-0 truncate text-end text-[11px] font-semibold ${statusClass}`} title={status}>{status}</span>
     </li>
   );
 }
@@ -224,9 +232,11 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
         : t("dashboard.unavailable");
   const healthTone: Tone = healthState === "healthy"
     ? "good"
-    : healthState === "degraded" || healthState === "unhealthy"
+    : healthState === "degraded"
       ? "warning"
-      : "neutral";
+      : healthState === "unhealthy"
+        ? "danger"
+        : "neutral";
   const loading = performanceAvailability === "loading" || healthAvailability === "loading";
 
   const hasProject = projects.length > 0;
@@ -327,58 +337,78 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
 
   if (loading) {
     return (
-      <section className="mx-auto flex min-h-full w-full max-w-[1120px] flex-col gap-4 py-1">
-        <div className="smx-panel h-16" />
-        <div className="grid gap-3 sm:grid-cols-4">
+      <section className="mx-auto flex min-h-full w-full max-w-[1180px] flex-col gap-5 py-2">
+        <div className="h-[76px] border-b border-black/5 pb-5 dark:border-white/10">
+          <div className="h-7 w-44 animate-pulse rounded bg-black/10 dark:bg-white/10" />
+          <div className="mt-2 h-3 w-64 max-w-full animate-pulse rounded bg-black/10 dark:bg-white/10" />
+        </div>
+        <div className="smx-panel grid grid-cols-1 gap-px overflow-hidden bg-black/[0.06] sm:grid-cols-2 xl:grid-cols-4 dark:bg-white/10">
           {[1, 2, 3, 4].map((item) => (
-            <div key={item} className="smx-panel h-24 px-4 py-4">
-              <div className="mb-3 h-3 w-24 animate-pulse rounded bg-black/10 dark:bg-white/10" />
-              <div className="h-7 w-14 animate-pulse rounded bg-black/10 dark:bg-white/10" />
+            <div key={item} className="h-[108px] bg-[rgb(var(--bg-elevated))] px-5 py-4 dark:bg-[rgb(var(--bg-elevated-dark))]">
+              <div className="h-3 w-24 animate-pulse rounded bg-black/10 dark:bg-white/10" />
+              <div className="mt-3 h-6 w-16 animate-pulse rounded bg-black/10 dark:bg-white/10" />
               <div className="mt-3 h-3 w-20 animate-pulse rounded bg-black/10 dark:bg-white/10" />
             </div>
           ))}
         </div>
-        <div className="smx-panel min-h-0 flex-1" />
+        <div className="grid min-h-[420px] gap-5 xl:grid-cols-[minmax(0,1fr)_336px]">
+          <div className="smx-panel min-h-[320px] animate-pulse" />
+          <div className="space-y-5">
+            <div className="smx-panel h-52 animate-pulse" />
+            <div className="smx-panel h-64 animate-pulse" />
+          </div>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="mx-auto flex min-h-full w-full max-w-[1120px] flex-col gap-4 py-1">
-      <header className="flex min-h-[72px] items-end justify-between gap-4 border-b border-black/5 pb-4 dark:border-white/10">
+    <section className="mx-auto flex min-h-full w-full max-w-[1180px] flex-col gap-5 py-2">
+      <header className="flex min-h-[76px] flex-col justify-center gap-4 border-b border-black/5 pb-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-[24px] font-semibold leading-tight tracking-normal text-ink">
-              {t("dashboard.commandTitle")}
-            </h2>
-          </div>
-          <p className="mt-1 truncate text-[13px] font-medium text-ink-secondary" dir="auto">
+          <h2 className="truncate text-[25px] font-semibold leading-tight tracking-normal text-ink sm:text-[26px]">
+            {t("dashboard.commandTitle")}
+          </h2>
+          <p className="mt-1.5 truncate text-[13px] font-medium text-ink-secondary" dir="auto">
             {t("dashboard.commandSubtitle")}
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outlined" size="md" onClick={() => onNavigate?.("projects")}>
+        <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+          <Button
+            variant="outlined"
+            size="md"
+            onClick={() => onNavigate?.("projects")}
+            className="flex-1 sm:flex-none"
+          >
             {t("dashboard.secondaryProject")}
           </Button>
-          <Button variant="primary" size="md" onClick={() => onNavigate?.("studio")}>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => onNavigate?.("studio")}
+            className="flex-1 sm:flex-none"
+          >
             {t("dashboard.primaryCreate")}
           </Button>
         </div>
       </header>
 
       {percent !== null && percent >= 95 && (
-        <div className="rounded-md border-s-2 border-s-red-500 bg-red-50/80 px-3 py-2 text-[12px] font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300" role="alert">
+        <div className="rounded-lg border border-red-500/20 bg-red-50/70 px-3.5 py-2.5 text-[12px] font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300" role="alert">
           {t("dashboard.costWarning95")}
         </div>
       )}
       {percent !== null && percent >= 80 && percent < 95 && (
-        <div className="rounded-md border-s-2 border-s-amber-500 bg-amber-50/80 px-3 py-2 text-[12px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" role="alert">
+        <div className="rounded-lg border border-amber-500/20 bg-amber-50/70 px-3.5 py-2.5 text-[12px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" role="alert">
           {t("dashboard.costWarning80")}
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        className="smx-panel grid grid-cols-1 gap-px overflow-hidden bg-black/[0.06] sm:grid-cols-2 xl:grid-cols-4 dark:bg-white/10"
+        aria-label={t("dashboard.commandSubtitle")}
+      >
         <StatusTile
           label={t("dashboard.statusProject")}
           value={formatNumber(projects.length)}
@@ -409,29 +439,139 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
           kind="status"
           tone={healthTone}
         />
-      </div>
+      </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-        <main className="space-y-4 pe-1">
-          <section className="smx-panel p-5">
-            <div className="flex items-start justify-between gap-4">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_336px]">
+        <div className="space-y-5">
+          <section className="smx-panel border-brand/[0.15] bg-brand/[0.025] p-5 dark:bg-brand/[0.045] sm:p-6">
+            <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
               <div className="min-w-0">
-                <p className="text-[12px] font-medium text-ink-tertiary">{t("dashboard.nextStep")}</p>
-                <h3 className="mt-1 text-[18px] font-semibold tracking-normal text-ink">{nextAction.title}</h3>
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-brand" aria-hidden />
+                  <p className="text-[12px] font-semibold text-brand">{t("dashboard.nextStep")}</p>
+                </div>
+                <h3 className="mt-2 text-[19px] font-semibold tracking-normal text-ink">{nextAction.title}</h3>
                 <p className="mt-2 max-w-2xl text-[13px] leading-5 text-ink-secondary">{nextAction.description}</p>
               </div>
-              <Button variant="primary" size="md" onClick={() => onNavigate?.(nextAction.page)} className="shrink-0">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => onNavigate?.(nextAction.page)}
+                className="w-full shrink-0 sm:w-auto"
+              >
                 {nextAction.cta}
               </Button>
             </div>
           </section>
 
           <section className="smx-panel overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <h3 className="truncate text-[14px] font-semibold text-ink">{t("dashboard.pipelineTitle")}</h3>
-                <p className="mt-1 truncate text-[12px] text-ink-tertiary">{pipelineCopy.subtitle}</p>
+            <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-3.5 sm:px-5 dark:border-white/10">
+              <h3 className="text-[14px] font-semibold text-ink">{t("dashboard.recentWork")}</h3>
+              <button
+                type="button"
+                onClick={() => onNavigate?.("projects")}
+                className="rounded-md px-1 py-0.5 text-[12px] font-medium text-brand transition-colors hover:text-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+              >
+                {t("dashboard.openProjects")}
+              </button>
+            </div>
+            {recentProjects.length === 0 ? (
+              <p className="px-5 py-10 text-center text-[13px] text-ink-tertiary">{t("dashboard.noRecentWork")}</p>
+            ) : (
+              <div className="divide-y divide-black/5 dark:divide-white/10">
+                {recentProjects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 bg-transparent px-4 py-3.5 text-start transition-colors hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/30 sm:px-5 dark:hover:bg-white/[0.035]"
+                    onClick={() => onNavigate?.("projects")}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px] font-medium text-ink" title={project.name}>
+                        {project.name}
+                      </span>
+                      <span className="mt-1 block truncate text-[12px] text-ink-tertiary" title={project.domain || undefined} dir="ltr">
+                        {project.domain || t("projects.noDomain")}
+                      </span>
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-2 text-[11px] font-medium ${
+                        project.wordpress_url
+                          ? "text-emerald-700 dark:text-emerald-300"
+                          : "text-amber-700 dark:text-amber-300"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${project.wordpress_url ? "bg-emerald-500" : "bg-amber-400"}`} aria-hidden />
+                      {project.wordpress_url ? t("dashboard.connected") : t("dashboard.needsSetup")}
+                    </span>
+                  </button>
+                ))}
+                {overflowCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.("projects")}
+                    className="w-full bg-transparent px-4 py-2.5 text-start text-[12px] font-medium text-brand transition-colors hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/30 sm:px-5 dark:hover:bg-white/[0.035]"
+                  >
+                    {t("dashboard.moreProjects", { count: formatNumber(overflowCount) })}
+                  </button>
+                )}
               </div>
+            )}
+          </section>
+        </div>
+
+        <aside className="space-y-5">
+          <section className="smx-panel overflow-hidden">
+            <div className="p-5">
+              <div className="min-w-0">
+                <p className="text-[12px] font-medium text-ink-secondary">{t("dashboard.costTitle")}</p>
+                <p className="mt-2 text-[26px] font-semibold leading-none tracking-normal text-ink tabular-nums" dir="ltr">
+                  {todayCost === null ? "—" : formatCurrency(todayCost)}
+                </p>
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-[12px] font-medium text-ink-secondary">{t("dashboard.budgetStatus")}</h3>
+                  <span className="text-[11px] font-medium text-ink-tertiary tabular-nums">
+                    {percent === null ? "—" : `${formatPercent(percent)}%`}
+                  </span>
+                </div>
+                {percent === null || threshold === null ? (
+                  <p className="py-2 text-[12px] font-medium text-ink-tertiary">
+                    {t("dashboard.metricsUnavailable")}
+                  </p>
+                ) : (
+                  <ProgressBar
+                    value={Math.max(percent, todayCost !== null && todayCost > 0 ? 1.5 : 0)}
+                    showLabel
+                    label={t("dashboard.ofCap", {
+                      percent: formatPercent(percent),
+                      cap: formatNumber(threshold),
+                    })}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 border-t border-black/5 dark:border-white/10">
+              <div className="border-e border-black/5 px-4 py-3.5 dark:border-white/10">
+                <p className="text-[11px] text-ink-tertiary">{t("dashboard.articlesToday")}</p>
+                <p className="mt-1.5 text-[19px] font-semibold text-ink tabular-nums">
+                  {todayArticles === null ? "—" : formatNumber(todayArticles)}
+                </p>
+              </div>
+              <div className="px-4 py-3.5">
+                <p className="text-[11px] text-ink-tertiary">{t("dashboard.totalProjects")}</p>
+                <p className="mt-1.5 text-[19px] font-semibold text-ink tabular-nums">{formatNumber(projects.length)}</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="smx-panel overflow-hidden">
+            <div className="border-b border-black/5 px-4 py-3.5 dark:border-white/10">
+              <h3 className="truncate text-[14px] font-semibold text-ink">{t("dashboard.pipelineTitle")}</h3>
+              <p className="mt-1 text-[12px] leading-5 text-ink-tertiary">{pipelineCopy.subtitle}</p>
             </div>
             <ul>
               {pipelineSteps.map((step) => (
@@ -444,120 +584,6 @@ export function DashboardPanel({ token, projects, isAdmin = false, onNavigate }:
                 />
               ))}
             </ul>
-          </section>
-
-          <section className="smx-panel overflow-hidden">
-            <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-3 dark:border-white/10">
-              <h3 className="text-[14px] font-semibold text-ink">{t("dashboard.recentWork")}</h3>
-              <button
-                type="button"
-                onClick={() => onNavigate?.("projects")}
-                className="text-[12px] font-medium text-brand transition-colors hover:text-brand-hover"
-              >
-                {t("dashboard.openProjects")}
-              </button>
-            </div>
-            {recentProjects.length === 0 ? (
-              <p className="px-4 py-6 text-center text-[13px] text-ink-tertiary">{t("dashboard.noRecentWork")}</p>
-            ) : (
-              <div className="divide-y divide-black/5 dark:divide-white/10">
-                {recentProjects.map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 bg-transparent px-4 py-3 text-start transition-colors hover:bg-black/5 dark:hover:bg-white/[0.05]"
-                    onClick={() => onNavigate?.("projects")}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-[13px] font-medium text-ink" title={project.name}>
-                        {project.name}
-                      </span>
-                      <span className="mt-0.5 block truncate text-[12px] text-ink-tertiary" title={project.domain || undefined} dir="ltr">
-                        {project.domain || t("projects.noDomain")}
-                      </span>
-                    </span>
-                    <span
-                      className={`inline-flex h-6 items-center rounded-md px-2 text-[11px] font-medium ${
-                        project.wordpress_url
-                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                          : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                      }`}
-                    >
-                      {project.wordpress_url ? t("dashboard.connected") : t("dashboard.needsSetup")}
-                    </span>
-                  </button>
-                ))}
-                {overflowCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onNavigate?.("projects")}
-                    className="w-full bg-transparent px-4 py-2 text-start text-[12px] font-medium text-brand hover:bg-black/5 dark:hover:bg-white/[0.05]"
-                  >
-                    {t("dashboard.moreProjects", { count: formatNumber(overflowCount) })}
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
-        </main>
-
-        <aside className="space-y-4">
-          <section className="smx-panel p-5">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[12px] font-medium text-ink-secondary">{t("dashboard.costTitle")}</p>
-                <p className="mt-1 text-[24px] font-semibold leading-none tracking-normal text-ink tabular-nums" dir="ltr">
-                  {todayCost === null ? "—" : formatCurrency(todayCost)}
-                </p>
-              </div>
-              <span
-                className={`inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium ${
-                  healthState === "healthy"
-                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                    : healthState === "degraded" || healthState === "unhealthy"
-                      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                      : "bg-black/5 text-ink-tertiary dark:bg-white/10"
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${toneClasses(healthTone)}`} aria-hidden />
-                {healthLabel}
-              </span>
-            </div>
-            {percent === null || threshold === null ? (
-              <p className="py-2 text-[12px] font-medium text-ink-tertiary">
-                {t("dashboard.metricsUnavailable")}
-              </p>
-            ) : (
-              <ProgressBar
-                value={Math.max(percent, todayCost !== null && todayCost > 0 ? 1.5 : 0)}
-                showLabel
-                label={t("dashboard.ofCap", {
-                  percent: formatPercent(percent),
-                  cap: formatNumber(threshold),
-                })}
-              />
-            )}
-          </section>
-
-          <section className="smx-panel p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-[14px] font-semibold text-ink">{t("dashboard.budgetStatus")}</h3>
-              <span className="text-[12px] text-ink-tertiary tabular-nums">
-                {percent === null ? "—" : `${formatPercent(percent)}%`}
-              </span>
-            </div>
-            <div className="smx-panel-subtle grid grid-cols-2 overflow-hidden">
-              <div className="border-e border-black/5 p-3 dark:border-white/10">
-                <p className="text-[11px] text-ink-tertiary">{t("dashboard.articlesToday")}</p>
-                <p className="mt-1 text-[20px] font-semibold text-ink tabular-nums">
-                  {todayArticles === null ? "—" : formatNumber(todayArticles)}
-                </p>
-              </div>
-              <div className="p-3">
-                <p className="text-[11px] text-ink-tertiary">{t("dashboard.totalProjects")}</p>
-                <p className="mt-1 text-[20px] font-semibold text-ink tabular-nums">{formatNumber(projects.length)}</p>
-              </div>
-            </div>
           </section>
         </aside>
       </div>

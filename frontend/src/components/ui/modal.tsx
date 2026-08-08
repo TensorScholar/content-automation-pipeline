@@ -50,25 +50,25 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = "28re
     if (!open || typeof document === "undefined") return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal aria-labelledby={title ? titleId : undefined}>
-            <div className="absolute inset-0 bg-ink/50 backdrop-blur-[4px] animate-fade-in" onClick={onClose} />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5" role="dialog" aria-modal aria-labelledby={title ? titleId : undefined}>
+            <div className="absolute inset-0 bg-black/[0.45] backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
             <div
                 ref={dialogRef}
-                className="relative w-full animate-scale-in rounded-xl border border-black/8 bg-surface shadow-[0_24px_48px_-28px_rgb(0_0_0/0.55)] dark:border-white/10"
+                className="relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden animate-fade-in rounded-[18px] border border-black/[0.075] bg-surface shadow-[0_32px_80px_-34px_rgb(0_0_0/0.72)] dark:border-white/10"
                 style={{ maxWidth }}
             >
                 {title && (
-                    <div className="flex items-center justify-between border-b border-black/6 px-6 py-4 dark:border-white/10">
+                    <div className="smx-section-header shrink-0">
                         <h2 id={titleId} className="text-[16px] font-semibold text-ink">{title}</h2>
-                        <button onClick={onClose} className="rounded-md p-1 text-ink-tertiary hover:bg-black/[0.05] hover:text-ink transition-colors dark:hover:bg-white/[0.08]" aria-label="Close">
-                            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <button type="button" onClick={onClose} className="smx-icon-button" aria-label="Close">
+                            <svg className="h-[18px] w-[18px]" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
                                 <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                             </svg>
                         </button>
                     </div>
                 )}
-                <div className="px-6 py-4">{children}</div>
-                {footer && <div className="flex items-center justify-end gap-3 border-t border-black/6 px-6 py-4 dark:border-white/10">{footer}</div>}
+                <div className="min-h-0 overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
+                {footer && <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-black/[0.055] bg-black/[0.015] px-5 py-4 dark:border-white/[0.075] dark:bg-white/[0.025] sm:px-6">{footer}</div>}
             </div>
         </div>,
         document.body,

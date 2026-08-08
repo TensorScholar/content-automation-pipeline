@@ -30,6 +30,7 @@ from api.dependencies import (
     get_content_agent,
     get_content_service,
     get_database,
+    get_integration_operations_service,
     get_metrics,
     get_project_service,
     get_redis,
@@ -40,7 +41,7 @@ from api.dependencies import (
 from api.exceptions import add_exception_handlers
 
 # Import route modules
-from api.routes import auth, content, projects, system
+from api.routes import auth, content, projects, search_console, system
 
 # Import schemas from separate module
 from api.schemas import (
@@ -53,11 +54,12 @@ from api.schemas import (
     TaskStatusResponse,
     WorkflowStatusResponse,
 )
-from config.settings import settings
+from config.settings import get_settings, settings
 from core.models import ContentPlan, GeneratedArticle, Project
 from infrastructure.error_tracking import initialize_sentry
 
 # Import structured logging and configure
+from infrastructure.integration_metrics import render_integration_snapshot_metrics
 from infrastructure.monitoring import MetricsCollector, configure_structlog, get_logger
 
 # Import rate limiting middleware
@@ -72,7 +74,6 @@ from services.project_service import ProjectService
 
 # Configure structlog for the application
 configure_structlog()
-initialize_sentry("api")
 logger = get_logger(__name__)
 
 
@@ -374,25 +375,101 @@ rate_limit_config = RateLimitConfig(
 )
 
 
-app = FastAPI(
-    title="Content Automation Engine API",
-    description="Advanced NLP-driven SEO content automation platform with adaptive intelligence",
-    version="1.0.0",
-    docs_url="/docs" if not settings.is_production else None,
-    redoc_url="/redoc" if not settings.is_production else None,
-    openapi_url="/openapi.json" if not settings.is_production else None,
-    lifespan=lifespan,
-)
+def create_app() -> FastAPI:
+    """Build the FastAPI application, resolving settings at startup."""
+    resolved_settings = get_settings()
+    initialize_sentry("api")
 
-# Add exception handlers
-add_exception_handlers(app)
+    application = FastAPI(
+        title="Content Automation Engine API",
+        description="Advanced NLP-driven SEO content automation platform with adaptive intelligence",
+        version="1.0.0",
+        docs_url="/docs" if not resolved_settings.is_production else None,
+        redoc_url="/redoc" if not resolved_settings.is_production else None,
+        openapi_url="/openapi.json" if not resolved_settings.is_production else None,
+        lifespan=lifespan,
+    )
 
-# Instrument FastAPI with OpenTelemetry for distributed tracing (if enabled)
-if settings.monitoring.enable_tracing:
-    FastAPIInstrumentor.instrument_app(app)
-    logger.info("OpenTelemetry tracing enabled")
-else:
-    logger.info("OpenTelemetry tracing disabled")
+    add_exception_handlers(application)
+
+    if resolved_settings.monitoring.enable_tracing:
+        FastAPIInstrumentor.instrument_app(application)
+        logger.info("OpenTelemetry tracing enabled")
+    else:
+        logger.info("OpenTelemetry tracing disabled")
+
+    logger.info("Registering routes...")
+    application.include_router(content.router)
+    logger.info(f"Registered content router with prefix: {content.router.prefix}")
+    application.include_router(projects.router)
+    application.include_router(search_console.router)
+    application.include_router(system.router)
+    application.include_router(auth.router)
+
+    # Root route and internal endpoints
+    application.add_api_route("/", root, methods=["GET"])
+    application.add_api_route(
+        "/metrics", internal_metrics, methods=["GET"], include_in_schema=False
+    )
+    application.add_api_route(
+        "/health", root_health, methods=["GET"], response_model=HealthCheckResponse
+    )
+
+    # Middleware stack (order matters: last added = first executed)
+    application.add_middleware(RequestLoggingMiddleware)
+    application.add_middleware(RequestIDMiddleware)
+    application.add_middleware(RequestTimeoutMiddleware, timeout_seconds=60.0)
+    application.add_middleware(GZipMiddleware, minimum_size=1000)
+    application.add_middleware(SecurityHeadersMiddleware)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=resolved_settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Accept",
+            "Accept-Language",
+            "Content-Type",
+            "Authorization",
+            "X-Request-ID",
+            "X-Correlation-ID",
+        ],
+        expose_headers=[
+            "X-Request-ID",
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+        ],
+    )
+
+    # Add rate limiting middleware
+    try:
+        if not os.getenv("PYTEST_CURRENT_TEST"):
+            from redis.asyncio import Redis as _AsyncRedis
+
+            _raw_redis_for_middleware = _AsyncRedis.from_url(
+                str(resolved_settings.redis.url),
+                decode_responses=False,
+            )
+            application.add_middleware(
+                RateLimitMiddleware,
+                redis_client=_raw_redis_for_middleware,
+                config=rate_limit_config,
+            )
+            logger.info(
+                "Rate limiting middleware initialized",
+                limit=rate_limit_config.default_limit,
+                window=rate_limit_config.default_window,
+            )
+        else:
+            logger.info("Rate limiting middleware skipped in test mode")
+    except Exception as e:
+        logger.warning(f"Failed to initialize rate limiting: {e}")
+
+    # Add host validation as the first executed middleware
+    application.add_middleware(HostValidationMiddleware)
+
+    return application
 
 
 # Simple dependency functions for FastAPI
@@ -406,17 +483,7 @@ def get_content_agent_dependency():
     return get_content_agent()
 
 
-# Include route modules
-logger.info("Registering routes...")
-app.include_router(content.router)
-logger.info(f"Registered content router with prefix: {content.router.prefix}")
-app.include_router(projects.router)
-app.include_router(system.router)
-app.include_router(auth.router)
-
-
-@app.get("/")
-async def root():
+def root():
     """Return a small service descriptor; development links to API docs."""
     if not settings.is_production:
         return RedirectResponse(url="/docs")
@@ -428,7 +495,6 @@ async def root():
     }
 
 
-@app.get("/metrics", include_in_schema=False)
 async def internal_metrics(metrics: MetricsCollector = Depends(get_metrics)) -> Response:
     """
     Internal Prometheus scrape endpoint.
@@ -438,7 +504,10 @@ async def internal_metrics(metrics: MetricsCollector = Depends(get_metrics)) -> 
     not route `/metrics` publicly in the production config.
     """
     try:
-        metrics_content = metrics.export_metrics()
+        raw_metrics = metrics.export_metrics()
+        metrics_content = raw_metrics.decode("utf-8", errors="replace")
+        snapshot = await get_integration_operations_service().get_cached_snapshot()
+        metrics_content += render_integration_snapshot_metrics(snapshot)
         content_type = metrics.get_content_type()
         if not metrics_content or metrics_content.strip() == "":
             metrics_content = """# HELP system_info System information
@@ -447,9 +516,10 @@ system_info{version="1.0.0",status="running"} 1
 """
         return Response(content=metrics_content, media_type=content_type)
     except Exception as exc:
-        fallback_metrics = f"""# HELP system_error System error occurred
+        logger.warning("metrics_export_failed", error_type=type(exc).__name__)
+        fallback_metrics = """# HELP system_error System error occurred
 # TYPE system_error gauge
-system_error{{component="metrics",error="{str(exc)}"}} 1
+system_error{component="metrics"} 1
 """
         return Response(
             content=fallback_metrics,
@@ -458,7 +528,6 @@ system_error{{component="metrics",error="{str(exc)}"}} 1
 
 
 # Health alias at root to match Docker healthcheck and docs
-@app.get("/health", response_model=HealthCheckResponse)
 async def root_health(request: Request):
     try:
         db = get_database()
@@ -519,34 +588,6 @@ async def root_health(request: Request):
         )
 
 
-# Middleware stack (order matters: last added = first executed)
-app.add_middleware(RequestLoggingMiddleware)
-app.add_middleware(RequestIDMiddleware)
-app.add_middleware(RequestTimeoutMiddleware, timeout_seconds=60.0)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Accept",
-        "Accept-Language",
-        "Content-Type",
-        "Authorization",
-        "X-Request-ID",
-        "X-Correlation-ID",
-    ],
-    expose_headers=[
-        "X-Request-ID",
-        "X-RateLimit-Limit",
-        "X-RateLimit-Remaining",
-        "X-RateLimit-Reset",
-    ],
-)
-
-
 class HostValidationMiddleware(BaseHTTPMiddleware):
     """Validate Host header against settings.allowed_hosts."""
 
@@ -563,53 +604,22 @@ class HostValidationMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# Add rate limiting middleware
-try:
-    if not os.getenv("PYTEST_CURRENT_TEST"):
-        import asyncio as _asyncio
-
-        _redis_wrapper = get_redis()
-        # Must pass raw AsyncRedis — the wrapper has no .pipeline() method
-        # Use run_until_complete only if no event loop is running yet (module-level)
-        # In practice this block runs at import time before the event loop starts,
-        # so we store a coroutine and resolve it lazily via lifespan.
-        # The cleanest fix: create a bare AsyncRedis directly from REDIS_URL.
-        import os as _os
-
-        from redis.asyncio import Redis as _AsyncRedis
-
-        _raw_redis_for_middleware = _AsyncRedis.from_url(
-            _os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
-            decode_responses=False,
-        )
-        app.add_middleware(
-            RateLimitMiddleware, redis_client=_raw_redis_for_middleware, config=rate_limit_config
-        )
-        logger.info(
-            "Rate limiting middleware initialized",
-            limit=rate_limit_config.default_limit,
-            window=rate_limit_config.default_window,
-        )
-    else:
-        logger.info("Rate limiting middleware skipped in test mode")
-except Exception as e:
-    logger.warning(f"Failed to initialize rate limiting: {e}")
-
-
-# Add host validation as the first executed middleware
-app.add_middleware(HostValidationMiddleware)
-
-
 # ============================================================================
 # API ENDPOINTS (Command/Query Handlers)
 # ============================================================================
 # Note: Project and content routes are handled by routers in api/routes/
-# These routers are included via app.include_router() calls above.
+# These routers are included via app.include_router() calls in create_app().
 
 
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "api.main:app", host="0.0.0.0", port=8000, reload=True, log_level="info", access_log=True
+        "api.main:create_app",
+        factory=True,
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info",
+        access_log=True,
     )

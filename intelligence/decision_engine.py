@@ -155,7 +155,8 @@ class DecisionManifold:
     - No conditional branching - pure vector algebra
     """
 
-    def __init__(self, embedding_dim: int = 384):
+    def __init__(self, semantic_analyzer: SemanticAnalyzer, embedding_dim: int = 384):
+        self.semantic_analyzer = semantic_analyzer
         self.embedding_dim = embedding_dim
 
     def resolve(
@@ -189,7 +190,7 @@ class DecisionManifold:
 
         for evidence in evidence_list:
             # Semantic similarity (how relevant is this evidence?)
-            similarity = semantic_analyzer.compute_similarity(
+            similarity = self.semantic_analyzer.compute_similarity(
                 query_embedding, evidence.embedding, metric=SimilarityMetric.COSINE
             )
 
@@ -211,7 +212,7 @@ class DecisionManifold:
             total_weight = 1.0
 
         # Normalize to unit vector
-        decision_vector = semantic_analyzer.normalize_vector(decision_vector)
+        decision_vector = self.semantic_analyzer.normalize_vector(decision_vector)
 
         # Aggregate confidence (weighted average)
         aggregate_confidence = min(1.0, total_weight / len(evidence_list))
@@ -237,7 +238,7 @@ class DecisionManifold:
         best_similarity = -1.0
 
         for choice, embedding in candidate_embeddings.items():
-            similarity = semantic_analyzer.compute_similarity(
+            similarity = self.semantic_analyzer.compute_similarity(
                 decision_vector, embedding, metric=SimilarityMetric.COSINE
             )
 
@@ -268,7 +269,7 @@ class DecisionEngine:
         self.database_manager = database_manager
         self.best_practices = best_practices
         self.semantic_analyzer = semantic_analyzer
-        self.manifold = DecisionManifold()
+        self.manifold = DecisionManifold(semantic_analyzer)
 
         # Authority weights for each layer
         self.layer_authorities = {

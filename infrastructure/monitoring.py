@@ -352,13 +352,8 @@ class MetricsCollector:
         """Update error rate."""
         self.error_rate.labels(error_type=error_type).set(rate)
 
-    def export_metrics(self) -> str:
-        """
-        Export metrics in Prometheus format.
-
-        Returns:
-            Prometheus-formatted metrics string
-        """
+    def export_metrics(self) -> bytes:
+        """Export metrics as Prometheus text-format bytes."""
         return generate_latest(REGISTRY)
 
     def get_content_type(self) -> str:

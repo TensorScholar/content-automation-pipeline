@@ -8,18 +8,18 @@
 /* ── Brand Colors (hex for JS contexts) ──────────────────────────── */
 
 export const COLORS = {
-  brand: "#0E6E6E",
-  brandHover: "#0A5858",
-  brandLight: "#E8F5F5",
-  brandAccent: "#1ABC9C",
+  brand: "#0D746F",
+  brandHover: "#0A605C",
+  brandLight: "#E5F6F4",
+  brandAccent: "#25A89E",
 
-  textPrimary: "#111827",
-  textSecondary: "#6B7280",
-  textPlaceholder: "#9CA3AF",
+  textPrimary: "#181B20",
+  textSecondary: "#5B6370",
+  textPlaceholder: "#8B93A0",
 
   surface: "#FFFFFF",
-  surfaceAlt: "#F7F9FB",
-  border: "#E4E8ED",
+  surfaceAlt: "#F5F6F8",
+  border: "#E7E9ED",
 
   error: "#DC2626",
   warning: "#D97706",
@@ -72,20 +72,20 @@ export const EASING = {
 /* ── Border Radius ───────────────────────────────────────────────── */
 
 export const RADIUS = {
-  sm: 8,
+  sm: 10,
   md: 12,
   lg: 16,
-  xl: 20,
+  xl: 18,
   full: 9999,
 } as const;
 
 /* ── Layout ──────────────────────────────────────────────────────── */
 
 export const LAYOUT = {
-  sidebarWidth: 272,
-  sidebarCollapsedWidth: 72,
-  headerHeight: 64,
-  maxContentWidth: 1152, // 72rem
+  sidebarWidth: 248,
+  sidebarCollapsedWidth: 64,
+  headerHeight: 56,
+  maxContentWidth: 1180,
 } as const;
 
 /* ── Type helpers ────────────────────────────────────────────────── */

@@ -19,10 +19,10 @@ interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
 const variantStyles: Record<ToastVariant, string> = {
-    success: "bg-success-subtle text-success border-success/20",
-    error: "bg-danger-subtle text-danger border-danger/20",
-    warning: "bg-warning-subtle text-warning border-warning/20",
-    info: "bg-info-subtle text-info border-info/20",
+    success: "border-emerald-500/[0.15] bg-white text-emerald-700 dark:bg-[#22252a] dark:text-emerald-200",
+    error: "border-rose-500/[0.15] bg-white text-rose-700 dark:bg-[#22252a] dark:text-rose-200",
+    warning: "border-amber-500/[0.15] bg-white text-amber-800 dark:bg-[#22252a] dark:text-amber-200",
+    info: "border-sky-500/[0.15] bg-white text-sky-700 dark:bg-[#22252a] dark:text-sky-200",
 };
 
 const icons: Record<ToastVariant, string> = {
@@ -43,18 +43,18 @@ function ToastItem({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numbe
         <div
             role="alert"
             className={clsx(
-                "flex items-center gap-3 rounded-[10px] border px-4 py-3 shadow-toast",
+                "flex items-center gap-3 rounded-[14px] border px-4 py-3 shadow-[0_18px_45px_-26px_rgb(0_0_0/0.55)]",
                 "transition-all duration-normal",
                 item.exiting ? "animate-fade-out" : "animate-slide-up",
                 variantStyles[item.variant],
             )}
         >
-            <span className="text-lg" aria-hidden>{icons[item.variant]}</span>
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-black/[0.04] text-[12px] font-bold dark:bg-white/[0.07]" aria-hidden>{icons[item.variant]}</span>
             <p className="flex-1 text-body-md font-medium">{item.message}</p>
             <button
                 type="button"
                 onClick={() => onDismiss(item.id)}
-                className="shrink-0 rounded p-1 opacity-60 transition-opacity hover:opacity-100"
+                className="shrink-0 rounded-[8px] p-1.5 opacity-[0.55] transition-[background-color,opacity] hover:bg-black/[0.04] hover:opacity-100 focus-visible:outline-none dark:hover:bg-white/[0.06]"
                 aria-label="Dismiss"
             >
                 ✕
@@ -100,8 +100,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         <ToastContext.Provider value={{ showToast }}>
             {children}
             {portalRoot && createPortal(
-                <div className="fixed bottom-6 start-1/2 z-toast flex w-full max-w-sm -translate-x-1/2 flex-col gap-2" style={{ transform: "translateX(-50%)" }}>
-                    {toasts.map(t => <ToastItem key={t.id} item={t} onDismiss={dismiss} />)}
+                <div className="pointer-events-none fixed inset-x-4 bottom-5 z-toast flex flex-col items-center gap-2" aria-live="polite">
+                    <div className="pointer-events-auto flex w-full max-w-sm flex-col gap-2">
+                        {toasts.map(t => <ToastItem key={t.id} item={t} onDismiss={dismiss} />)}
+                    </div>
                 </div>,
                 portalRoot,
             )}

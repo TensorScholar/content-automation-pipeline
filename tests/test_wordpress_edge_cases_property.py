@@ -269,7 +269,12 @@ def test_timeout_edge_cases(response_delay):
             raise httpx.ReadTimeout("Simulated WordPress read timeout")
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"id": 123, "link": "https://example.com/post"}
+        mock_response.json.return_value = {
+            "id": 123,
+            "link": "https://example.com/post",
+            "slug": distributor._wordpress_slug(article),
+            "status": "draft",
+        }
         mock_response.raise_for_status = Mock()
         return mock_response
 
@@ -525,50 +530,95 @@ def test_concurrent_upload_race_conditions(concurrent_uploads, same_article):
 
     project = create_test_project()
 
-    async def upload_article(article):
-        def mock_request(*args, **kwargs):
-            # Simulate slow response to increase chance of race conditions
-            time.sleep(0.01)
-            mock_resp = Mock()
-            mock_resp.status_code = 200
-            mock_resp.json.return_value = {
-                "id": hash(article.id) % 10000,
-                "link": f"https://example.com/post-{article.id}"
+    posts_by_id = {}
+    next_post_id = 1000
+
+    def make_response(payload, status_code=200):
+        response = Mock()
+        response.status_code = status_code
+        response.json.return_value = payload
+        response.raise_for_status = Mock()
+        return response
+
+    async def mock_get(url, *args, **kwargs):
+        await asyncio.sleep(0.01)
+        url = str(url)
+
+        if "/wp-json/wp/v2/users/me" in url:
+            return make_response({
+                "id": 1,
+                "capabilities": {
+                    "edit_posts": True,
+                    "publish_posts": True,
+                },
+            })
+
+        if "/wp-json/wp/v2/posts/" in url:
+            post_id = url.split("/posts/", 1)[1].split("?", 1)[0].split("/", 1)[0]
+            payload = posts_by_id.get(post_id)
+            if payload is None:
+                return make_response({"message": "Post not found"}, status_code=404)
+            return make_response(payload)
+
+        return make_response([])
+
+    async def mock_post(url, *args, **kwargs):
+        nonlocal next_post_id
+        await asyncio.sleep(0.01)
+        url = str(url)
+        request_data = kwargs.get("json") or {}
+
+        if url.rstrip("/").endswith("/wp-json/wp/v2/posts"):
+            post_id = next_post_id
+            next_post_id += 1
+
+            payload = {
+                "id": post_id,
+                "link": f"https://example.com/post-{post_id}",
+                "slug": str(request_data.get("slug") or ""),
+                "status": str(request_data.get("status") or "draft"),
             }
-            mock_resp.raise_for_status = Mock()
-            return mock_resp
+            posts_by_id[str(post_id)] = payload
+            return make_response(payload)
 
-        with patch('execution.distributer.httpx.AsyncClient') as mock_client_cls:
-            mock_instance = MagicMock()
-            mock_instance.get = mock_request
-            mock_instance.post = mock_request
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_instance
+        if "/wp-json/wp/v2/posts/" in url:
+            post_id = url.split("/posts/", 1)[1].split("?", 1)[0].split("/", 1)[0]
+            return make_response(posts_by_id.get(post_id, {"id": post_id}))
 
-            return await distributor.distribute_to_wordpress(article, project)
+        return make_response({})
+
+    async def upload_article(article):
+        return await distributor.distribute_to_wordpress(article, project)
 
     async def run_concurrent():
         tasks = [upload_article(article) for article in articles]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Property: All uploads should complete (success or failure, no hangs)
         assert len(results) == concurrent_uploads, \
             f"Expected {concurrent_uploads} results, got {len(results)}"
 
-        # Property: No uploads should crash with unexpected errors
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                # Some errors are expected, but not generic crashes
                 assert any(x in type(result).__name__ for x in [
-                    "DistributionError", "HTTPException", "HTTPStatusError",
+                    "DistributionError", "WordPressPublishError",
+                    "HTTPException", "HTTPStatusError",
                     "TimeoutError", "NetworkError"
                 ]), f"Upload {i} crashed unexpectedly: {type(result).__name__}: {result}"
 
         return results
 
+    mock_instance = MagicMock()
+    mock_instance.get = AsyncMock(side_effect=mock_get)
+    mock_instance.post = AsyncMock(side_effect=mock_post)
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
     try:
-        results = asyncio.run(run_concurrent())
+        with patch(
+            "execution.distributer.httpx.AsyncClient",
+            return_value=mock_instance,
+        ):
+            results = asyncio.run(run_concurrent())
     except Exception as e:
         pytest.fail(f"Concurrent uploads CRASHED: {type(e).__name__}: {e}")
 

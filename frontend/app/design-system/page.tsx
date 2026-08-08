@@ -78,24 +78,24 @@ const SPACING_GRID = [
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-display-lg text-ink mb-2">{children}</h2>
+    <h2 className="text-display-lg text-ink mb-2"><span dir="ltr">{children}</span></h2>
   );
 }
 
 function SectionDesc({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-body-md text-ink-secondary mb-6">{children}</p>
+    <p className="text-body-md text-ink-secondary mb-6"><span dir="ltr">{children}</span></p>
   );
 }
 
 function ColorSwatch({ name, css, hex, light }: { name: string; css: string; hex: string; light?: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex w-20 flex-col items-center gap-2">
       <div
         className={`${css} w-16 h-16 rounded-xl border border-border shadow-elevation-1 transition-transform duration-normal ease-apple hover:scale-110`}
       />
-      <span className={`text-body-sm font-semibold ${light ? "text-ink" : "text-ink-secondary"}`}>{name}</span>
-      <span className="text-body-sm text-ink-tertiary font-mono">{hex}</span>
+      <span className={`w-full text-center break-words text-body-sm font-semibold ${light ? "text-ink" : "text-ink-secondary"}`}>{name}</span>
+      <span dir="ltr" className="text-body-sm text-ink-tertiary font-mono">{hex}</span>
     </div>
   );
 }
@@ -117,14 +117,17 @@ export default function DesignSystemPage() {
           Visual Token Showcase
         </h1>
         <p className="text-body-lg text-ink-secondary max-w-reading">
-          CTO verification page — every primitive rendered for browser inspection.
-          Toggle direction below to verify RTL/LTR behavior.
+          <span dir="ltr">
+            CTO verification page — every primitive rendered for browser inspection.
+            Toggle direction below to verify RTL/LTR behavior.
+          </span>
         </p>
 
         {/* Direction Toggle */}
         <div className="mt-grid-3 flex items-center gap-3">
           <button
             onClick={() => setDir("ltr")}
+            dir="ltr"
             className={`px-grid-2 py-2 rounded-lg text-body-md font-semibold transition-all duration-normal ease-apple ${
               dir === "ltr"
                 ? "bg-accent text-ink-inverse shadow-elevation-2"
@@ -135,6 +138,7 @@ export default function DesignSystemPage() {
           </button>
           <button
             onClick={() => setDir("rtl")}
+            dir="ltr"
             className={`px-grid-2 py-2 rounded-lg text-body-md font-semibold transition-all duration-normal ease-apple ${
               dir === "rtl"
                 ? "bg-accent text-ink-inverse shadow-elevation-2"
@@ -157,7 +161,7 @@ export default function DesignSystemPage() {
         {/* Surface */}
         <div className="elevated-card p-grid-3 mb-grid-3">
           <h3 className="text-heading-sm text-ink mb-grid-2">Surface Palette</h3>
-          <div className="flex flex-wrap gap-grid-3">
+          <div className="flex flex-wrap gap-3">
             {SURFACE_COLORS.map((c) => <ColorSwatch key={c.name} {...c} />)}
           </div>
         </div>
@@ -165,7 +169,7 @@ export default function DesignSystemPage() {
         {/* Ink */}
         <div className="elevated-card p-grid-3 mb-grid-3">
           <h3 className="text-heading-sm text-ink mb-grid-2">Ink (Text) Palette</h3>
-          <div className="flex flex-wrap gap-grid-3">
+          <div className="flex flex-wrap gap-3">
             {INK_COLORS.map((c) => <ColorSwatch key={c.name} {...c} />)}
           </div>
         </div>
@@ -173,7 +177,7 @@ export default function DesignSystemPage() {
         {/* Accent */}
         <div className="elevated-card p-grid-3 mb-grid-3">
           <h3 className="text-heading-sm text-ink mb-grid-2">Brand Accent</h3>
-          <div className="flex flex-wrap gap-grid-3">
+          <div className="flex flex-wrap gap-3">
             {ACCENT_COLORS.map((c) => <ColorSwatch key={c.name} {...c} />)}
           </div>
         </div>
@@ -181,7 +185,7 @@ export default function DesignSystemPage() {
         {/* Status */}
         <div className="elevated-card p-grid-3 mb-grid-3">
           <h3 className="text-heading-sm text-ink mb-grid-2">Semantic Status</h3>
-          <div className="flex flex-wrap gap-grid-3">
+          <div className="flex flex-wrap gap-3">
             {STATUS_COLORS.map((c) => <ColorSwatch key={c.name} {...c} />)}
           </div>
         </div>
@@ -189,7 +193,7 @@ export default function DesignSystemPage() {
         {/* Border */}
         <div className="elevated-card p-grid-3">
           <h3 className="text-heading-sm text-ink mb-grid-2">Border</h3>
-          <div className="flex flex-wrap gap-grid-3">
+          <div className="flex flex-wrap gap-3">
             {BORDER_COLORS.map((c) => <ColorSwatch key={c.name} {...c} />)}
           </div>
         </div>
@@ -248,29 +252,29 @@ export default function DesignSystemPage() {
 
         {/* Elevation Levels */}
         <h3 className="text-heading-sm text-ink mb-grid-2">Shadow Elevations</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-grid-3 mb-grid-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-grid-4">
           {ELEVATIONS.map((e) => (
             <div
               key={e.name}
               className={`${e.css} bg-surface rounded-xl p-grid-3 border border-border-secondary transition-shadow duration-slow ease-apple hover:shadow-elevation-4`}
             >
               <p className="text-heading-sm text-ink mb-1">{e.name}</p>
-              <p className="text-body-sm text-ink-secondary">{e.desc}</p>
+              <p className="text-body-sm text-ink-secondary"><span dir="ltr">{e.desc}</span></p>
             </div>
           ))}
         </div>
 
         {/* Card Primitives */}
         <h3 className="text-heading-sm text-ink mb-grid-2">Card Primitives</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-grid-3 mb-grid-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-grid-4">
           {/* Glass Card */}
           <div className="glass-card p-grid-3">
             <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center mb-3">
               <span className="text-accent text-heading-md">◆</span>
             </div>
-            <h4 className="text-heading-sm text-ink mb-1">.glass-card</h4>
+            <h4 className="text-heading-sm text-ink mb-1"><span dir="ltr">.glass-card</span></h4>
             <p className="text-body-md text-ink-secondary">
-              Frosted glass with backdrop-filter blur. Premium overlay feel.
+              <span dir="ltr">Frosted glass with backdrop-filter blur. Premium overlay feel.</span>
             </p>
           </div>
 
@@ -279,9 +283,9 @@ export default function DesignSystemPage() {
             <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center mb-3">
               <span className="text-success text-heading-md">■</span>
             </div>
-            <h4 className="text-heading-sm text-ink mb-1">.elevated-card</h4>
+            <h4 className="text-heading-sm text-ink mb-1"><span dir="ltr">.elevated-card</span></h4>
             <p className="text-body-md text-ink-secondary">
-              Solid surface with subtle elevation shadow. Default card style.
+              <span dir="ltr">Solid surface with subtle elevation shadow. Default card style.</span>
             </p>
           </div>
 
@@ -293,9 +297,9 @@ export default function DesignSystemPage() {
               <div className="skeleton h-4 w-5/6" />
               <div className="skeleton h-10 w-1/3 mt-2" />
             </div>
-            <h4 className="text-heading-sm text-ink mt-4 mb-1">.skeleton</h4>
+            <h4 className="text-heading-sm text-ink mt-4 mb-1"><span dir="ltr">.skeleton</span></h4>
             <p className="text-body-md text-ink-secondary">
-              Shimmer loading placeholder. Infinite animation.
+              <span dir="ltr">Shimmer loading placeholder. Infinite animation.</span>
             </p>
           </div>
         </div>
@@ -307,7 +311,7 @@ export default function DesignSystemPage() {
         <SectionDesc>All spacing tokens are multiples of the 8px base unit.</SectionDesc>
 
         <div className="elevated-card p-grid-3">
-          <div className="flex flex-wrap items-end gap-grid-2">
+          <div className="flex flex-wrap items-end gap-2">
             {SPACING_GRID.map((s) => (
               <div key={s.token} className="flex flex-col items-center gap-2">
                 <div
@@ -327,14 +331,14 @@ export default function DesignSystemPage() {
         <SectionTitle>Motion Tokens &amp; Animations</SectionTitle>
         <SectionDesc>Apple-like easing curves and direction-aware animations. Hover cards to see transitions.</SectionDesc>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-grid-3 mb-grid-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-grid-4">
           {/* Easing: Apple */}
           <div className="elevated-card p-grid-3 group cursor-pointer">
             <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center mb-3 transition-transform duration-slow ease-apple group-hover:translate-x-4 group-hover:scale-110">
               <span className="text-ink-inverse text-heading-sm">→</span>
             </div>
             <h4 className="text-heading-sm text-ink mb-1">ease-apple</h4>
-            <p className="text-body-sm text-ink-secondary">cubic-bezier(0.25, 0.1, 0.25, 1)</p>
+            <p className="text-body-sm text-ink-secondary"><span dir="ltr">cubic-bezier(0.25, 0.1, 0.25, 1)</span></p>
             <p className="text-body-sm text-ink-tertiary mt-1">Hover to see motion</p>
           </div>
 
@@ -344,7 +348,7 @@ export default function DesignSystemPage() {
               <span className="text-ink-inverse text-heading-sm">⟳</span>
             </div>
             <h4 className="text-heading-sm text-ink mb-1">ease-spring</h4>
-            <p className="text-body-sm text-ink-secondary">cubic-bezier(0.175, 0.885, 0.32, 1.275)</p>
+            <p className="text-body-sm text-ink-secondary"><span dir="ltr">cubic-bezier(0.175, 0.885, 0.32, 1.275)</span></p>
             <p className="text-body-sm text-ink-tertiary mt-1">Hover to see bounce</p>
           </div>
 
@@ -354,14 +358,14 @@ export default function DesignSystemPage() {
               <span className="text-ink-inverse text-heading-sm">◇</span>
             </div>
             <h4 className="text-heading-sm text-ink mb-1">ease-smooth</h4>
-            <p className="text-body-sm text-ink-secondary">cubic-bezier(0.4, 0, 0.2, 1)</p>
+            <p className="text-body-sm text-ink-secondary"><span dir="ltr">cubic-bezier(0.4, 0, 0.2, 1)</span></p>
             <p className="text-body-sm text-ink-tertiary mt-1">Hover to see morph</p>
           </div>
         </div>
 
         {/* Keyframe Animations */}
         <h3 className="text-heading-sm text-ink mb-grid-2">Keyframe Animations</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-grid-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <AnimationCard name="fade-in" css="animate-fade-in" />
           <AnimationCard name="slide-in-start" css="animate-slide-in-start" />
           <AnimationCard name="scale-in" css="animate-scale-in" />
@@ -382,7 +386,7 @@ export default function DesignSystemPage() {
           Toggle direction above — layout flips automatically without any JS class swapping.
         </SectionDesc>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-grid-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Logical Margin */}
           <div className="elevated-card p-grid-3">
             <h4 className="text-heading-sm text-ink mb-grid-2">Logical Margin (ms-*)</h4>
@@ -423,11 +427,11 @@ export default function DesignSystemPage() {
             <h4 className="text-heading-sm text-ink mb-grid-2">Text Alignment (text-start / text-end)</h4>
             <div className="space-y-3">
               <div className="bg-surface-tertiary rounded p-3 text-start">
-                <span className="text-body-md text-ink">text-start →</span>
+                <span dir="ltr" className="text-body-md text-ink">text-start →</span>
                 <span className="text-body-sm text-ink-tertiary block">Aligns to inline-start edge</span>
               </div>
               <div className="bg-surface-tertiary rounded p-3 text-end">
-                <span className="text-body-md text-ink">← text-end</span>
+                <span dir="ltr" className="text-body-md text-ink">← text-end</span>
                 <span className="text-body-sm text-ink-tertiary block">Aligns to inline-end edge</span>
               </div>
             </div>
@@ -459,7 +463,7 @@ export default function DesignSystemPage() {
         <SectionTitle>Z-Index Semantic Scale</SectionTitle>
         <SectionDesc>Named z-index layers prevent magic numbers across the codebase.</SectionDesc>
         <div className="elevated-card p-grid-3">
-          <div className="flex flex-wrap gap-grid-2">
+          <div className="flex flex-wrap gap-2">
             {["dropdown:10", "sticky:20", "overlay:30", "modal:40", "popover:50", "toast:60", "tooltip:70"].map((z) => {
               const [name, val] = z.split(":");
               return (

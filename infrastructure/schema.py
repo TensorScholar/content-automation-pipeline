@@ -79,6 +79,10 @@ generated_articles_table = Table(
     Column("publish_error_message", Text),
     Column("publish_attempt_count", Integer, nullable=False, server_default="0"),
     Column("publish_updated_at", DateTime),
+    Column("publish_task_id", String(255)),
+    Column("publish_requested_status", String(40)),
+    Column("publish_scheduled_at", DateTime),
+    Column("publish_lease_expires_at", DateTime),
     Column("review_status", String(40), nullable=False, server_default="pending_review"),
     Column("review_note", Text),
     Column("reviewed_by", PG_UUID, ForeignKey("users.id", ondelete="SET NULL")),
@@ -180,10 +184,102 @@ publishing_attempts_table = Table(
     Column("retry_count", Integer, nullable=False, server_default="0"),
     Column("task_id", String(255)),
     Column("correlation_id", String(255)),
+    Column("status", String(32), nullable=False, server_default="queued"),
+    Column("lease_expires_at", DateTime),
+    Column("warnings", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("remote_verified_at", DateTime),
+    Column("updated_at", DateTime, nullable=False, server_default=func.now()),
     Column("created_at", DateTime, nullable=False, server_default=func.now()),
     Index("idx_publishing_attempts_article_started", "article_id", "started_at"),
     Index("idx_publishing_attempts_project_started", "project_id", "started_at"),
     Index("idx_publishing_attempts_idempotency", "article_id", "idempotency_key"),
+    Index("idx_publishing_attempts_status_lease", "status", "lease_expires_at"),
+    Index(
+        "uq_publishing_success_idempotency",
+        "article_id",
+        "idempotency_key",
+        unique=True,
+        postgresql_where=text("success = true"),
+    ),
+)
+
+
+search_console_oauth_states_table = Table(
+    "search_console_oauth_states",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column("state_hash", String(64), nullable=False, unique=True),
+    Column("project_id", PG_UUID, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", PG_UUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("expires_at", DateTime, nullable=False),
+    Column("consumed_at", DateTime),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    Index("idx_search_console_oauth_expiry", "expires_at", "consumed_at"),
+)
+
+
+search_console_connections_table = Table(
+    "search_console_connections",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column("project_id", PG_UUID, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True),
+    Column("encrypted_refresh_token", Text),
+    Column("scope", Text, nullable=False),
+    Column("status", String(32), nullable=False, server_default="connected"),
+    Column("selected_site_url", String(1000)),
+    Column("permission_level", String(80)),
+    Column("last_sync_at", DateTime),
+    Column("last_error_category", String(100)),
+    Column("last_error_message", Text),
+    Column("connected_by", PG_UUID, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime, nullable=False, server_default=func.now()),
+    Index("idx_search_console_connections_status", "status"),
+)
+
+
+search_console_properties_table = Table(
+    "search_console_properties",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column("connection_id", PG_UUID, ForeignKey("search_console_connections.id", ondelete="CASCADE"), nullable=False),
+    Column("project_id", PG_UUID, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("site_url", String(1000), nullable=False),
+    Column("permission_level", String(80), nullable=False),
+    Column("last_seen_at", DateTime, nullable=False, server_default=func.now()),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    UniqueConstraint("connection_id", "site_url", name="uq_search_console_connection_site"),
+    Index("idx_search_console_properties_project", "project_id", "last_seen_at"),
+)
+
+
+search_console_sync_runs_table = Table(
+    "search_console_sync_runs",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column("connection_id", PG_UUID, ForeignKey("search_console_connections.id", ondelete="CASCADE"), nullable=False),
+    Column("project_id", PG_UUID, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("site_url", String(1000), nullable=False),
+    Column("date_from", Date, nullable=False),
+    Column("date_to", Date, nullable=False),
+    Column("status", String(32), nullable=False, server_default="queued"),
+    Column("task_id", String(255)),
+    Column("row_count", Integer, nullable=False, server_default="0"),
+    Column("pages_fetched", Integer, nullable=False, server_default="0"),
+    Column("truncated", Boolean, nullable=False, server_default="false"),
+    Column("retry_count", Integer, nullable=False, server_default="0"),
+    Column("error_category", String(100)),
+    Column("error_message", Text),
+    Column("started_at", DateTime),
+    Column("finished_at", DateTime),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime, nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "project_id", "site_url", "date_from", "date_to",
+        name="uq_search_console_sync_window",
+    ),
+    Index("idx_search_console_sync_project_created", "project_id", "created_at"),
+    Index("idx_search_console_sync_status", "status", "created_at"),
 )
 
 

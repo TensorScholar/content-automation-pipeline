@@ -124,10 +124,10 @@ def start_api():
     # Activate venv and run uvicorn
     if sys.platform == "win32":
         activate = os.path.join(PROJECT_DIR, ".venv", "Scripts", "activate.bat")
-        cmd = f'call "{activate}" && uvicorn api.main:app --host 0.0.0.0 --port {API_PORT} --reload'
+        cmd = f'call "{activate}" && uvicorn api.main:create_app --factory --host 0.0.0.0 --port {API_PORT} --reload'
     else:
         activate = os.path.join(PROJECT_DIR, ".venv", "bin", "activate")
-        cmd = f'source "{activate}" && uvicorn api.main:app --host 0.0.0.0 --port {API_PORT} --reload'
+        cmd = f'source "{activate}" && uvicorn api.main:create_app --factory --host 0.0.0.0 --port {API_PORT} --reload'
 
     return subprocess.Popen(
         cmd,

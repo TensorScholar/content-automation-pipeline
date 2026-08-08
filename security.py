@@ -12,7 +12,7 @@ Security Foundation: OAuth2 + JWT + Password Hashing
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 from uuid import uuid4
 
 import bcrypt
@@ -23,19 +23,24 @@ from jose import JWTError, jwt
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from config.settings import get_settings
+from config.settings import get_settings, settings
 
-# Load settings once for module-wide use
-settings = get_settings()
+if TYPE_CHECKING:
+    from services.user_service import UserService
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
-# JWT Configuration - Loaded from settings or defaults
-ALGORITHM = settings.jwt_algorithm  # Configurable via JWT_ALGORITHM env var
+# JWT configuration is resolved lazily via get_settings() so importing this
+# module does not require DATABASE_URL/SECRET_KEY at collection time.
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours for production use
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 PASSWORD_RESET_TOKEN_EXPIRE_HOURS = 1
+
+
+def _jwt_algorithm() -> str:
+    """Return the configured JWT algorithm (lazy; requires settings)."""
+    return get_settings().jwt_algorithm
 
 
 def get_security_headers() -> Dict[str, str]:
@@ -258,7 +263,11 @@ def create_access_token(
         }
     )
 
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(
+        to_encode,
+        settings.secret_key.get_secret_value(),
+        algorithm=_jwt_algorithm(),
+    )
 
     return encoded_jwt
 
@@ -286,7 +295,7 @@ def decode_access_token(token: str) -> TokenData:
         payload = jwt.decode(
             token,
             settings.secret_key.get_secret_value(),
-            algorithms=[ALGORITHM],
+            algorithms=[_jwt_algorithm()],
             audience=settings.jwt_audience,
             options={"verify_aud": True},
         )
@@ -516,7 +525,7 @@ def generate_password_reset_token(email: str) -> str:
     encoded_jwt = jwt.encode(
         {"exp": exp, "nbf": now, "sub": email, "type": "password_reset"},
         settings.secret_key.get_secret_value(),
-        algorithm=ALGORITHM,
+        algorithm=_jwt_algorithm(),
     )
 
     return encoded_jwt
@@ -536,7 +545,7 @@ def verify_password_reset_token(token: str) -> Optional[str]:
         decoded_token = jwt.decode(
             token,
             settings.secret_key.get_secret_value(),
-            algorithms=[ALGORITHM],
+            algorithms=[_jwt_algorithm()],
             # Password reset tokens use `type=password_reset` as discriminator.
             # They do not carry an `aud` claim, so skip audience verification.
             options={"verify_aud": False},

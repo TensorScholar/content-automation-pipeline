@@ -894,7 +894,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
   const selectedModelUnavailable = llmUnavailable || selectedActiveProviderUnavailable;
 
   return (
-    <section className="animate-fade-in relative flex h-full min-h-0 min-w-0 w-full justify-center overflow-hidden">
+    <section className="smx-page !max-w-none relative flex h-full min-h-0 min-w-0 justify-center overflow-hidden !pb-0">
 
       {/* ── Dynamic Layout Wrapper ── */}
       <div className={clsx(
@@ -903,21 +903,21 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
       )}>
 
         {/* ── LAYER 2: THE FIXED CANVAS (The "Page") ── */}
-        <article className="relative m-4 flex h-[calc(100%-2rem)] min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
+        <article className="smx-panel relative m-4 flex h-[calc(100%-2rem)] min-h-0 min-w-0 flex-col overflow-hidden">
 
           {/* Apple Segmented Tab Control Header (Fixed) */}
-          <div className="z-10 flex min-w-0 shrink-0 items-center justify-between border-b border-black/5 bg-gray-50 p-4 dark:border-white/10 dark:bg-surface-alt">
+          <div className="z-10 flex min-w-0 shrink-0 items-center justify-between border-b border-black/[0.055] bg-transparent p-4 dark:border-white/[0.075]">
 
-            <div className="inline-flex max-w-full flex-wrap rounded-md bg-slate-200 p-1 dark:bg-white/10 sm:w-auto">
+            <div className="inline-flex max-w-full flex-wrap rounded-[13px] border border-black/[0.055] bg-black/[0.035] p-1 dark:border-white/[0.075] dark:bg-white/[0.055] sm:w-auto">
               {tabEntries.map((entry) => (
                 <button
                   type="button"
                   key={entry.key}
                   onClick={() => setActiveTab(entry.key)}
                   className={clsx(
-                    "flex-1 rounded-md px-3 py-1.5 text-center text-[13px] font-medium leading-5 transition-colors duration-150 sm:flex-none",
+                    "flex-1 rounded-[10px] px-3 py-1.5 text-center text-[12px] font-semibold leading-5 transition-colors duration-150 sm:flex-none",
                     activeTab === entry.key
-                      ? "bg-white text-slate-900 dark:bg-white/15 dark:text-gray-100"
+                      ? "bg-white text-ink shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/[0.11] dark:text-white"
                       : "bg-transparent text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200"
                   )}
                 >
@@ -932,14 +932,14 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
             {selectedProjectId && (activeTab === "generate" || activeTab === "bulk") && (
               <div className="px-4 pt-4 lg:px-5">
                 <div className={clsx(
-                  "mx-auto flex w-full max-w-5xl items-start justify-between gap-3 rounded-xl border px-4 py-3 text-[13px] shadow-sm",
+                  "mx-auto flex w-full max-w-5xl flex-col gap-3 rounded-xl border px-4 py-3 text-[13px] shadow-sm sm:flex-row sm:items-start sm:justify-between",
                   readinessState === "blocked" || readinessState === "unavailable"
                     ? "border-red-200 bg-red-50 text-red-900 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-100"
                     : readinessState === "warning"
                       ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100"
                       : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100"
                 )}>
-                  <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex min-w-0 w-full items-start gap-3 sm:w-auto sm:flex-1">
                     <span className={clsx(
                       "mt-1 h-2 w-2 shrink-0 rounded-full",
                       readinessState === "checking" ? "animate-pulse bg-slate-400" :
@@ -954,7 +954,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                       )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
                     {(readiness || readinessError) && (
                       <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-normal text-slate-700 dark:bg-white/10 dark:text-white/80">
                         {readinessStatusLabel}
@@ -981,7 +981,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                   <div className="grid min-w-0 grid-cols-12 gap-4">
 
                     {/* BOX 1: Core Identity */}
-                    <div className="col-span-12 flex flex-col gap-4 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt lg:col-span-6">
+                    <div className="col-span-12 flex flex-col gap-4 smx-panel-subtle p-5 lg:col-span-6">
                       <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "Core Identity")}</h2>
 
                       <div className="flex flex-col gap-0">
@@ -1005,7 +1005,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     </div>
 
                     {/* BOX 2: Tonal DNA */}
-                    <div className="col-span-12 flex flex-col gap-4 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt lg:col-span-6">
+                    <div className="col-span-12 flex flex-col gap-4 smx-panel-subtle p-5 lg:col-span-6">
                       <h2 className={HeaderClass}>{safe_t("studio.tonalDna", "Tonal DNA")}</h2>
 
                       <div className="flex flex-col gap-4">
@@ -1066,7 +1066,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     </div>
 
                     {/* BOX 3: Additional Context */}
-                    <div className="col-span-12 flex flex-col gap-4 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+                    <div className="col-span-12 flex flex-col gap-4 smx-panel-subtle p-5">
                       <h2 className={HeaderClass}>{safe_t("studio.context", "Additional Context")}</h2>
                       <div className="flex flex-col gap-0">
                         <label className={LabelClass}>{safe_t("studio.reference", "Reference URL (Analysis)")}</label>
@@ -1083,7 +1083,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     </div>
 
                     {/* BOX 4: Parameters & Action */}
-                    <div className="col-span-12 flex flex-col gap-5 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+                    <div className="col-span-12 flex flex-col gap-5 smx-panel-subtle p-5">
                       <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "Parameters & Limits")}</h2>
 
                       <div className="flex flex-col gap-8">
@@ -1152,7 +1152,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                           <button
                             type="submit"
                             disabled={!selectedProjectId || submitting || generationBlocked || selectedModelUnavailable}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-2.5 font-semibold text-white transition-colors duration-150 hover:bg-brand-hover active:bg-brand-hover disabled:opacity-50 md:w-auto"
+                            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[13px] border border-brand bg-brand px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_10px_22px_-17px_rgb(0_0_0/0.75)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-brand-hover active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-[0.45] md:w-auto"
                           >
                             {submitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
                             {safe_t("studio.generate", "Generate Article")}
@@ -1169,7 +1169,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
             {activeTab === "bulk" && (
               <div className="h-full flex flex-col pb-8 p-6 lg:p-8">
                 <form onSubmit={onSubmitBatch} className="mx-auto flex h-full w-full max-w-4xl flex-col gap-4">
-                  <div className="flex flex-col gap-4 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+                  <div className="flex flex-col gap-4 smx-panel-subtle p-5">
                     <h2 className={HeaderClass}>{safe_t("studio.parametersLimits", "Parameters")}</h2>
                     <div className="flex flex-col md:flex-row gap-4">
                       <div className="flex-1 flex flex-col gap-0">
@@ -1221,7 +1221,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                     )}
                   </div>
 
-                  <div className="flex flex-1 flex-col rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+                  <div className="flex flex-1 flex-col smx-panel-subtle p-5">
                     <h2 className={HeaderClass}>{safe_t("studio.coreIdentity", "Core Identity")}</h2>
                     <div className="flex flex-col gap-0 flex-1 h-full min-h-[300px]">
                       <label className={LabelClass}>{safe_t("studio.batchTopics", "Topics (One per line)")}</label>
@@ -1231,7 +1231,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
                   </div>
 
                   <div className="flex w-full justify-end mt-2 pb-8">
-                    <button type="submit" disabled={!selectedProjectId || bulkSubmitting || generationBlocked || selectedModelUnavailable} className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-2.5 font-semibold text-white transition-colors duration-150 hover:bg-brand-hover active:bg-brand-hover disabled:opacity-50 md:w-auto">
+                    <button type="submit" disabled={!selectedProjectId || bulkSubmitting || generationBlocked || selectedModelUnavailable} className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[13px] border border-brand bg-brand px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_10px_22px_-17px_rgb(0_0_0/0.75)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-brand-hover active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-[0.45] md:w-auto">
                       {bulkSubmitting && <span className="w-5 h-5 rounded-full border-[3px] border-white/30 border-t-white animate-spin shrink-0" />}
                       {safe_t("studio.batchSubmit", "Submit Batch Pipeline")}
                     </button>
@@ -1369,7 +1369,7 @@ export function ContentStudioPanel({ token, selectedProjectId }: ContentStudioPa
 
         {/* ── Dynamic Layout Drawer: Active Tasks (only visible when a task is running) ── */}
         {(taskStatus || batchStatus) && (
-          <aside className="animate-slide-in-start sticky top-4 flex w-full max-w-sm flex-col gap-3 self-start rounded-lg border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface">
+          <aside className="smx-panel animate-slide-in-start sticky top-4 flex w-full max-w-sm flex-col gap-3 self-start p-5">
             <h3 className="text-[14px] font-semibold text-slate-800 dark:text-gray-100">{EXECUTION_COPY[locale].taskStatus}</h3>
 
             {taskStatus && (

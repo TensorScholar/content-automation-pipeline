@@ -10,6 +10,8 @@ import {
   Project,
   ProjectPerformanceFeedback,
   ProjectReadiness,
+  SearchConsoleStatus,
+  SeoIntelligenceResponse,
 } from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
@@ -402,6 +404,183 @@ const PERFORMANCE_COPY = {
   },
 };
 
+const SEARCH_CONSOLE_COPY = {
+  en: {
+    title: "Google Search Console",
+    subtitle: "Secure read-only synchronization. Smarlux cannot modify Search Console or publish from this connection.",
+    connect: "Connect Google",
+    reconnect: "Reconnect",
+    disconnect: "Disconnect",
+    refreshProperties: "Refresh properties",
+    syncNow: "Sync now",
+    property: "Search Console property",
+    selectProperty: "Select a property",
+    connected: "Connected",
+    disconnected: "Not connected",
+    notConfigured: "OAuth is not configured on the server.",
+    loading: "Loading Search Console status…",
+    syncing: "Sync queued. Finalized Search Console data will be imported in the background.",
+    synced: "Search Console synchronization completed.",
+    failed: "Search Console synchronization failed.",
+    noProperties: "No accessible properties were returned for this Google account.",
+    lastSync: "Last sync",
+    never: "Never",
+    readOnly: "Read-only",
+  },
+  fa: {
+    title: "Google Search Console",
+    subtitle: "همگام‌سازی امن و فقط‌خواندنی؛ این اتصال امکان تغییر سرچ کنسول یا انتشار محتوا را ندارد.",
+    connect: "اتصال به گوگل",
+    reconnect: "اتصال مجدد",
+    disconnect: "قطع اتصال",
+    refreshProperties: "بروزرسانی سایت‌ها",
+    syncNow: "همگام‌سازی",
+    property: "سایت سرچ کنسول",
+    selectProperty: "یک سایت انتخاب کنید",
+    connected: "متصل",
+    disconnected: "متصل نیست",
+    notConfigured: "OAuth سرچ کنسول روی سرور تنظیم نشده است.",
+    loading: "در حال دریافت وضعیت سرچ کنسول…",
+    syncing: "همگام‌سازی در صف قرار گرفت و داده نهایی در پس‌زمینه وارد می‌شود.",
+    synced: "همگام‌سازی سرچ کنسول تکمیل شد.",
+    failed: "همگام‌سازی سرچ کنسول ناموفق بود.",
+    noProperties: "برای این حساب گوگل سایت قابل‌دسترسی پیدا نشد.",
+    lastSync: "آخرین همگام‌سازی",
+    never: "هرگز",
+    readOnly: "فقط‌خواندنی",
+  },
+  ar: {
+    title: "Google Search Console",
+    subtitle: "مزامنة آمنة للقراءة فقط؛ لا يمكن لهذا الاتصال تعديل Search Console أو نشر المحتوى.",
+    connect: "ربط Google",
+    reconnect: "إعادة الربط",
+    disconnect: "قطع الاتصال",
+    refreshProperties: "تحديث المواقع",
+    syncNow: "مزامنة الآن",
+    property: "موقع Search Console",
+    selectProperty: "اختر موقعًا",
+    connected: "متصل",
+    disconnected: "غير متصل",
+    notConfigured: "لم يتم إعداد OAuth على الخادم.",
+    loading: "جارٍ تحميل حالة Search Console…",
+    syncing: "تمت إضافة المزامنة إلى الطابور وسيتم استيراد البيانات النهائية في الخلفية.",
+    synced: "اكتملت مزامنة Search Console.",
+    failed: "فشلت مزامنة Search Console.",
+    noProperties: "لم يتم العثور على مواقع متاحة لهذا الحساب.",
+    lastSync: "آخر مزامنة",
+    never: "أبدًا",
+    readOnly: "قراءة فقط",
+  },
+};
+
+const SEO_INTELLIGENCE_COPY = {
+  en: {
+    title: "SEO Intelligence",
+    subtitle: "Explainable prioritization from first-party performance data",
+    health: "Portfolio health",
+    coverage: "Measured coverage",
+    highPriority: "High priority",
+    queue: "Recommended queue",
+    dataQuality: "Data quality",
+    dataGood: "Good",
+    dataLimited: "Limited",
+    dataInsufficient: "Insufficient",
+    confidence: "confidence",
+    noQueue: "No prioritized action is currently available.",
+    loading: "Building the prioritized SEO portfolio…",
+    failed: "SEO intelligence could not be loaded.",
+    safe: "Read-only · no automatic rewrite or publishing",
+  },
+  fa: {
+    title: "هوشمندی سئو",
+    subtitle: "اولویت‌بندی توضیح‌پذیر بر پایه داده‌های عملکردی خود پروژه",
+    health: "سلامت مجموعه محتوا",
+    coverage: "پوشش اندازه‌گیری",
+    highPriority: "اولویت بالا",
+    queue: "صف پیشنهادی",
+    dataQuality: "کیفیت داده",
+    dataGood: "مناسب",
+    dataLimited: "محدود",
+    dataInsufficient: "ناکافی",
+    confidence: "اطمینان",
+    noQueue: "در حال حاضر اقدام اولویت‌داری وجود ندارد.",
+    loading: "در حال ساخت اولویت‌های سئو…",
+    failed: "هوشمندی سئو قابل دریافت نیست.",
+    safe: "فقط‌خواندنی · بدون بازنویسی یا انتشار خودکار",
+  },
+  ar: {
+    title: "ذكاء تحسين محركات البحث",
+    subtitle: "ترتيب أولويات قابل للتفسير اعتمادًا على بيانات الأداء المباشرة",
+    health: "صحة المحتوى",
+    coverage: "التغطية المقاسة",
+    highPriority: "أولوية مرتفعة",
+    queue: "قائمة العمل المقترحة",
+    dataQuality: "جودة البيانات",
+    dataGood: "جيدة",
+    dataLimited: "محدودة",
+    dataInsufficient: "غير كافية",
+    confidence: "الثقة",
+    noQueue: "لا يوجد إجراء ذو أولوية حاليًا.",
+    loading: "جارٍ بناء أولويات تحسين محركات البحث…",
+    failed: "تعذر تحميل ذكاء تحسين محركات البحث.",
+    safe: "للقراءة فقط · دون إعادة كتابة أو نشر تلقائي",
+  },
+};
+
+const SEO_NEXT_ACTION_COPY = {
+  en: {
+    low_ctr_high_impressions: "Improve the title and meta description after validating search intent.",
+    striking_distance_position: "Strengthen the highest-value section and internal links.",
+    declining_clicks: "Audit freshness and separate demand decline from page deterioration.",
+    unmapped_url: "Map the measured URL to the correct article.",
+    missing_performance_data: "Collect a complete Search Console or manual performance window.",
+  },
+  fa: {
+    low_ctr_high_impressions: "پس از بررسی نیت جست‌وجو، عنوان و توضیحات متا را بهبود دهید.",
+    striking_distance_position: "بخش باارزش مقاله و پیوندهای داخلی را تقویت کنید.",
+    declining_clicks: "تازگی محتوا را بررسی و افت تقاضا را از افت عملکرد صفحه جدا کنید.",
+    unmapped_url: "URL اندازه‌گیری‌شده را به مقاله درست متصل کنید.",
+    missing_performance_data: "یک بازه کامل از سرچ کنسول یا داده عملکرد دستی جمع‌آوری کنید.",
+  },
+  ar: {
+    low_ctr_high_impressions: "حسّن العنوان والوصف التعريفي بعد التحقق من نية البحث.",
+    striking_distance_position: "عزّز القسم الأعلى قيمة والروابط الداخلية.",
+    declining_clicks: "راجع حداثة المحتوى وافصل تراجع الطلب عن تدهور الصفحة.",
+    unmapped_url: "اربط الرابط المقاس بالمقال الصحيح.",
+    missing_performance_data: "اجمع نافذة أداء مكتملة من Search Console أو الاستيراد اليدوي.",
+  },
+};
+
+const SEO_WARNING_COPY = {
+  en: {
+    search_console_disconnected: "Search Console is not connected; recommendations may rely on manual or stale data.",
+    no_performance_data: "No performance snapshot is available.",
+    performance_data_very_stale: "Performance data is too old for a high-confidence recommendation.",
+    performance_data_stale: "Performance data should be refreshed.",
+    unmapped_urls: "Some measured URLs are not mapped to generated articles.",
+    truncated_sync_runs: "Recent Search Console coverage was incomplete.",
+    failed_sync_runs: "One or more recent Search Console syncs failed.",
+  },
+  fa: {
+    search_console_disconnected: "سرچ کنسول متصل نیست و پیشنهادها ممکن است بر داده دستی یا قدیمی تکیه کنند.",
+    no_performance_data: "هیچ داده عملکردی در دسترس نیست.",
+    performance_data_very_stale: "داده عملکردی برای پیشنهاد با اطمینان بالا بیش از حد قدیمی است.",
+    performance_data_stale: "داده عملکردی باید بروزرسانی شود.",
+    unmapped_urls: "برخی URLهای اندازه‌گیری‌شده به مقاله‌های تولیدشده متصل نیستند.",
+    truncated_sync_runs: "پوشش اخیر سرچ کنسول ناقص بوده است.",
+    failed_sync_runs: "یک یا چند همگام‌سازی اخیر سرچ کنسول ناموفق بوده است.",
+  },
+  ar: {
+    search_console_disconnected: "Search Console غير متصل وقد تعتمد التوصيات على بيانات يدوية أو قديمة.",
+    no_performance_data: "لا تتوفر لقطة لبيانات الأداء.",
+    performance_data_very_stale: "بيانات الأداء قديمة جدًا لتوصية عالية الثقة.",
+    performance_data_stale: "يجب تحديث بيانات الأداء.",
+    unmapped_urls: "بعض الروابط المقاسة غير مرتبطة بالمقالات المنشأة.",
+    truncated_sync_runs: "تغطية Search Console الأخيرة غير مكتملة.",
+    failed_sync_runs: "فشلت مزامنة واحدة أو أكثر مؤخرًا.",
+  },
+};
+
 function extractError(error: unknown): string {
   if (error instanceof ApiError) return error.detail;
   return "Unexpected error";
@@ -456,6 +635,25 @@ function FolderIllustration() {
   );
 }
 
+function DomainHelperText({
+  accessibleLabel,
+  withoutLabel,
+}: {
+  accessibleLabel: string;
+  withoutLabel: string;
+}) {
+  return (
+    <span dir="ltr" aria-label={accessibleLabel}>
+      <bdi dir="ltr">example.com</bdi>
+      {" ("}
+      <bdi dir="auto">{withoutLabel}</bdi>
+      {" "}
+      <bdi dir="ltr">https://</bdi>
+      {")"}
+    </span>
+  );
+}
+
 export function ProjectsPanel({
   token, projects, selectedProjectId, canManageProjects, onSelectProject, onProjectsRefresh,
 }: ProjectsPanelProps) {
@@ -478,10 +676,17 @@ export function ProjectsPanel({
   const [performance, setPerformance] = useState<ProjectPerformanceFeedback | null>(null);
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [performanceError, setPerformanceError] = useState<string | null>(null);
+  const [seoIntelligence, setSeoIntelligence] = useState<SeoIntelligenceResponse | null>(null);
+  const [seoIntelligenceLoading, setSeoIntelligenceLoading] = useState(false);
+  const [seoIntelligenceError, setSeoIntelligenceError] = useState<string | null>(null);
   const [performanceImportOpen, setPerformanceImportOpen] = useState(false);
   const [performanceCsv, setPerformanceCsv] = useState("");
   const [performanceImporting, setPerformanceImporting] = useState(false);
   const [dismissingOpportunityId, setDismissingOpportunityId] = useState<string | null>(null);
+  const [searchConsole, setSearchConsole] = useState<SearchConsoleStatus | null>(null);
+  const [searchConsoleLoading, setSearchConsoleLoading] = useState(false);
+  const [searchConsoleAction, setSearchConsoleAction] = useState<string | null>(null);
+  const [searchConsoleError, setSearchConsoleError] = useState<string | null>(null);
 
   // Kebab Menu State
   const [kebabOpen, setKebabOpen] = useState(false);
@@ -494,6 +699,8 @@ export function ProjectsPanel({
   );
   const readinessCopy = READINESS_COPY[locale];
   const performanceCopy = PERFORMANCE_COPY[locale];
+  const searchConsoleCopy = SEARCH_CONSOLE_COPY[locale];
+  const seoIntelligenceCopy = SEO_INTELLIGENCE_COPY[locale];
 
   // If selected project gets deleted, reset selection
   useEffect(() => {
@@ -573,6 +780,85 @@ export function ProjectsPanel({
     return () => controller.abort();
   }, [activeTab, selectedProject, selectedProjectId, token]);
 
+  useEffect(() => {
+    if (!selectedProject || selectedProjectId === "__new__") {
+      setSeoIntelligence(null);
+      setSeoIntelligenceError(null);
+      setSeoIntelligenceLoading(false);
+      return;
+    }
+    if (activeTab !== "performance") return;
+
+    const controller = new AbortController();
+    setSeoIntelligenceLoading(true);
+    setSeoIntelligenceError(null);
+    apiRequest<SeoIntelligenceResponse>(`/projects/${selectedProject.id}/seo-intelligence`, {
+      token,
+      signal: controller.signal,
+      timeoutMs: 10000,
+    })
+      .then((payload) => {
+        if (!controller.signal.aborted) setSeoIntelligence(payload);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setSeoIntelligence(null);
+          setSeoIntelligenceError(extractError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSeoIntelligenceLoading(false);
+      });
+    return () => controller.abort();
+  }, [activeTab, selectedProject, selectedProjectId, token]);
+
+  useEffect(() => {
+    if (!selectedProject || selectedProjectId === "__new__" || activeTab !== "performance") return;
+    const controller = new AbortController();
+    setSearchConsoleLoading(true);
+    setSearchConsoleError(null);
+    apiRequest<SearchConsoleStatus>(`/projects/${selectedProject.id}/search-console/status`, {
+      token,
+      signal: controller.signal,
+      timeoutMs: 10000,
+    })
+      .then((payload) => { if (!controller.signal.aborted) setSearchConsole(payload); })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setSearchConsole(null);
+          setSearchConsoleError(extractError(error));
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setSearchConsoleLoading(false); });
+    return () => controller.abort();
+  }, [activeTab, selectedProject, selectedProjectId, token]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const callbackState = params.get("search_console");
+    const callbackProject = params.get("project_id");
+    if (!callbackState) return;
+
+    if (callbackProject && callbackProject !== selectedProject?.id) {
+      if (projects.some((project) => project.id === callbackProject)) {
+        onSelectProject(callbackProject);
+        return;
+      }
+      showToast("error", searchConsoleCopy.failed);
+    } else if (!selectedProject) {
+      return;
+    } else {
+      setActiveTab("performance");
+      if (callbackState === "connected") showToast("success", searchConsoleCopy.connected);
+      if (callbackState === "error") showToast("error", params.get("message") || searchConsoleCopy.failed);
+    }
+
+    ["search_console", "project_id", "category", "message"].forEach((key) => params.delete(key));
+    const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", next);
+  }, [onSelectProject, projects, searchConsoleCopy, selectedProject, showToast]);
+
   const refreshReadiness = async () => {
     if (!selectedProject) return;
     setReadinessLoading(true);
@@ -609,6 +895,110 @@ export function ProjectsPanel({
     }
   };
 
+  const refreshSeoIntelligence = async () => {
+    if (!selectedProject) return;
+    setSeoIntelligenceLoading(true);
+    setSeoIntelligenceError(null);
+    try {
+      const payload = await apiRequest<SeoIntelligenceResponse>(
+        `/projects/${selectedProject.id}/seo-intelligence`,
+        { token, timeoutMs: 10000 }
+      );
+      setSeoIntelligence(payload);
+    } catch (error) {
+      setSeoIntelligence(null);
+      setSeoIntelligenceError(extractError(error));
+    } finally {
+      setSeoIntelligenceLoading(false);
+    }
+  };
+
+  const refreshSearchConsole = async () => {
+    if (!selectedProject) return;
+    setSearchConsoleLoading(true);
+    setSearchConsoleError(null);
+    try {
+      const payload = await apiRequest<SearchConsoleStatus>(`/projects/${selectedProject.id}/search-console/status`, { token, timeoutMs: 10000 });
+      setSearchConsole(payload);
+    } catch (error) {
+      setSearchConsoleError(extractError(error));
+    } finally {
+      setSearchConsoleLoading(false);
+    }
+  };
+
+  const connectSearchConsole = async () => {
+    if (!selectedProject || searchConsoleAction) return;
+    setSearchConsoleAction("connect");
+    try {
+      const payload = await apiRequest<{ authorization_url: string }>(`/projects/${selectedProject.id}/search-console/connect`, { method: "POST", token, timeoutMs: 10000 });
+      window.location.assign(payload.authorization_url);
+    } catch (error) {
+      showToast("error", extractError(error));
+      setSearchConsoleAction(null);
+    }
+  };
+
+  const refreshSearchConsoleProperties = async () => {
+    if (!selectedProject || searchConsoleAction) return;
+    setSearchConsoleAction("properties");
+    try {
+      await apiRequest(`/projects/${selectedProject.id}/search-console/properties/refresh`, { method: "POST", token, timeoutMs: 30000 });
+      await refreshSearchConsole();
+    } catch (error) {
+      showToast("error", extractError(error));
+    } finally {
+      setSearchConsoleAction(null);
+    }
+  };
+
+  const selectSearchConsoleProperty = async (siteUrl: string) => {
+    if (!selectedProject || searchConsoleAction) return;
+    setSearchConsoleAction("property");
+    try {
+      await apiRequest(`/projects/${selectedProject.id}/search-console/property`, {
+        method: "PUT", token, body: { site_url: siteUrl }, timeoutMs: 15000,
+      });
+      await refreshSearchConsole();
+    } catch (error) {
+      showToast("error", extractError(error));
+    } finally {
+      setSearchConsoleAction(null);
+    }
+  };
+
+  const syncSearchConsole = async () => {
+    if (!selectedProject || searchConsoleAction) return;
+    setSearchConsoleAction("sync");
+    try {
+      await apiRequest(`/projects/${selectedProject.id}/search-console/sync`, { method: "POST", token, body: {}, timeoutMs: 15000 });
+      showToast("success", searchConsoleCopy.syncing);
+      await refreshSearchConsole();
+      globalThis.setTimeout(() => {
+        void refreshSearchConsole();
+        void refreshPerformance();
+        void refreshSeoIntelligence();
+      }, 2500);
+    } catch (error) {
+      showToast("error", extractError(error));
+    } finally {
+      setSearchConsoleAction(null);
+    }
+  };
+
+  const disconnectSearchConsole = async () => {
+    if (!selectedProject || searchConsoleAction) return;
+    setSearchConsoleAction("disconnect");
+    try {
+      await apiRequest(`/projects/${selectedProject.id}/search-console/disconnect`, { method: "POST", token, timeoutMs: 15000 });
+      await refreshSearchConsole();
+    } catch (error) {
+      showToast("error", extractError(error));
+    } finally {
+      setSearchConsoleAction(null);
+    }
+  };
+
   const importPerformanceCsv = async () => {
     if (!selectedProject || performanceImporting) return;
     if (!performanceCsv.trim()) {
@@ -629,7 +1019,7 @@ export function ProjectsPanel({
       showToast("success", performanceCopy.importSuccess);
       setPerformanceCsv("");
       setPerformanceImportOpen(false);
-      await refreshPerformance();
+      await Promise.all([refreshPerformance(), refreshSeoIntelligence()]);
     } catch (error) {
       showToast("error", extractError(error));
     } finally {
@@ -646,7 +1036,7 @@ export function ProjectsPanel({
         token,
         timeoutMs: 10000,
       });
-      await refreshPerformance();
+      await Promise.all([refreshPerformance(), refreshSeoIntelligence()]);
     } catch (error) {
       showToast("error", extractError(error));
     } finally {
@@ -731,7 +1121,12 @@ export function ProjectsPanel({
               />
               <InputField
                 label={t("projects.domain")}
-                helperText={t("projects.domainHelper")}
+                helperText={
+                  <DomainHelperText
+                    accessibleLabel={t("projects.domainHelper")}
+                    withoutLabel={t("projects.domainWithoutProtocol")}
+                  />
+                }
                 successText={domainValid === true ? t("projects.domainValid") : undefined}
                 errorText={domainValid === false ? t("projects.domainInvalid") : undefined}
                 value={newProject.domain}
@@ -781,7 +1176,7 @@ export function ProjectsPanel({
      STATE B: MASTER-DETAIL (1+ Projects)
      ═══════════════════════════════════════════════════════════════ */
   return (
-    <section className="macos-content-scope animate-fade-in grid min-h-full min-w-0 items-start gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <section className="smx-page !max-w-none grid min-h-full min-w-0 items-start gap-4 lg:grid-cols-[272px_minmax(0,1fr)]">
 
       {/* Delete confirmation modal */}
       <Modal
@@ -858,8 +1253,8 @@ export function ProjectsPanel({
       </Modal>
 
       {/* ── LEFT COLUMN (MASTER: macOS style sidebar list) ── */}
-      <aside className="relative z-10 flex max-h-[280px] min-h-[220px] min-w-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-slate-100/80 dark:border-white/10 dark:bg-surface-alt lg:sticky lg:top-0 lg:max-h-[calc(100dvh-112px)]">
-        <header className="flex h-12 shrink-0 items-center justify-between border-block-end border-black/5 bg-white/60 px-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <aside className="smx-panel relative z-10 flex max-h-[280px] min-h-[220px] min-w-0 flex-col overflow-hidden lg:sticky lg:top-0 lg:max-h-[calc(100dvh-126px)]">
+        <header className="smx-section-header h-[52px] shrink-0">
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.title")}</h2>
           <div className="flex items-center gap-1.5">
             <button
@@ -900,12 +1295,12 @@ export function ProjectsPanel({
               className={clsx(
                 "w-full text-start px-6 py-3 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] relative group focus:outline-none",
                 selectedProjectId === project.id
-                  ? "bg-teal-50/50 shadow-[inset_3px_0_0_0_var(--tw-shadow-color)] shadow-teal-600 dark:bg-white/10 dark:shadow-teal-300"
+                  ? "bg-brand/[0.08] shadow-[inset_3px_0_0_0_rgb(var(--color-primary))] dark:bg-brand/[0.12]"
                   : "bg-transparent hover:bg-slate-900/5 focus:bg-slate-900/5 dark:hover:bg-white/[0.08] dark:focus:bg-white/[0.08]" // Native feel hover
               )}
             >
               <div className="flex items-center justify-between gap-2 mb-0.5">
-                <span className={clsx("truncate text-[14px]", selectedProjectId === project.id ? "font-bold text-teal-900 dark:text-teal-200" : "font-medium text-slate-900 group-hover:text-black dark:text-gray-200 dark:group-hover:text-white")}>
+                <span className={clsx("truncate text-[14px]", selectedProjectId === project.id ? "font-semibold text-brand dark:text-teal-200" : "font-medium text-slate-900 group-hover:text-black dark:text-gray-200 dark:group-hover:text-white")}>
                   {project.name}
                 </span>
                 {project.wordpress_url && (
@@ -921,7 +1316,7 @@ export function ProjectsPanel({
       </aside>
 
       {/* ── RIGHT COLUMN (DETAIL) ── */}
-      <main className="min-w-0 overflow-hidden rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface">
+      <main className="smx-panel min-w-0 overflow-hidden">
 
         {selectedProjectId === "__new__" ? (
           // Create Mode
@@ -939,7 +1334,12 @@ export function ProjectsPanel({
                   />
                   <InputField
                     label={t("projects.domain")}
-                    helperText={t("projects.domainHelper")}
+                    helperText={
+                  <DomainHelperText
+                    accessibleLabel={t("projects.domainHelper")}
+                    withoutLabel={t("projects.domainWithoutProtocol")}
+                  />
+                }
                     successText={domainValid === true ? t("projects.domainValid") : undefined}
                     errorText={domainValid === false ? t("projects.domainInvalid") : undefined}
                     value={newProject.domain}
@@ -1083,9 +1483,27 @@ export function ProjectsPanel({
                   loading={performanceLoading}
                   error={performanceError}
                   dismissingOpportunityId={dismissingOpportunityId}
-                  onRefresh={() => void refreshPerformance()}
+                  onRefresh={() => {
+                    void refreshPerformance();
+                    void refreshSeoIntelligence();
+                  }}
+                  seoIntelligence={seoIntelligence}
+                  seoIntelligenceCopy={seoIntelligenceCopy}
+                  seoIntelligenceLoading={seoIntelligenceLoading}
+                  seoIntelligenceError={seoIntelligenceError}
                   onOpenImport={() => setPerformanceImportOpen(true)}
                   onDismiss={(opportunityId) => void dismissOpportunity(opportunityId)}
+                  searchConsole={searchConsole}
+                  searchConsoleCopy={searchConsoleCopy}
+                  searchConsoleLoading={searchConsoleLoading}
+                  searchConsoleAction={searchConsoleAction}
+                  searchConsoleError={searchConsoleError}
+                  onConnectSearchConsole={() => void connectSearchConsole()}
+                  onRefreshSearchConsole={() => void refreshSearchConsole()}
+                  onRefreshSearchConsoleProperties={() => void refreshSearchConsoleProperties()}
+                  onSelectSearchConsoleProperty={(siteUrl) => void selectSearchConsoleProperty(siteUrl)}
+                  onSyncSearchConsole={() => void syncSearchConsole()}
+                  onDisconnectSearchConsole={() => void disconnectSearchConsole()}
                 />
               )}
               {activeTab === "rules" && (
@@ -1163,7 +1581,7 @@ function ReadinessTab({
 
   return (
     <div className="max-w-4xl space-y-4 animate-fade-in">
-      <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+      <section className="smx-panel-subtle p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
@@ -1372,6 +1790,92 @@ function metricFromOpportunity(
   return null;
 }
 
+function SeoIntelligenceCard({
+  payload,
+  copy,
+  locale,
+  loading,
+  error,
+}: {
+  payload: SeoIntelligenceResponse | null;
+  copy: typeof SEO_INTELLIGENCE_COPY.en;
+  locale: ReadinessLocale;
+  loading: boolean;
+  error: string | null;
+}) {
+  const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
+  if (loading && !payload) {
+    return <section className="smx-panel-subtle animate-pulse px-5 py-6 text-[13px] text-slate-500 dark:text-gray-400">{copy.loading}</section>;
+  }
+  if (error && !payload) {
+    return <section className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-5 py-4 text-[13px] text-amber-800 dark:text-amber-200" role="alert">{copy.failed} {localizeProjectError(error, locale)}</section>;
+  }
+  if (!payload) return null;
+
+  const coverage = Math.round(payload.portfolio.coverage_ratio * 100);
+  const dataStatusLabel = payload.data_quality.status === "good"
+    ? copy.dataGood
+    : payload.data_quality.status === "insufficient"
+      ? copy.dataInsufficient
+      : copy.dataLimited;
+  const nextActionCopy = SEO_NEXT_ACTION_COPY[locale] ?? SEO_NEXT_ACTION_COPY.en;
+  return (
+    <section className="smx-panel-subtle overflow-hidden" aria-live="polite">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-black/5 px-5 py-4 dark:border-white/10">
+        <div>
+          <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
+          <h3 className="mt-1 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{copy.title}</h3>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">{copy.safe}</p>
+        </div>
+        <span className={clsx("rounded-full border px-2.5 py-1 text-[11px] font-semibold", payload.data_quality.status === "good" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : payload.data_quality.status === "insufficient" ? "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300" : "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300")}>
+          {copy.dataQuality}: {dataStatusLabel}
+        </span>
+      </div>
+      <div className="grid gap-3 p-5 sm:grid-cols-3">
+        <PerformanceSummaryCard label={copy.health} value={`${payload.portfolio.health_score}/100`} tone={payload.portfolio.health_score < 55 ? "warning" : "default"} />
+        <PerformanceSummaryCard label={copy.coverage} value={`${new Intl.NumberFormat(localeName).format(coverage)}%`} />
+        <PerformanceSummaryCard label={copy.highPriority} value={payload.portfolio.high_priority_count} tone={payload.portfolio.high_priority_count > 0 ? "warning" : "default"} />
+      </div>
+      <div className="border-t border-black/5 px-5 py-4 dark:border-white/10">
+        <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.queue}</h4>
+        {payload.recommended_queue.length === 0 ? (
+          <p className="mt-3 text-[13px] text-slate-500 dark:text-gray-400">{copy.noQueue}</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {payload.recommended_queue.slice(0, 5).map((item) => (
+              <article key={item.opportunity_id} className="flex items-start gap-3 rounded-xl border border-black/5 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-500/10 text-[12px] font-bold text-teal-700 dark:text-teal-200">{item.rank}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100">{item.article_title || item.url}</p>
+                    <span className="rounded-md bg-black/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-white/[0.07] dark:text-gray-300">{item.priority_score}/100</span>
+                  </div>
+                  <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                    {nextActionCopy[item.type as keyof typeof SEO_NEXT_ACTION_COPY.en] ?? item.next_action?.title ?? item.type}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-gray-500">{Math.round(item.confidence * 100)}% {copy.confidence}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+      {payload.data_quality.warnings.length > 0 ? (
+        <details className="border-t border-black/5 px-5 py-3 text-[12px] text-slate-600 dark:border-white/10 dark:text-gray-300">
+          <summary className="cursor-pointer font-medium">{copy.dataQuality} ({payload.data_quality.warnings.length})</summary>
+          <ul className="mt-2 space-y-1.5">
+            {payload.data_quality.warnings.map((warning) => (
+              <li key={warning.code}>
+                • {SEO_WARNING_COPY[locale]?.[warning.code as keyof typeof SEO_WARNING_COPY.en] ?? warning.message}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
 function PerformanceTab({
   copy,
   locale,
@@ -1381,8 +1885,23 @@ function PerformanceTab({
   error,
   dismissingOpportunityId,
   onRefresh,
+  seoIntelligence,
+  seoIntelligenceCopy,
+  seoIntelligenceLoading,
+  seoIntelligenceError,
   onOpenImport,
   onDismiss,
+  searchConsole,
+  searchConsoleCopy,
+  searchConsoleLoading,
+  searchConsoleAction,
+  searchConsoleError,
+  onConnectSearchConsole,
+  onRefreshSearchConsole,
+  onRefreshSearchConsoleProperties,
+  onSelectSearchConsoleProperty,
+  onSyncSearchConsole,
+  onDisconnectSearchConsole,
 }: {
   copy: typeof PERFORMANCE_COPY.en;
   locale: ReadinessLocale;
@@ -1392,8 +1911,23 @@ function PerformanceTab({
   error: string | null;
   dismissingOpportunityId: string | null;
   onRefresh: () => void;
+  seoIntelligence: SeoIntelligenceResponse | null;
+  seoIntelligenceCopy: typeof SEO_INTELLIGENCE_COPY.en;
+  seoIntelligenceLoading: boolean;
+  seoIntelligenceError: string | null;
   onOpenImport: () => void;
   onDismiss: (opportunityId: string) => void;
+  searchConsole: SearchConsoleStatus | null;
+  searchConsoleCopy: typeof SEARCH_CONSOLE_COPY.en;
+  searchConsoleLoading: boolean;
+  searchConsoleAction: string | null;
+  searchConsoleError: string | null;
+  onConnectSearchConsole: () => void;
+  onRefreshSearchConsole: () => void;
+  onRefreshSearchConsoleProperties: () => void;
+  onSelectSearchConsoleProperty: (siteUrl: string) => void;
+  onSyncSearchConsole: () => void;
+  onDisconnectSearchConsole: () => void;
 }) {
   const hasData = Boolean(
     feedback && (feedback.snapshots.length > 0 || feedback.opportunities.length > 0)
@@ -1401,7 +1935,29 @@ function PerformanceTab({
 
   return (
     <div className="max-w-5xl space-y-4 animate-fade-in">
-      <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt">
+      <SearchConsoleCard
+        copy={searchConsoleCopy}
+        locale={locale}
+        canManageProjects={canManageProjects}
+        status={searchConsole}
+        loading={searchConsoleLoading}
+        action={searchConsoleAction}
+        error={searchConsoleError}
+        onConnect={onConnectSearchConsole}
+        onRefresh={onRefreshSearchConsole}
+        onRefreshProperties={onRefreshSearchConsoleProperties}
+        onSelectProperty={onSelectSearchConsoleProperty}
+        onSync={onSyncSearchConsole}
+        onDisconnect={onDisconnectSearchConsole}
+      />
+      <SeoIntelligenceCard
+        payload={seoIntelligence}
+        copy={seoIntelligenceCopy}
+        locale={locale}
+        loading={seoIntelligenceLoading}
+        error={seoIntelligenceError}
+      />
+      <section className="smx-panel-subtle p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
@@ -1507,6 +2063,123 @@ function PerformanceTab({
         </section>
       )}
     </div>
+  );
+}
+
+function SearchConsoleCard({
+  copy,
+  locale,
+  canManageProjects,
+  status,
+  loading,
+  action,
+  error,
+  onConnect,
+  onRefresh,
+  onRefreshProperties,
+  onSelectProperty,
+  onSync,
+  onDisconnect,
+}: {
+  copy: typeof SEARCH_CONSOLE_COPY.en;
+  locale: ReadinessLocale;
+  canManageProjects: boolean;
+  status: SearchConsoleStatus | null;
+  loading: boolean;
+  action: string | null;
+  error: string | null;
+  onConnect: () => void;
+  onRefresh: () => void;
+  onRefreshProperties: () => void;
+  onSelectProperty: (siteUrl: string) => void;
+  onSync: () => void;
+  onDisconnect: () => void;
+}) {
+  const latestRun = status?.recent_sync_runs?.[0];
+  const propertyOptions = (status?.properties ?? []).map((item) => ({
+    value: item.site_url,
+    label: item.site_url,
+  }));
+  const statusTone = latestRun?.status === "failed"
+    ? "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300"
+    : latestRun?.status === "succeeded"
+      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+  return (
+    <section className="smx-panel-subtle p-5" aria-labelledby="search-console-title">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 id="search-console-title" className="text-[16px] font-semibold text-slate-900 dark:text-gray-100">{copy.title}</h3>
+            <span className="rounded-md border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 text-[11px] font-semibold text-teal-700 dark:text-teal-200">{copy.readOnly}</span>
+            <span className={clsx(
+              "rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+              status?.connected
+                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : "border-black/10 bg-black/[0.03] text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-400",
+            )}>
+              {status?.connected ? copy.connected : copy.disconnected}
+            </span>
+          </div>
+          <p className="mt-2 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
+        </div>
+        <Button variant="outlined" size="sm" loading={loading} onClick={onRefresh}>{PERFORMANCE_COPY[locale].refresh}</Button>
+      </div>
+
+      {loading && !status && <p className="mt-4 text-[13px] text-slate-500 dark:text-gray-400">{copy.loading}</p>}
+      {error && <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300" role="alert">{error}</div>}
+      {status && !status.configured && <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300">{copy.notConfigured}</div>}
+
+      {status?.configured && !status.connected && canManageProjects && (
+        <Button className="mt-4" variant="primary" size="sm" loading={action === "connect"} onClick={onConnect}>{copy.connect}</Button>
+      )}
+
+      {status?.connected && (
+        <div className="mt-4 space-y-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <SelectDropdown
+              label={copy.property}
+              options={propertyOptions}
+              value={status.selected_site_url ?? undefined}
+              placeholder={propertyOptions.length ? copy.selectProperty : copy.noProperties}
+              disabled={!canManageProjects || Boolean(action) || propertyOptions.length === 0}
+              onChange={onSelectProperty}
+            />
+            <div className="flex flex-wrap gap-2">
+              {canManageProjects && (
+                <>
+                  <Button variant="outlined" size="sm" loading={action === "properties"} disabled={Boolean(action) && action !== "properties"} onClick={onRefreshProperties}>{copy.refreshProperties}</Button>
+                  <Button variant="primary" size="sm" loading={action === "sync"} disabled={!status.selected_site_url || (Boolean(action) && action !== "sync")} onClick={onSync}>{copy.syncNow}</Button>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/5 bg-slate-50 px-3 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="min-w-0 text-[12px] text-slate-500 dark:text-gray-400">
+              <span className="font-semibold text-slate-700 dark:text-gray-200">{copy.lastSync}: </span>
+              {status.last_sync_at ? formatReadinessDate(status.last_sync_at, locale) : copy.never}
+              {latestRun && (
+                <span className={clsx("ms-2 inline-flex rounded-md border px-2 py-0.5 font-semibold", statusTone)}>
+                  {latestRun.status}
+                  {latestRun.status === "succeeded" ? ` · ${formatCompactNumber(latestRun.row_count)}` : ""}
+                </span>
+              )}
+            </div>
+            {canManageProjects && (
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" loading={action === "connect"} onClick={onConnect}>{copy.reconnect}</Button>
+                <Button variant="ghost" size="sm" loading={action === "disconnect"} disabled={Boolean(action) && action !== "disconnect"} onClick={onDisconnect}>{copy.disconnect}</Button>
+              </div>
+            )}
+          </div>
+          {(status.last_error_message || latestRun?.error_message) && (
+            <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300" role="alert">
+              {status.last_error_message || latestRun?.error_message}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1839,7 +2512,7 @@ function WordPressTab({
       </div>
 
       {/* Form Spatial Containment */}
-      <div className="space-y-6 rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-alt md:p-6">
+      <div className="space-y-6 smx-panel-subtle p-5 md:p-6">
         <InputField
           label={t("projects.wpUrl")}
           helperText={t("projects.wpUrlHelper")}

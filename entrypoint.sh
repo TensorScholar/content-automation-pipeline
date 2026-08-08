@@ -134,7 +134,7 @@ main() {
             fi
 
             echo -e "${GREEN}Starting API server...${NC}"
-            exec gunicorn api.main:app \
+            exec gunicorn "api.main:create_app()" \
                 --workers ${GUNICORN_WORKERS:-4} \
                 --worker-class uvicorn.workers.UvicornWorker \
                 --bind 0.0.0.0:${API_PORT:-8000} \

@@ -6,7 +6,6 @@ namespace: content-automation
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secrets.yaml
   - postgres-deployment.yaml
   - redis-deployment.yaml
   - api-deployment.yaml

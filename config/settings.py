@@ -554,6 +554,41 @@ class MonitoringSettings(BaseSettings):
     )
 
 
+class SearchConsoleSettings(BaseSettings):
+    """Optional Google Search Console read-only integration configuration."""
+
+    client_id: Optional[str] = Field(default=None, alias="GOOGLE_SEARCH_CONSOLE_CLIENT_ID")
+    client_secret: Optional[SecretStr] = Field(
+        default=None,
+        alias="GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET",
+    )
+    redirect_uri: Optional[str] = Field(
+        default=None,
+        alias="GOOGLE_SEARCH_CONSOLE_REDIRECT_URI",
+    )
+    frontend_return_url: str = Field(
+        default="http://localhost:3001/?search_console=connected",
+        alias="GOOGLE_SEARCH_CONSOLE_FRONTEND_RETURN_URL",
+    )
+    oauth_state_ttl_seconds: int = Field(default=600, ge=120, le=1800)
+    request_timeout_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
+    data_lag_days: int = Field(default=3, ge=1, le=10)
+    default_sync_days: int = Field(default=28, ge=7, le=90)
+    row_limit: int = Field(default=25000, ge=1000, le=25000)
+    max_rows_per_sync: int = Field(default=250000, ge=25000, le=1000000)
+
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
+
+    @property
+    def configured(self) -> bool:
+        return bool(
+            self.client_id
+            and self.client_secret
+            and self.client_secret.get_secret_value().strip()
+            and self.redirect_uri
+        )
+
+
 class SentrySettings(BaseSettings):
     """Optional Sentry configuration shared by API and Celery processes."""
 
@@ -599,6 +634,7 @@ class Settings(BaseSettings):
     )
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
+    search_console: SearchConsoleSettings = Field(default_factory=SearchConsoleSettings)
 
     # Security
     secret_key: SecretStr = Field(..., alias="SECRET_KEY", description="Application secret key")
@@ -783,14 +819,33 @@ def get_settings() -> Settings:
     Uses LRU cache to ensure single instance across application lifetime.
     Thread-safe and zero-overhead after first call.
 
+    Construction is deferred until first call so importing this module (or
+    dependents) does not require runtime secrets. Application startup and any
+    explicit get_settings()/Settings() use still validate required configuration.
+
     Returns:
         Settings: Validated, immutable settings instance
     """
     return cast(Callable[[], Settings], Settings)()
 
 
-# Module-level convenience exports
-settings = get_settings()
+class _LazySettingsProxy:
+    """Module-level settings stand-in that constructs Settings on first use."""
+
+    __slots__ = ()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_settings(), name)
+
+    def __repr__(self) -> str:
+        cache_info = get_settings.cache_info()
+        if cache_info.currsize == 0:
+            return "<LazySettingsProxy unconfigured>"
+        return repr(get_settings())
+
+
+# Lazy export: attribute access triggers get_settings(); import does not.
+settings = _LazySettingsProxy()
 
 __all__ = [
     "Settings",

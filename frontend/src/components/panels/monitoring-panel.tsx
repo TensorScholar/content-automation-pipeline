@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { clsx } from "clsx";
 import { apiRequest } from "@/lib/api";
 import { formatModelDisplayName } from "@/lib/model-display";
-import { LlmOptionsResponse } from "@/types/models";
+import { IntegrationOperationalSummary, IntegrationOperationsResponse, LlmOptionsResponse } from "@/types/models";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -133,6 +133,123 @@ const LLM_COPY = {
     managerDetail: "تفاصيل المدير",
     technicalDetails: "التفاصيل التقنية",
     timeout: "انتهت مهلة فحص صحة مزود الذكاء الاصطناعي.",
+  },
+};
+
+const INTEGRATION_COPY = {
+  en: {
+    title: "Integration Reliability",
+    subtitle: "Durable publishing and Search Console synchronization signals",
+    wordpress: "WordPress publishing",
+    searchConsole: "Search Console sync",
+    active: "Active",
+    stale: "Stale",
+    successRate: "Success rate",
+    failures: "Recent failures",
+    recommendations: "Recommended actions",
+    empty: "No recent integration activity.",
+    noWarnings: "No current reliability warning.",
+    unavailable: "Integration reliability signals are temporarily unavailable.",
+    healthy: "Healthy",
+    idle: "Idle",
+    warning: "Needs attention",
+    critical: "Critical",
+    degraded: "Degraded",
+  },
+  fa: {
+    title: "پایداری یکپارچه‌سازی‌ها",
+    subtitle: "وضعیت پایدار انتشار وردپرس و همگام‌سازی سرچ کنسول",
+    wordpress: "انتشار وردپرس",
+    searchConsole: "همگام‌سازی سرچ کنسول",
+    active: "فعال",
+    stale: "گیرکرده",
+    successRate: "نرخ موفقیت",
+    failures: "خطاهای اخیر",
+    recommendations: "اقدام‌های پیشنهادی",
+    empty: "فعالیت اخیر برای یکپارچه‌سازی‌ها وجود ندارد.",
+    noWarnings: "هشدار پایداری فعالی وجود ندارد.",
+    unavailable: "سیگنال‌های پایداری یکپارچه‌سازی موقتاً در دسترس نیستند.",
+    healthy: "سالم",
+    idle: "بدون فعالیت",
+    warning: "نیازمند بررسی",
+    critical: "بحرانی",
+    degraded: "کاهش‌یافته",
+  },
+  ar: {
+    title: "موثوقية التكاملات",
+    subtitle: "إشارات النشر الدائم في WordPress ومزامنة Search Console",
+    wordpress: "نشر WordPress",
+    searchConsole: "مزامنة Search Console",
+    active: "نشط",
+    stale: "عالق",
+    successRate: "نسبة النجاح",
+    failures: "الإخفاقات الأخيرة",
+    recommendations: "الإجراءات المقترحة",
+    empty: "لا يوجد نشاط تكامل حديث.",
+    noWarnings: "لا يوجد تحذير موثوقية نشط.",
+    unavailable: "إشارات موثوقية التكامل غير متاحة مؤقتًا.",
+    healthy: "سليم",
+    idle: "خامل",
+    warning: "يحتاج إلى انتباه",
+    critical: "حرج",
+    degraded: "متدهور",
+  },
+};
+
+const INTEGRATION_REASON_COPY = {
+  en: {
+    stale_publish_attempts: "Stale publish attempts",
+    stale_sync_runs: "Stale sync runs",
+    high_failure_rate: "High failure rate",
+    recent_failures: "Recent failures",
+    connection_attention_required: "Connection needs attention",
+    no_successful_sync: "No successful sync recorded",
+    truncated_results: "Incomplete Search Console coverage",
+  },
+  fa: {
+    stale_publish_attempts: "تلاش‌های انتشار گیرکرده",
+    stale_sync_runs: "همگام‌سازی‌های گیرکرده",
+    high_failure_rate: "نرخ خطای بالا",
+    recent_failures: "خطاهای اخیر",
+    connection_attention_required: "اتصال نیازمند بررسی است",
+    no_successful_sync: "همگام‌سازی موفق ثبت نشده است",
+    truncated_results: "پوشش ناقص داده‌های سرچ کنسول",
+  },
+  ar: {
+    stale_publish_attempts: "محاولات نشر عالقة",
+    stale_sync_runs: "عمليات مزامنة عالقة",
+    high_failure_rate: "معدل فشل مرتفع",
+    recent_failures: "إخفاقات حديثة",
+    connection_attention_required: "الاتصال يحتاج إلى مراجعة",
+    no_successful_sync: "لم تُسجّل مزامنة ناجحة",
+    truncated_results: "تغطية Search Console غير مكتملة",
+  },
+};
+
+const INTEGRATION_ACTION_COPY = {
+  en: {
+    run_wordpress_reconciliation: "Run WordPress reconciliation and verify the integrations worker before new public publishing.",
+    review_wordpress_failures: "Review recent WordPress failures and keep public publishing approval-gated.",
+    run_search_console_reconciliation: "Run Search Console reconciliation and verify the integrations worker.",
+    reconnect_search_console: "Reconnect affected Search Console properties before relying on SEO recommendations.",
+    run_initial_search_console_sync: "Run and verify the first completed Search Console synchronization window.",
+    review_truncated_syncs: "Review incomplete sync windows before making portfolio decisions.",
+  },
+  fa: {
+    run_wordpress_reconciliation: "بازیابی وردپرس را اجرا و پردازشگر یکپارچه‌سازی را پیش از انتشار عمومی بررسی کنید.",
+    review_wordpress_failures: "خطاهای اخیر وردپرس را بررسی و انتشار عمومی را همچنان نیازمند تأیید نگه دارید.",
+    run_search_console_reconciliation: "بازیابی سرچ کنسول را اجرا و پردازشگر یکپارچه‌سازی را بررسی کنید.",
+    reconnect_search_console: "پیش از اتکا به پیشنهادهای سئو، اتصال‌های مشکل‌دار سرچ کنسول را دوباره برقرار کنید.",
+    run_initial_search_console_sync: "نخستین بازه کامل همگام‌سازی سرچ کنسول را اجرا و صحت آن را بررسی کنید.",
+    review_truncated_syncs: "پیش از تصمیم‌گیری، بازه‌های همگام‌سازی ناقص را بررسی کنید.",
+  },
+  ar: {
+    run_wordpress_reconciliation: "شغّل تسوية WordPress وتحقق من عامل التكامل قبل أي نشر عام جديد.",
+    review_wordpress_failures: "راجع إخفاقات WordPress الأخيرة وأبقِ النشر العام خاضعًا للموافقة.",
+    run_search_console_reconciliation: "شغّل تسوية Search Console وتحقق من عامل التكامل.",
+    reconnect_search_console: "أعد ربط مواقع Search Console المتأثرة قبل الاعتماد على توصيات SEO.",
+    run_initial_search_console_sync: "شغّل أول نافذة مكتملة لمزامنة Search Console وتحقق منها.",
+    review_truncated_syncs: "راجع نوافذ المزامنة غير المكتملة قبل اتخاذ قرارات المحتوى.",
   },
 };
 
@@ -498,23 +615,144 @@ function LlmProviderAccess({
   );
 }
 
+function integrationTone(status: string) {
+  if (status === "healthy") return "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-700 dark:text-emerald-300";
+  if (status === "critical") return "border-rose-500/20 bg-rose-500/[0.07] text-rose-700 dark:text-rose-300";
+  if (status === "warning" || status === "degraded") return "border-amber-500/20 bg-amber-500/[0.07] text-amber-700 dark:text-amber-300";
+  return "border-black/5 bg-black/[0.03] text-ink-secondary dark:border-white/10 dark:bg-white/[0.05]";
+}
+
+function IntegrationSummaryCard({
+  label,
+  summary,
+  copy,
+  locale,
+}: {
+  label: string;
+  summary: IntegrationOperationalSummary;
+  copy: typeof INTEGRATION_COPY.en;
+  locale: string;
+}) {
+  const successRate = summary.recent_total > 0
+    ? Math.max(0, Math.min(100, (summary.recent_succeeded / summary.recent_total) * 100))
+    : null;
+  const statusLabel = copy[summary.status as keyof typeof copy] ?? summary.status;
+  return (
+    <article className="rounded-[16px] border border-black/5 bg-black/[0.015] p-4 dark:border-white/10 dark:bg-white/[0.025]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-[13px] font-semibold text-ink">{label}</h4>
+          <p className="mt-1 text-[11px] text-ink-tertiary">
+            {summary.reasons.length
+              ? summary.reasons.map((reason) => INTEGRATION_REASON_COPY[locale as keyof typeof INTEGRATION_REASON_COPY]?.[reason as keyof typeof INTEGRATION_REASON_COPY.en] ?? reason).join(" · ")
+              : summary.active_count > 0 || summary.recent_total > 0
+                ? copy.noWarnings
+                : copy.empty}
+          </p>
+        </div>
+        <span className={clsx("rounded-full border px-2.5 py-1 text-[11px] font-semibold", integrationTone(summary.status))}>
+          {statusLabel}
+        </span>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-[11px] text-ink-tertiary">{copy.active}</p>
+          <p className="mt-1 text-[18px] font-semibold text-ink">{summary.active_count}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-ink-tertiary">{copy.stale}</p>
+          <p className={clsx("mt-1 text-[18px] font-semibold", summary.stale_count ? "text-rose-600 dark:text-rose-300" : "text-ink")}>
+            {summary.stale_count}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] text-ink-tertiary">{copy.successRate}</p>
+          <p className="mt-1 text-[18px] font-semibold text-ink">
+            {successRate === null
+              ? "—"
+              : `${new Intl.NumberFormat(localeForNumbers(locale), { maximumFractionDigits: 0 }).format(successRate)}%`}
+          </p>
+        </div>
+      </div>
+      {summary.recent_failures.length > 0 ? (
+        <details className="mt-4 border-t border-black/5 pt-3 text-[12px] dark:border-white/10">
+          <summary className="cursor-pointer font-medium text-ink-secondary">
+            {copy.failures} ({summary.recent_failures.length})
+          </summary>
+          <div className="mt-2 space-y-2">
+            {summary.recent_failures.slice(0, 3).map((failure) => (
+              <p key={failure.id} className="break-words rounded-lg bg-black/[0.025] px-3 py-2 leading-5 text-ink-secondary dark:bg-white/[0.035]" dir="auto">
+                <span className="font-semibold text-ink">{failure.error_category}</span>: {failure.error_message}
+              </p>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </article>
+  );
+}
+
+function IntegrationOperationsBoard({
+  payload,
+  locale,
+}: {
+  payload: IntegrationOperationsResponse | null;
+  locale: keyof typeof INTEGRATION_COPY;
+}) {
+  if (!payload) return null;
+  const copy = INTEGRATION_COPY[locale] ?? INTEGRATION_COPY.en;
+  return (
+    <section className="smx-panel overflow-hidden" aria-live="polite">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 px-4 py-3 dark:border-white/10">
+        <div>
+          <h3 className="text-[14px] font-semibold text-ink">{copy.title}</h3>
+          <p className="mt-1 text-[12px] text-ink-secondary">{copy.subtitle}</p>
+        </div>
+        <span className={clsx("rounded-full border px-2.5 py-1 text-[11px] font-semibold", integrationTone(payload.overall_status))}>
+          {copy[payload.overall_status as keyof typeof copy] ?? payload.overall_status}
+        </span>
+      </div>
+      <div className="grid gap-3 p-4 lg:grid-cols-2">
+        <IntegrationSummaryCard label={copy.wordpress} summary={payload.integrations.wordpress} copy={copy} locale={locale} />
+        <IntegrationSummaryCard label={copy.searchConsole} summary={payload.integrations.search_console} copy={copy} locale={locale} />
+      </div>
+      {payload.recommendations.length > 0 ? (
+        <div className="border-t border-black/5 px-4 py-3 dark:border-white/10">
+          <p className="text-[12px] font-semibold text-ink">{copy.recommendations}</p>
+          <div className="mt-2 space-y-2">
+            {payload.recommendations.map((recommendation) => (
+              <div key={`${recommendation.integration}-${recommendation.code}`} className="flex gap-2 text-[12px] leading-5 text-ink-secondary">
+                <span className={clsx("mt-1.5 h-2 w-2 shrink-0 rounded-full", recommendation.priority === "critical" ? "bg-rose-500" : recommendation.priority === "high" ? "bg-amber-500" : "bg-brand")} aria-hidden />
+                <p>{INTEGRATION_ACTION_COPY[locale]?.[recommendation.code as keyof typeof INTEGRATION_ACTION_COPY.en] ?? recommendation.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function MonitoringPanel({ token }: MonitoringPanelProps) {
   const { t, locale } = useI18n();
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [performance, setPerformance] = useState<PerformancePayload | null>(null);
   const [incidentPayload, setIncidentPayload] = useState<IncidentPayload | null>(null);
   const [llmOptions, setLlmOptions] = useState<LlmOptionsResponse | null>(null);
+  const [integrationOperations, setIntegrationOperations] = useState<IntegrationOperationsResponse | null>(null);
+  const [integrationOperationsUnavailable, setIntegrationOperationsUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [lastCheckTime, setLastCheckTime] = useState<string | null>(null);
   const refreshControllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [healthResult, performanceResult, incidentResult, llmResult] = await Promise.allSettled([
+      const [healthResult, performanceResult, incidentResult, llmResult, integrationResult] = await Promise.allSettled([
         apiRequest<HealthPayload>("/system/health", { token, signal }),
         apiRequest<PerformancePayload>("/system/performance", { token, signal }),
         apiRequest<IncidentPayload>("/system/incidents", { token, signal }),
         apiRequest<LlmOptionsResponse>("/system/llm/options", { token, signal }),
+        apiRequest<IntegrationOperationsResponse>("/system/integrations/operations", { token, signal }),
       ]);
       if (signal?.aborted) return;
 
@@ -522,6 +760,8 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
       setPerformance(performanceResult.status === "fulfilled" ? performanceResult.value : null);
       setIncidentPayload(incidentResult.status === "fulfilled" ? incidentResult.value : null);
       setLlmOptions(llmResult.status === "fulfilled" ? llmResult.value : null);
+      setIntegrationOperations(integrationResult.status === "fulfilled" ? integrationResult.value : null);
+      setIntegrationOperationsUnavailable(integrationResult.status === "rejected");
       setLastCheckTime(new Date().toLocaleTimeString(localeForNumbers(locale)));
     } catch {
       if (signal?.aborted) return;
@@ -529,6 +769,8 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
       setPerformance(null);
       setIncidentPayload(null);
       setLlmOptions(null);
+      setIntegrationOperations(null);
+      setIntegrationOperationsUnavailable(true);
     } finally {
       if (signal?.aborted) return;
       setLoading(false);
@@ -598,16 +840,16 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
   const incidents = Array.isArray(incidentPayload?.incidents) ? incidentPayload.incidents : [];
 
   return (
-    <section className="mx-auto flex min-h-full w-full max-w-[1120px] flex-col gap-4 py-1">
-      <header className="flex min-h-[72px] items-end justify-between gap-4 border-b border-black/5 pb-4 dark:border-white/10">
+    <section className="smx-page flex min-h-full flex-col gap-4">
+      <header className="smx-page-header">
         <div className="min-w-0">
           <p className="text-[12px] font-medium text-ink-tertiary">{t("monitoring.subtitle") || "Review backend service health"}</p>
-          <h2 className="mt-1 text-[24px] font-semibold leading-tight tracking-normal text-ink">
+          <h2 className="smx-page-title">
             {t("monitoring.title") || "System Monitoring"}
           </h2>
         </div>
 
-        <div className="smx-panel-subtle flex shrink-0 items-center gap-2 px-2 py-2">
+        <div className="smx-toolbar shrink-0">
           {lastCheckTime ? (
             <span className="px-2 text-[12px] font-medium text-ink-secondary">
               {t("monitoring.lastCheck") || "Last Check"}: {lastCheckTime}
@@ -687,6 +929,16 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
           </div>
 
           <LlmProviderAccess options={llmOptions} copy={llmCopy} />
+
+          <IntegrationOperationsBoard payload={integrationOperations} locale={locale} />
+          {integrationOperationsUnavailable ? (
+            <section
+              className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-800 dark:text-amber-200"
+              role="status"
+            >
+              {(INTEGRATION_COPY[locale] ?? INTEGRATION_COPY.en).unavailable}
+            </section>
+          ) : null}
 
           <IncidentInbox incidents={incidents} copy={incidentCopy} locale={locale} />
 

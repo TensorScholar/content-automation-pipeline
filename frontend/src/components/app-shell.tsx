@@ -51,14 +51,14 @@ function ThemeSwitcher() {
   const currentTheme = mounted ? theme ?? "system" : "system";
 
   return (
-    <div className="macos-segmented relative z-40 flex h-9 items-center gap-0.5 rounded-[10px] p-0.5">
+    <div dir="ltr" className="macos-segmented relative z-40 flex h-9 items-center gap-0.5 rounded-[10px] p-0.5">
       {(["system", "dark", "light"] as const).map((mode) => (
         <button
           key={mode}
           type="button"
           onClick={() => setTheme(mode)}
           className={clsx(
-            "min-h-[32px] rounded-[8px] px-3 text-[13px] font-medium tracking-normal transition-[background-color,color,box-shadow,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none",
+            "min-h-[32px] rounded-[8px] px-2 text-[12px] font-medium tracking-normal transition-[background-color,color,box-shadow,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none sm:px-3 sm:text-[13px]",
             currentTheme === mode
               ? "bg-white text-slate-950 shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/10 dark:text-white"
               : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900 dark:text-gray-400 dark:hover:bg-white/[0.05] dark:hover:text-gray-100"
@@ -144,9 +144,22 @@ export function AppShell({ token, user }: AppShellProps) {
 
   const navigate = (next: AppPage) => { setPage(next); setMobileOpen(false); };
 
-  const drawerTransform = mobileOpen
-    ? "translateX(0)"
-    : direction === "rtl" ? "translateX(100%)" : "translateX(-100%)";
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
+
+  const mobileDrawerOffset = mobileOpen
+    ? "0px"
+    : direction === "rtl"
+      ? "calc(100% + 1rem)"
+      : "calc(-100% - 1rem)";
 
   return (
     <div className="macos-content-scope macos-app-bg flex h-dvh min-h-0 w-full overflow-hidden pt-10 text-sm tracking-normal text-ink" dir={direction}>
@@ -158,7 +171,9 @@ export function AppShell({ token, user }: AppShellProps) {
 
       {/* ── Mobile overlay ── */}
       {mobileOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="Close navigation"
           className="fixed inset-0 z-overlay animate-fade-in bg-ink/40 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -166,18 +181,19 @@ export function AppShell({ token, user }: AppShellProps) {
 
       {/* Sidebar */}
       <aside
+        id="primary-navigation"
         className={clsx(
           "fixed start-3 top-12 bottom-3 z-modal flex flex-col",
           "lg:relative lg:start-auto lg:top-auto lg:bottom-auto lg:m-3 lg:me-0 lg:mt-2 lg:h-[calc(100dvh-60px)] lg:shrink-0",
           "macos-sidebar rounded-[18px] border",
-          "transition-all duration-300 overflow-hidden",
+          "translate-x-[var(--mobile-drawer-x)] overflow-hidden transition-all duration-300 lg:translate-x-0",
+          mobileOpen ? "pointer-events-auto" : "pointer-events-none lg:pointer-events-auto",
           collapsed ? "w-[64px]" : "w-[248px]",
-          "lg:translate-x-0",
         )}
         style={{
-          transform: typeof window !== "undefined" && window.innerWidth < 1024 ? drawerTransform : undefined,
+          "--mobile-drawer-x": mobileDrawerOffset,
           transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)"
-        }}
+        } as React.CSSProperties}
       >
         {/* Sidebar Header */}
         <div className={clsx(
@@ -187,7 +203,7 @@ export function AppShell({ token, user }: AppShellProps) {
           {!collapsed && (
             <div className="flex items-center gap-3">
               {/* Refined Typographic Logo — Centered */}
-              <span className="truncate text-[20px] font-semibold tracking-tight text-gray-950 dark:text-gray-100">Smarlux</span>
+              <span className="truncate text-[19px] font-semibold tracking-[-0.02em] text-gray-950 dark:text-gray-100">Smarlux</span>
             </div>
           )}
           {collapsed && (
@@ -220,16 +236,16 @@ export function AppShell({ token, user }: AppShellProps) {
                 title={collapsed ? item.label : undefined}
                 onClick={() => navigate(item.key)}
                 className={clsx(
-                  "group relative mb-1 flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-start transition-colors duration-150",
+                  "group relative mb-1 flex h-10 w-full items-center gap-3 rounded-[11px] px-3 text-start transition-colors duration-150 focus-visible:ring-4 focus-visible:ring-brand/[0.12]",
                   active
-                    ? "bg-black/[0.08] text-gray-950 font-medium dark:bg-white/10 dark:text-gray-100"
+                    ? "bg-brand/[0.09] text-brand font-semibold dark:bg-brand/[0.13] dark:text-teal-200"
                     : "text-gray-600 hover:bg-black/5 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white",
                   collapsed && "justify-center px-0"
                 )}
                 style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
               >
                 <div className="flex h-4 w-4 shrink-0 items-center justify-center">
-                  <Icon className={clsx("h-4 w-4 transition-colors duration-150", active ? "text-gray-950 dark:text-gray-100" : "text-gray-500 dark:text-gray-400")} />
+                  <Icon className={clsx("h-4 w-4 transition-colors duration-150", active ? "text-brand dark:text-teal-200" : "text-gray-500 dark:text-gray-400")} />
                 </div>
                 {!collapsed && (
                   <span className="translate-y-[0.5px] text-[13px] font-medium">{item.label}</span>
@@ -277,7 +293,7 @@ export function AppShell({ token, user }: AppShellProps) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-medium text-gray-950 dark:text-gray-100">{user.full_name ?? "Manager"}</p>
-                  <p className="truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">{user.email}</p>
+                  <p dir="ltr" title={user.email} className="truncate text-left text-[11px] font-medium text-gray-500 dark:text-gray-400">{user.email}</p>
                 </div>
               </div>
             )}
@@ -303,18 +319,29 @@ export function AppShell({ token, user }: AppShellProps) {
       {/* ═══ MAIN CONTENT AREA (Offset by Sidebar width + Margin Geometry) ═══ */}
       <div className="macos-main-material relative m-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-s border-black/5 transition-all duration-300 dark:border-white/10 lg:m-3 lg:ms-0 lg:mt-2 lg:rounded-[18px]">
         {/* ── Header Utilities ─ */}
-        <header className="relative z-50 flex h-12 shrink-0 items-center justify-end border-b border-black/5 bg-white px-3 dark:border-white/10 dark:bg-surface lg:px-4">
-          <div className="flex items-center gap-2">
+        <header className="relative z-50 flex h-14 shrink-0 items-center justify-between border-b border-black/[0.055] bg-white/90 px-3 dark:border-white/[0.075] dark:bg-[rgb(var(--bg-elevated-dark)/0.9)] lg:justify-end lg:px-5">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open navigation"
+            aria-controls="primary-navigation"
+            aria-expanded={mobileOpen}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-black/5 bg-white text-gray-600 transition-colors hover:bg-black/[0.03] hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white lg:hidden"
+          >
+            <IconMenu className="h-4 w-4" />
+          </button>
+
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
             <ThemeSwitcher />
-            <div className="relative z-50 flex h-9 items-center gap-1.5 rounded-[10px] border border-black/5 bg-white px-2 shadow-none dark:border-white/10 dark:bg-white/[0.06]">
-              <IconGlobe className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+            <div className="relative z-50 flex h-9 min-w-0 items-center gap-1 rounded-[10px] border border-black/5 bg-white px-1.5 shadow-none dark:border-white/10 dark:bg-white/[0.06] sm:gap-1.5 sm:px-2">
+              <IconGlobe className="hidden h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-gray-400 sm:block" />
               <LanguageToggle />
             </div>
           </div>
         </header>
 
         {/* ── Panel Content ── */}
-        <main className={clsx("min-h-0 flex-1 overflow-x-hidden overflow-y-auto", page !== "studio" && "px-3 pb-4 pt-3 lg:px-4 lg:pb-4 lg:pt-3")}>
+        <main className={clsx("min-h-0 flex-1 overflow-x-hidden overflow-y-auto", page !== "studio" && "px-4 pb-5 pt-3 lg:px-5 lg:pb-5 lg:pt-4")}>
           <ErrorBoundary resetKey={page}>
             {page === "dashboard" && <DashboardPanel token={token} projects={projects} isAdmin={isAdmin} onNavigate={navigate as unknown as (page: string) => void} />}
             {page === "projects" && (

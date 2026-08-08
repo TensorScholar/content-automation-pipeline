@@ -5,10 +5,13 @@ Content Distribution Module
 Handles distribution of generated content to various channels like Telegram, WordPress, etc.
 """
 
+import asyncio
+import ipaddress
+import socket
 from datetime import datetime as _dt
 from datetime import timezone
 from typing import Any, Dict, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 from loguru import logger
@@ -16,7 +19,7 @@ from loguru import logger
 from core.exceptions import DistributionError
 from core.models import GeneratedArticle, Project
 from execution.export_safety import json_for_html_script, sanitize_html_fragment
-from infrastructure.credential_encryption import decrypt_credential
+from infrastructure.credential_encryption import CredentialEncryptionError, decrypt_credential
 from infrastructure.redaction import redact_text
 
 
@@ -75,6 +78,67 @@ class Distributor:
         if not password:
             raise DistributionError("WordPress credentials not configured")
         return password
+
+    @staticmethod
+    async def _validate_wordpress_network_target(wordpress_url: str) -> None:
+        """Reject production WordPress hosts that resolve to non-public networks.
+
+        Literal private addresses are already rejected by the publishing service.
+        This second outbound-boundary check also resolves hostnames immediately
+        before HTTP use, preventing ordinary DNS aliases to loopback, link-local,
+        private, multicast, reserved, or otherwise non-global addresses.
+        """
+        from config.settings import get_settings
+
+        if get_settings().environment != "production":
+            return
+        parsed = urlparse(wordpress_url)
+        hostname = (parsed.hostname or "").rstrip(".")
+        if not hostname:
+            raise WordPressPublishError(
+                "WordPress target hostname is missing",
+                category="unsafe_target",
+                retryable=False,
+            )
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            literal = ipaddress.ip_address(hostname)
+            addresses = {literal}
+        except ValueError:
+            try:
+                loop = asyncio.get_running_loop()
+                resolved = await loop.getaddrinfo(
+                    hostname,
+                    port,
+                    family=socket.AF_UNSPEC,
+                    type=socket.SOCK_STREAM,
+                )
+            except OSError as exc:
+                raise WordPressPublishError(
+                    "WordPress hostname could not be resolved",
+                    category="network_error",
+                    retryable=True,
+                ) from exc
+            addresses = set()
+            for item in resolved:
+                raw_address = str(item[4][0]).split("%", 1)[0]
+                try:
+                    addresses.add(ipaddress.ip_address(raw_address))
+                except ValueError:
+                    continue
+
+        if not addresses:
+            raise WordPressPublishError(
+                "WordPress hostname did not resolve to an IP address",
+                category="network_error",
+                retryable=True,
+            )
+        if any(not address.is_global for address in addresses):
+            raise WordPressPublishError(
+                "Production WordPress target resolves to a non-public network",
+                category="unsafe_target",
+                retryable=False,
+            )
 
     def convert_to_gutenberg_blocks(self, html_content: str) -> str:
         """
@@ -242,7 +306,12 @@ class Distributor:
         logger.info(f"Article distributed to social media successfully: {result}")
         return result
 
-    async def validate_wordpress_connection(self, project: Project) -> tuple[bool, str]:
+    async def validate_wordpress_connection(
+        self,
+        project: Project,
+        *,
+        required_status: str = "draft",
+    ) -> tuple[bool, str]:
         """
         Validate WordPress credentials before attempting distribution.
 
@@ -260,25 +329,57 @@ class Distributor:
             return False, "WordPress credentials not configured"
 
         try:
+            await self._validate_wordpress_network_target(project.wordpress_url)
             auth = httpx.BasicAuth(
                 project.wordpress_username,
                 self._wordpress_password(project),
             )
-            # Test connection with a simple GET request to posts endpoint
-            test_url = f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/posts?per_page=1"
+            # An authenticated users/me request verifies both REST availability and
+            # that the Application Password belongs to a real user. context=edit
+            # also proves the credential has an authenticated editing context.
+            test_url = f"{project.wordpress_url.rstrip('/')}/wp-json/wp/v2/users/me?context=edit"
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
                 response = await client.get(test_url, auth=auth)
 
             if response.status_code == 200:
+                try:
+                    payload = response.json()
+                except Exception:
+                    return False, "WordPress returned an invalid authenticated-user response"
+                if not isinstance(payload, dict) or not payload.get("id"):
+                    return False, "WordPress returned an invalid authenticated-user response"
+                capabilities = payload.get("capabilities")
+                if not isinstance(capabilities, dict):
+                    return False, "WordPress did not return authenticated capability data"
+                if not bool(capabilities.get("edit_posts")):
+                    return False, "WordPress account does not have permission to edit posts"
+                if required_status in {"future", "publish"} and not bool(
+                    capabilities.get("publish_posts")
+                ):
+                    return False, "WordPress account does not have permission to publish posts"
                 return True, ""
-            elif response.status_code == 401:
+            if response.status_code == 401:
                 return False, "Invalid WordPress credentials"
-            elif response.status_code == 404:
+            if response.status_code == 403:
+                return False, "WordPress account does not have the required editing permission"
+            if response.status_code == 404:
                 return False, "WordPress REST API not found - check URL"
-            else:
-                return False, f"WordPress connection failed: HTTP {response.status_code}"
+            if 300 <= response.status_code < 400:
+                return False, (
+                    f"WordPress URL redirected (HTTP {response.status_code}); "
+                    "configure the canonical HTTPS URL"
+                )
+            return False, f"WordPress connection failed: HTTP {response.status_code}"
 
+        except WordPressPublishError as exc:
+            logger.error("WordPress target validation failed: {}", exc.safe_message)
+            return False, exc.safe_message
+        except CredentialEncryptionError:
+            logger.error("Stored WordPress credential cannot be decrypted")
+            return False, "Stored WordPress credential cannot be decrypted"
+        except DistributionError:
+            return False, "WordPress credentials not configured"
         except httpx.TimeoutException:
             logger.warning(f"WordPress connection timeout for {project.wordpress_url}")
             return False, "WordPress connection timeout"
@@ -294,41 +395,131 @@ class Distributor:
         tag_names: list[str],
         wordpress_url: str,
         auth: httpx.BasicAuth,
-    ) -> list[int]:
-        """Resolve tag names to WordPress tag IDs, creating missing tags as needed."""
-        if not tag_names:
-            return []
+    ) -> tuple[list[int], list[str], list[dict[str, str]]]:
+        """Resolve existing tags before the core post write; do not create remotely yet."""
+        normalized_names = list(
+            dict.fromkeys(str(name or "").strip() for name in tag_names if str(name or "").strip())
+        )[:20]
+        if not normalized_names:
+            return [], [], []
 
-        tag_ids = []
+        tag_ids: list[int] = []
+        missing_names: list[str] = []
+        warnings: list[dict[str, str]] = []
         tags_url = f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/tags"
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                # Fetch existing tags
-                resp = await client.get(f"{tags_url}?per_page=100", auth=auth)
-                existing = (
-                    {t["name"].lower(): t["id"] for t in resp.json()}
-                    if resp.status_code == 200
-                    else {}
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+                response = await client.get(f"{tags_url}?per_page=100", auth=auth)
+            if response.status_code != 200:
+                warnings.append(
+                    {
+                        "category": "tag_list_failed",
+                        "message": f"WordPress tags could not be loaded (HTTP {response.status_code})",
+                    }
                 )
+                return tag_ids, normalized_names, warnings
+            try:
+                payload = response.json()
+            except Exception:
+                warnings.append(
+                    {
+                        "category": "tag_list_invalid_response",
+                        "message": "WordPress returned an invalid tag-list response",
+                    }
+                )
+                return tag_ids, normalized_names, warnings
+            if not isinstance(payload, list):
+                warnings.append(
+                    {
+                        "category": "tag_list_invalid_response",
+                        "message": "WordPress returned an invalid tag-list response",
+                    }
+                )
+                return tag_ids, normalized_names, warnings
+            existing = {
+                str(item.get("name") or "").lower(): item.get("id")
+                for item in payload
+                if isinstance(item, dict) and item.get("name") and item.get("id")
+            }
+            for name in normalized_names:
+                tag_id = existing.get(name.lower())
+                if tag_id:
+                    tag_ids.append(int(tag_id))
+                else:
+                    missing_names.append(name)
+        except (httpx.TimeoutException, httpx.NetworkError):
+            warnings.append(
+                {
+                    "category": "tag_resolution_unavailable",
+                    "message": "WordPress tags could not be resolved because the taxonomy endpoint was unavailable",
+                }
+            )
+            missing_names = normalized_names
+        except Exception:
+            warnings.append(
+                {
+                    "category": "tag_resolution_failed",
+                    "message": "WordPress tags could not be resolved",
+                }
+            )
+            missing_names = normalized_names
 
-                for name in tag_names:
-                    tid = existing.get(name.lower())
-                    if tid:
-                        tag_ids.append(tid)
-                    else:
-                        # Create missing tag
-                        create_resp = await client.post(tags_url, json={"name": name}, auth=auth)
-                        if create_resp.status_code == 201:
-                            tag_ids.append(create_resp.json()["id"])
+        return tag_ids, missing_names, warnings
+
+    async def _create_missing_tag_ids(
+        self,
+        tag_names: list[str],
+        wordpress_url: str,
+        auth: httpx.BasicAuth,
+    ) -> tuple[list[int], list[dict[str, str]]]:
+        """Create optional missing tags only after the core post is verified."""
+        if not tag_names:
+            return [], []
+        tags_url = f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/tags"
+        tag_ids: list[int] = []
+        warnings: list[dict[str, str]] = []
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+                for name in tag_names[:20]:
+                    response = await client.post(tags_url, json={"name": name}, auth=auth)
+                    if response.status_code == 201:
+                        try:
+                            payload = response.json()
+                            tag_id = payload.get("id") if isinstance(payload, dict) else None
+                        except Exception:
+                            tag_id = None
+                        if tag_id:
+                            tag_ids.append(int(tag_id))
                         else:
-                            logger.warning(
-                                f"Failed to create tag '{name}': {create_resp.status_code}"
+                            warnings.append(
+                                {
+                                    "category": "tag_create_invalid_response",
+                                    "message": "WordPress created a tag but returned no tag ID",
+                                }
                             )
-        except Exception as e:
-            logger.warning(f"Tag resolution failed, skipping tags: {e}")
-
-        return tag_ids
+                    else:
+                        warnings.append(
+                            {
+                                "category": "tag_create_failed",
+                                "message": f"A WordPress tag could not be created (HTTP {response.status_code})",
+                            }
+                        )
+        except (httpx.TimeoutException, httpx.NetworkError):
+            warnings.append(
+                {
+                    "category": "tag_create_unavailable",
+                    "message": "Missing WordPress tags could not be created because the taxonomy endpoint was unavailable",
+                }
+            )
+        except Exception:
+            warnings.append(
+                {
+                    "category": "tag_create_failed",
+                    "message": "Missing WordPress tags could not be created",
+                }
+            )
+        return tag_ids, warnings
 
     @staticmethod
     def _wordpress_slug(article: GeneratedArticle) -> str:
@@ -375,15 +566,96 @@ class Distributor:
         lookup_url = f"{api_url}?slug={quote(slug)}&status=any&per_page=1"
         response = await client.get(lookup_url, auth=auth)
         if response.status_code != 200:
-            return None
+            category, retryable = self._classify_http_status(response.status_code)
+            raise WordPressPublishError(
+                f"WordPress duplicate lookup failed (HTTP {response.status_code})",
+                category=category,
+                retryable=retryable,
+                status_code=response.status_code,
+            )
         try:
             posts = response.json()
-        except Exception:
-            return None
+        except Exception as exc:
+            raise WordPressPublishError(
+                "WordPress duplicate lookup returned invalid JSON",
+                category="invalid_response",
+                retryable=True,
+            ) from exc
         if isinstance(posts, list) and posts:
             first = posts[0]
             return first if isinstance(first, dict) else None
         return None
+
+    async def _verify_wordpress_post(
+        self,
+        *,
+        wordpress_url: str,
+        auth: httpx.BasicAuth,
+        post_id: str | int | None,
+        expected_slug: str,
+        expected_status: str,
+    ) -> dict[str, Any]:
+        """Read after write and reject ambiguous or mismatched remote state."""
+        if not post_id:
+            raise WordPressPublishError(
+                "WordPress response did not contain a post ID",
+                category="invalid_response",
+                retryable=True,
+            )
+        url = f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}?context=edit"
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
+            response = await client.get(url, auth=auth)
+        if response.status_code >= 400:
+            category, retryable = self._classify_http_status(response.status_code)
+            raise WordPressPublishError(
+                f"WordPress post verification failed (HTTP {response.status_code})",
+                category=category,
+                retryable=retryable,
+                status_code=response.status_code,
+            )
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise WordPressPublishError(
+                "WordPress post verification returned invalid JSON",
+                category="invalid_response",
+                retryable=True,
+            ) from exc
+        if not isinstance(payload, dict):
+            raise WordPressPublishError(
+                "WordPress post verification returned an invalid response",
+                category="invalid_response",
+                retryable=True,
+            )
+        actual_id = payload.get("id")
+        actual_slug = str(payload.get("slug") or "")
+        actual_status = str(payload.get("status") or "")
+        post_url = str(payload.get("link") or "")
+        if str(actual_id) != str(post_id):
+            raise WordPressPublishError(
+                "WordPress post verification returned a different post ID",
+                category="remote_state_mismatch",
+                retryable=False,
+            )
+        if actual_slug != expected_slug:
+            raise WordPressPublishError(
+                "WordPress post verification returned a different slug",
+                category="remote_state_mismatch",
+                retryable=False,
+            )
+        if actual_status != expected_status:
+            raise WordPressPublishError(
+                f"WordPress post status verification failed: expected {expected_status}, received {actual_status or 'unknown'}",
+                category="remote_state_mismatch",
+                retryable=False,
+            )
+        if not post_url:
+            raise WordPressPublishError(
+                "WordPress post verification did not return a post URL",
+                category="invalid_response",
+                retryable=True,
+            )
+        return payload
 
     async def distribute_to_wordpress(
         self,
@@ -423,18 +695,31 @@ class Distributor:
         )
 
         # Pre-flight validation
-        is_valid, error_msg = await self.validate_wordpress_connection(project)
+        is_valid, error_msg = await self.validate_wordpress_connection(
+            project,
+            required_status=post_status,
+        )
         if not is_valid:
             logger.error(
                 f"WordPress validation failed | article_id={article.id} | "
                 f"project_id={project.id} | error={error_msg}"
             )
-            return {"status": "error", "reason": error_msg}
+            category = "auth_error" if "credential" in error_msg.lower() else "connection_error"
+            retryable = any(term in error_msg.lower() for term in ("timeout", "connect", "http 5"))
+            raise WordPressPublishError(
+                error_msg,
+                category=category,
+                retryable=retryable,
+            )
 
         wordpress_url = project.wordpress_url
         wordpress_username = project.wordpress_username
         if not wordpress_url or not wordpress_username:
-            return {"status": "error", "reason": "WordPress credentials not configured"}
+            raise WordPressPublishError(
+                "WordPress credentials not configured",
+                category="configuration_error",
+                retryable=False,
+            )
 
         api_url = f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/posts"
         auth = httpx.BasicAuth(wordpress_username, self._wordpress_password(project))
@@ -443,7 +728,7 @@ class Distributor:
         gutenberg_content = self.convert_to_gutenberg_blocks(article.content)
 
         # Resolve keyword strings to WordPress tag IDs
-        tag_ids = await self._resolve_tag_ids(
+        tag_ids, missing_tag_names, tag_warnings = await self._resolve_tag_ids(
             article.keywords if article.keywords else [],
             wordpress_url,
             auth,
@@ -455,10 +740,6 @@ class Distributor:
             "content": gutenberg_content,
             "status": post_status,  # AP-1: controlled by caller, defaults to 'draft'
             "slug": slug,
-            "meta": {
-                "_yoast_wpseo_metadesc": article.meta_description or "",
-                "_smarlux_idempotency_key": idempotency_key or "",
-            },
             "tags": tag_ids,
         }
         if post_status == "future" and scheduled_at:
@@ -482,7 +763,7 @@ class Distributor:
                 async with httpx.AsyncClient(
                     timeout=timeout_config,
                     limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-                    follow_redirects=True,
+                    follow_redirects=False,
                 ) as client:
                     target_post_id = wordpress_post_id
                     if not target_post_id and idempotency_key:
@@ -508,24 +789,76 @@ class Distributor:
 
                 response.raise_for_status()
 
-                response_data = response.json()
-                post_url = response_data.get("link", "")
-                post_id = response_data.get("id")
-
-                # Generate and save schema markup
-                schema_markup = self.generate_schema_markup(article, post_url)
-
                 try:
-                    update_url = (
-                        f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}"
+                    response_data = response.json()
+                except Exception as exc:
+                    raise WordPressPublishError(
+                        "WordPress publish response was not valid JSON",
+                        category="invalid_response",
+                        retryable=True,
+                        retry_count=attempt,
+                    ) from exc
+                if not isinstance(response_data, dict):
+                    raise WordPressPublishError(
+                        "WordPress publish response was invalid",
+                        category="invalid_response",
+                        retryable=True,
+                        retry_count=attempt,
                     )
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        await client.post(
-                            update_url, json={"meta": {"_schema_json_ld": schema_markup}}, auth=auth
+                post_id = response_data.get("id")
+                verified = await self._verify_wordpress_post(
+                    wordpress_url=wordpress_url,
+                    auth=auth,
+                    post_id=post_id,
+                    expected_slug=slug,
+                    expected_status=post_status,
+                )
+                post_url = str(verified.get("link") or "")
+                created_tag_ids, created_tag_warnings = await self._create_missing_tag_ids(
+                    missing_tag_names,
+                    wordpress_url,
+                    auth,
+                )
+                final_tag_ids = list(dict.fromkeys([*tag_ids, *created_tag_ids]))
+                warnings: list[dict[str, str]] = [*tag_warnings, *created_tag_warnings]
+                schema_stored = False
+                seo_meta_stored = False
+
+                # Optional plugin/custom metadata is deliberately separated from the
+                # primary post write. Sites that do not expose custom meta through
+                # REST must not cause an otherwise valid article publish to fail.
+                schema_markup = self.generate_schema_markup(article, post_url)
+                optional_meta = {
+                    "_yoast_wpseo_metadesc": article.meta_description or "",
+                    "_smarlux_idempotency_key": idempotency_key or "",
+                    "_schema_json_ld": schema_markup,
+                }
+                optional_update: dict[str, Any] = {"meta": optional_meta}
+                if final_tag_ids != tag_ids:
+                    optional_update["tags"] = final_tag_ids
+                try:
+                    update_url = f"{wordpress_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}"
+                    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+                        metadata_response = await client.post(
+                            update_url, json=optional_update, auth=auth
                         )
-                    logger.debug(f"Schema markup saved to post {post_id}")
-                except Exception as e:
-                    logger.warning(f"Could not save schema markup: {e}")
+                    if metadata_response.status_code < 400:
+                        schema_stored = True
+                        seo_meta_stored = True
+                    else:
+                        warnings.append(
+                            {
+                                "category": "optional_metadata_storage_failed",
+                                "message": f"Optional SEO/schema metadata was not stored by WordPress (HTTP {metadata_response.status_code})",
+                            }
+                        )
+                except Exception:
+                    warnings.append(
+                        {
+                            "category": "optional_metadata_storage_failed",
+                            "message": "Optional SEO/schema metadata could not be stored by WordPress",
+                        }
+                    )
 
                 logger.success(
                     f"WordPress upload SUCCESS | article_id={article.id} | "
@@ -561,6 +894,11 @@ class Distributor:
                     "post_id": post_id,
                     "gutenberg_formatted": True,
                     "schema_generated": True,
+                    "schema_stored": schema_stored,
+                    "seo_meta_stored": seo_meta_stored,
+                    "remote_verified": True,
+                    "remote_verified_at": _dt.now(timezone.utc).isoformat(),
+                    "warnings": warnings,
                     "attempts": attempt + 1,
                     "post_status": post_status,
                 }
@@ -624,6 +962,20 @@ class Distributor:
                     )
                     await asyncio.sleep(wait_time)
 
+            except WordPressPublishError as e:
+                last_error = e
+                if not e.retryable:
+                    raise
+                logger.warning(
+                    f"WordPress classified error (RETRYING) | article_id={article.id} | "
+                    f"attempt={attempt + 1}/{self.max_retries} | category={e.category} | "
+                    f"error={e.safe_message}"
+                )
+                if attempt < self.max_retries - 1:
+                    base_wait = min(self.retry_delay * (2**attempt), 10.0)
+                    jitter = random.uniform(0, base_wait * 0.3)
+                    await asyncio.sleep(base_wait + jitter)
+
             except Exception as e:
                 last_error = e
                 category, _ = self._classify_exception(e)
@@ -653,13 +1005,21 @@ class Distributor:
             f"last_error_type={type(last_error).__name__} | last_error={redact_text(str(last_error))}"
         )
         category = "unknown_error"
-        if isinstance(last_error, httpx.HTTPStatusError):
-            category, _ = self._classify_http_status(last_error.response.status_code)
+        retryable = True
+        status_code = None
+        if isinstance(last_error, WordPressPublishError):
+            category = last_error.category
+            retryable = last_error.retryable
+            status_code = last_error.status_code
+        elif isinstance(last_error, httpx.HTTPStatusError):
+            category, retryable = self._classify_http_status(last_error.response.status_code)
+            status_code = last_error.response.status_code
         elif isinstance(last_error, Exception):
-            category, _ = self._classify_exception(last_error)
+            category, retryable = self._classify_exception(last_error)
         raise WordPressPublishError(
             f"WordPress distribution failed after {self.max_retries} attempts: {redact_text(str(last_error))}",
             category=category,
-            retryable=False,
+            retryable=retryable,
+            status_code=status_code,
             retry_count=max(self.max_retries - 1, 0),
         )

@@ -26,7 +26,7 @@ from pydantic import SecretStr
 
 from core.exceptions import DistributionError
 from core.models import GeneratedArticle, Project, QualityMetrics
-from execution.distributer import Distributor
+from execution.distributer import Distributor, WordPressPublishError
 
 # ============================================================================
 # FIXTURES
@@ -91,8 +91,19 @@ def sample_project():
 
 @pytest.fixture
 def distributor():
-    """Create a Distributor instance with test configuration."""
-    return Distributor(max_retries=5, initial_retry_delay=1.0)
+    """Create a Distributor with remote verification isolated for legacy tests."""
+    instance = Distributor(max_retries=5, initial_retry_delay=0.001)
+
+    async def verified_post(*, post_id, expected_slug, expected_status, **kwargs):
+        return {
+            "id": int(post_id),
+            "slug": expected_slug,
+            "status": expected_status,
+            "link": f"https://test-blog.com/posts/{post_id}",
+        }
+
+    instance._verify_wordpress_post = AsyncMock(side_effect=verified_post)
+    return instance
 
 
 # ============================================================================
@@ -104,6 +115,10 @@ async def test_validate_wordpress_connection_success(distributor, sample_project
     """Test successful WordPress connection validation."""
     mock_response = MagicMock()
     mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": 7,
+        "capabilities": {"edit_posts": True, "publish_posts": True},
+    }
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
@@ -116,6 +131,32 @@ async def test_validate_wordpress_connection_success(distributor, sample_project
         assert is_valid is True
         assert error_msg == ""
         mock_client.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_validate_wordpress_connection_rejects_missing_publish_permission(
+    distributor,
+    sample_project,
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": 7,
+        "capabilities": {"edit_posts": True, "publish_posts": False},
+    }
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+    mock_client.get.return_value = mock_response
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        is_valid, error_msg = await distributor.validate_wordpress_connection(
+            sample_project,
+            required_status="publish",
+        )
+
+    assert is_valid is False
+    assert "permission to publish" in error_msg
 
 
 @pytest.mark.asyncio
@@ -214,7 +255,7 @@ async def test_distribute_to_wordpress_success(distributor, sample_article, samp
 
             assert result["status"] == "published"
             assert result["post_id"] == 123
-            assert result["url"] == "https://test-blog.com/posts/test-article"
+            assert result["url"] == "https://test-blog.com/posts/123"
             assert result["gutenberg_formatted"] is True
             assert result["schema_generated"] is True
             assert result["attempts"] == 1
@@ -351,10 +392,11 @@ async def test_distribute_to_wordpress_validation_failure(distributor, sample_ar
     mock_validation = AsyncMock(return_value=(False, "Invalid credentials"))
 
     with patch.object(distributor, "validate_wordpress_connection", mock_validation):
-        result = await distributor.distribute_to_wordpress(sample_article, sample_project)
+        with pytest.raises(WordPressPublishError) as exc_info:
+            await distributor.distribute_to_wordpress(sample_article, sample_project)
 
-        assert result["status"] == "error"
-        assert "Invalid credentials" in result["reason"]
+        assert exc_info.value.category == "auth_error"
+        assert "Invalid credentials" in exc_info.value.safe_message
 
 
 # ============================================================================
@@ -465,31 +507,29 @@ async def test_exponential_backoff_timing(distributor, sample_article, sample_pr
         "503", request=MagicMock(), response=mock_response
     )
 
-    call_times = []
-
     async def mock_post(*args, **kwargs):
-        call_times.append(asyncio.get_event_loop().time())
         return mock_response
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
     mock_client.__aexit__.return_value = None
     mock_client.post = mock_post
+    sleep_delays = []
+
+    async def record_sleep(delay):
+        sleep_delays.append(delay)
 
     with patch.object(distributor, "validate_wordpress_connection", mock_validation):
         with patch("httpx.AsyncClient", return_value=mock_client):
-            try:
-                await distributor.distribute_to_wordpress(sample_article, sample_project)
-            except DistributionError:
-                pass  # Expected
+            with patch("asyncio.sleep", side_effect=record_sleep):
+                try:
+                    await distributor.distribute_to_wordpress(sample_article, sample_project)
+                except DistributionError:
+                    pass  # Expected
 
-    # Verify exponential backoff (each retry should take longer)
-    if len(call_times) > 2:
-        intervals = [call_times[i+1] - call_times[i] for i in range(len(call_times)-1)]
-        # Each interval should be roughly double the previous (with jitter)
-        assert len(intervals) >= 2
-        # Just verify they're increasing (accounting for jitter)
-        assert intervals[1] > intervals[0] * 0.8  # Allow for jitter
+    # Assert the requested backoff durations rather than flaky wall-clock timing.
+    assert len(sleep_delays) == distributor.max_retries - 1
+    assert all(later > earlier for earlier, later in zip(sleep_delays, sleep_delays[1:]))
 
 
 # ============================================================================
@@ -518,6 +558,7 @@ async def test_distribute_unicode_content(distributor, sample_article, sample_pr
     mock_response.raise_for_status = MagicMock()
 
     mock_update_response = MagicMock()
+    mock_update_response.status_code = 200
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
@@ -566,7 +607,9 @@ async def test_connection_pooling_limits(distributor, sample_article, sample_pro
         mock_response.status_code = 201
         mock_response.json.return_value = {"id": 1, "link": "https://test.com/p/1"}
         mock_response.raise_for_status = MagicMock()
-        mock_client.post.side_effect = [mock_response, MagicMock()]
+        schema_response = MagicMock()
+        schema_response.status_code = 200
+        mock_client.post.side_effect = [mock_response, schema_response]
 
         return mock_client
 
@@ -582,3 +625,44 @@ async def test_connection_pooling_limits(distributor, sample_article, sample_pro
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
+
+@pytest.mark.asyncio
+async def test_optional_wordpress_metadata_failure_does_not_duplicate_or_fail_core_post(
+    distributor,
+    sample_article,
+    sample_project,
+):
+    """Optional plugin metadata must be a warning after a verified core post write."""
+    mock_validation = AsyncMock(return_value=(True, ""))
+    create_response = MagicMock(status_code=201)
+    create_response.json.return_value = {"id": 321, "link": "https://test-blog.com/posts/321"}
+    create_response.raise_for_status = MagicMock()
+    metadata_response = MagicMock(status_code=400)
+
+    lookup_response = MagicMock(status_code=200)
+    lookup_response.json.return_value = []
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+    mock_client.get.return_value = lookup_response
+    mock_client.post.side_effect = [create_response, metadata_response]
+
+    with patch.object(distributor, "validate_wordpress_connection", mock_validation):
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await distributor.distribute_to_wordpress(
+                sample_article,
+                sample_project,
+                idempotency_key="wp:test",
+            )
+
+    assert result["status"] == "published"
+    assert result["post_id"] == 321
+    assert result["schema_stored"] is False
+    assert result["seo_meta_stored"] is False
+    assert any(
+        warning["category"] == "optional_metadata_storage_failed"
+        for warning in result["warnings"]
+    )
+    primary_payload = mock_client.post.call_args_list[0].kwargs["json"]
+    assert "meta" not in primary_payload

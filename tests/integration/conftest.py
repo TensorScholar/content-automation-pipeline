@@ -69,9 +69,7 @@ def mock_llm_client():
             cost=0.001,
         )
     )
-    llm_mock.get_provider_status = MagicMock(
-        return_value={"anthropic": True, "openai": False}
-    )
+    llm_mock.get_provider_status = MagicMock(return_value={"anthropic": True, "openai": False})
     return llm_mock
 
 
@@ -121,7 +119,9 @@ async def test_client():
     """
     from httpx import AsyncClient
 
-    from api.main import app
+    from api.main import create_app
+
+    app = create_app()
 
     # Disable rate limiting for tests
     async with AsyncClient(app=app, base_url="http://localhost") as client:
@@ -132,10 +132,6 @@ async def test_client():
 def mock_celery_task():
     """Mock Celery task for testing task dispatch."""
     task_mock = MagicMock()
-    task_mock.delay = MagicMock(
-        return_value=MagicMock(id=str(uuid4()), status="PENDING")
-    )
-    task_mock.apply_async = MagicMock(
-        return_value=MagicMock(id=str(uuid4()), status="PENDING")
-    )
+    task_mock.delay = MagicMock(return_value=MagicMock(id=str(uuid4()), status="PENDING"))
+    task_mock.apply_async = MagicMock(return_value=MagicMock(id=str(uuid4()), status="PENDING"))
     return task_mock

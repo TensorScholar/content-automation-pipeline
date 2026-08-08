@@ -18,39 +18,47 @@ export interface MetricCardProps {
  * - Full RTL support via logical properties
  */
 export function MetricCard({ label, value, statusDot, onClick, loading, className, children }: MetricCardProps) {
-    const Tag = onClick ? "button" : "div";
-    return (
-        <Tag
-            onClick={onClick}
-            className={clsx(
-                "group macos-grouped-surface relative w-full border px-4 py-3 text-start",
-                "transition-colors duration-200 hover:bg-white/70 dark:hover:bg-white/[0.07]",
-                onClick && "cursor-pointer",
-                className,
-            )}
-        >
+    const classes = clsx(
+        "smx-panel group relative w-full px-4 py-4 text-start",
+        "transition-[background-color,border-color,transform] duration-150",
+        onClick && "cursor-pointer hover:-translate-y-px hover:border-brand/20",
+        className,
+    );
+
+    const content = (
+        <>
             <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 space-y-0.5">
-                    <p className="truncate text-[12px] font-medium tracking-normal text-ink-secondary">{label}</p>
+                <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold tracking-normal text-ink-tertiary">{label}</p>
                     {loading ? (
-                        <div className="h-5 w-12 animate-pulse rounded-md bg-slate-100" />
+                        <div className="mt-2 h-6 w-14 animate-pulse rounded-md bg-black/[0.06] dark:bg-white/[0.08]" />
                     ) : (
-                        <p className="text-[18px] font-semibold leading-tight tracking-normal text-ink tabular-nums">{value}</p>
+                        <p className="mt-2 text-[20px] font-semibold leading-none tracking-normal text-ink tabular-nums">{value}</p>
                     )}
                 </div>
                 {statusDot ? (
-                    <span className={clsx("h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.08)]", statusDot)} aria-hidden />
+                    <span className={clsx("h-2 w-2 shrink-0 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.08)]", statusDot)} aria-hidden />
                 ) : onClick ? (
-                    <div className="rounded-md border border-black/5 bg-black/5 p-1.5 text-ink-tertiary transition-colors group-hover:text-ink dark:border-white/10 dark:bg-white/10">
-                        <svg className="w-3.5 h-3.5 rtl:-scale-x-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div className="text-ink-tertiary transition-colors group-hover:text-ink">
+                        <svg className="h-4 w-4 rtl:-scale-x-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                     </div>
                 ) : (
-                    <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full bg-ink-tertiary/35" />
+                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-ink-tertiary/35" />
                 )}
             </div>
             {children}
-        </Tag>
+        </>
     );
+
+    if (onClick) {
+        return (
+            <button type="button" onClick={onClick} className={classes}>
+                {content}
+            </button>
+        );
+    }
+
+    return <div className={classes}>{content}</div>;
 }

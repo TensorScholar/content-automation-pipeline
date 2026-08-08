@@ -5,6 +5,10 @@ import { AppProviders } from "@/providers/app-providers";
 export const metadata: Metadata = {
   title: "Smarlux Content OS",
   description: "AI-powered multilingual content generation and publishing",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
   robots: {
     index: false,
     follow: false,

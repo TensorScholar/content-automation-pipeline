@@ -1178,7 +1178,8 @@ async def update_article_content(
 @router.post(
     "/{article_id}/publish/wordpress",
     response_model=dict,
-    summary="Publish article to WordPress",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue article publication to WordPress",
 )
 async def publish_to_wordpress(
     article_id: UUID,
@@ -1202,7 +1203,12 @@ async def publish_to_wordpress(
     Requires WordPress credentials to be configured in the project settings.
     Returns the published post URL and status.
     """
-    return await publishing_service.publish_to_wordpress(
+    if post_status in {"future", "publish"} and not is_manager_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager access is required for scheduled or public WordPress publishing",
+        )
+    return await publishing_service.queue_publish_to_wordpress(
         article_id=article_id,
         project_id=project_id,
         user_id=UUID(user.id),

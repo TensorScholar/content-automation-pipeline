@@ -49,6 +49,35 @@ Optional production settings:
 
 Do not commit real secret values.
 
+## Kubernetes Secret (k8s)
+
+The `k8s/` kustomization expects a Secret named `content-automation-secrets`
+to exist in the `content-automation` namespace. A placeholder template is at
+`k8s/secrets.example.yaml`; it is NOT part of the kustomization and is never
+rendered or applied. kustomize renders successfully without the Secret present;
+you must create it before `kubectl apply` so that the workloads start.
+
+Required keys (referenced by `secretKeyRef`):
+`postgres-password`, `secret-key`. Optional keys (mounted with
+`optional: true`): `anthropic-api-key`, `openai-api-key`, `gemini-api-key`,
+`redis-password`.
+
+Create the Secret locally with placeholders replaced (use clipboard or a
+file-mode secret; never echo literal values into a shell whose history is
+shared):
+
+```bash
+kubectl create secret generic content-automation-secrets \
+  --namespace content-automation \
+  --from-literal=postgres-password='<generate-a-strong-password>' \
+  --from-literal=secret-key='<generate-a-random-secret-key>' \
+  --dry-run=client -o yaml > k8s/secrets.yaml
+
+kubectl apply -f k8s/secrets.yaml
+```
+
+`k8s/secrets.yaml` is git-ignored; never commit it.
+
 ## Deployment Order
 
 1. Build images:

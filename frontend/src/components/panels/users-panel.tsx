@@ -110,12 +110,12 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
   }
 
   return (
-    <section className="macos-content-scope animate-fade-in relative flex min-h-[calc(100vh-96px)] flex-col space-y-4 bg-transparent p-3 md:p-4">
-      <div className="flex flex-col gap-4 pb-1 md:flex-row md:items-start md:justify-between">
+    <section className="smx-page !max-w-none relative flex min-h-[calc(100vh-112px)] flex-col space-y-4">
+      <div className="smx-page-header">
         <div className="flex-1">
-          <h2 className="text-[24px] font-semibold leading-tight tracking-normal text-ink">{t("users.title")}</h2>
+          <h2 className="smx-page-title">{t("users.title")}</h2>
         </div>
-        <div className="smx-panel-subtle flex flex-wrap items-center gap-1.5 p-1.5">
+        <div className="smx-toolbar flex-wrap">
           <div className="rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-semibold text-ink-secondary dark:bg-white/10 dark:text-gray-200">{t("users.total")}: <span className="ms-1 font-bold tabular-nums text-ink">{counts.total}</span></div>
           <div className="rounded-full bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">{t("users.active")}: <span className="ms-1 font-bold tabular-nums">{counts.active}</span></div>
           {counts.inactive > 0 && (
