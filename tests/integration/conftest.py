@@ -117,14 +117,18 @@ async def test_client():
     Note: For tests requiring full FastAPI client,
     use httpx.AsyncClient with the app.
     """
-    from httpx import AsyncClient
+    from httpx import ASGITransport, AsyncClient
 
     from api.main import create_app
 
     app = create_app()
 
     # Disable rate limiting for tests
-    async with AsyncClient(app=app, base_url="http://localhost") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://localhost",
+    ) as client:
         yield client
 
 
