@@ -53,7 +53,7 @@ jobs:
       - name: Install scanning tools
         run: |
           pip install --upgrade pip
-          pip install poetry==1.8.3 pip-audit safety
+          pip install poetry==1.8.3 pip-audit safety==3.8.1
 
       - name: Export requirements from Poetry
         run: |
@@ -121,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          safety check -r requirements.txt --output json > safety-report.json
+          safety check -r requirements.txt --save-json safety-report.json
           scan_status=$?
           set -e
 
