@@ -34,13 +34,13 @@ COPY pyproject.toml poetry.lock* ./
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     poetry export -f requirements.txt --output requirements.txt --without-hashes && \
-    grep -Ev '^(torch|triton|nvidia-[^= ]+)(==|[<>=!~ ])' requirements.txt > requirements.docker.txt && \
+    grep -Ev '^(torch|triton|nvidia-[^= ]+|cuda-[^= ]+)(==|[<>=!~ ])' requirements.txt > requirements.docker.txt && \
     pip install \
         --index-url "${PYTORCH_CPU_INDEX_URL}" \
         --extra-index-url "${PYPI_INDEX_URL}" \
         "torch==${TORCH_CPU_VERSION}" && \
     pip install -r requirements.docker.txt && \
-    python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers" && \
+    python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name.startswith('cuda-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers" && \
     rm requirements.txt requirements.docker.txt
 
 # Download spacy model

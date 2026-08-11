@@ -157,14 +157,14 @@ jobs:
             --format requirements.txt \
             --without-hashes \
             --output /tmp/requirements-ci.txt
-          grep -Ev '^(torch|triton|nvidia-[^= ]+)(==|[<>=!~ ])' \
+          grep -Ev '^(torch|triton|nvidia-[^= ]+|cuda-[^= ]+)(==|[<>=!~ ])' \
             /tmp/requirements-ci.txt > /tmp/requirements-ci-cpu.txt
           pip install \
             --index-url https://download.pytorch.org/whl/cpu \
             --extra-index-url https://pypi.org/simple \
             "torch==2.13.0+cpu"
           pip install -r /tmp/requirements-ci-cpu.txt
-          python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers"
+          python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name.startswith('cuda-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers"
 
       - name: Download spaCy model
         run: python -m spacy download en_core_web_sm

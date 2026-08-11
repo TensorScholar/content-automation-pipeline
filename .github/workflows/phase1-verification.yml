@@ -66,7 +66,7 @@ jobs:
           import importlib.metadata as md
 
           names = {dist.metadata["Name"].lower() for dist in md.distributions()}
-          blocked = sorted(name for name in names if name.startswith("nvidia-") or name == "triton")
+          blocked = sorted(name for name in names if name.startswith("nvidia-") or name.startswith("cuda-") or name == "triton")
           if blocked:
               raise SystemExit(f"Unexpected CUDA packages installed: {blocked}")
 
