@@ -14,6 +14,8 @@ runs the focused checks in isolated subprocesses with a scrubbed environment.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 import subprocess
 import sys
@@ -119,7 +121,7 @@ def test_create_app_development_builds_with_docs():
         REDIS_URL="redis://localhost:6379/0",
         CELERY_BROKER_URL="redis://localhost:6379/1",
         CELERY_RESULT_BACKEND="redis://localhost:6379/1",
-        SECRET_KEY="0123456789abcdef0123456789abcdef",
+        SECRET_KEY=hashlib.sha256(b"startup-test-secret").hexdigest(),
         ENVIRONMENT="development",
     )
     proc = _run(
@@ -146,8 +148,10 @@ def test_create_app_production_disables_docs():
         REDIS_URL="redis://localhost:6379/0",
         CELERY_BROKER_URL="redis://localhost:6379/1",
         CELERY_RESULT_BACKEND="redis://localhost:6379/1",
-        SECRET_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        CREDENTIAL_ENCRYPTION_KEY="jy0gqA9LRupOMKOrP-EZ5YgBXZEiR3O68wJoECvi1i4=",
+        SECRET_KEY=hashlib.sha256(b"startup-test-secret").hexdigest(),
+        CREDENTIAL_ENCRYPTION_KEY=base64.urlsafe_b64encode(
+            hashlib.sha256(b"startup-test-credential-key").digest()
+        ).decode("ascii"),
         LLM_PROVIDER="anthropic",
         ANTHROPIC_API_KEY="sk-ant-test",
         LLM_PRIMARY_MODEL="anthropic/claude-sonnet-4-5-20250929",
