@@ -3,7 +3,7 @@
 FROM python:3.11-slim AS builder
 
 ARG POETRY_VERSION=1.8.3
-ARG TORCH_CPU_VERSION=2.9.0+cpu
+ARG TORCH_CPU_VERSION=2.13.0+cpu
 ARG PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu
 ARG PYPI_INDEX_URL=https://pypi.org/simple
 ENV VIRTUAL_ENV=/opt/venv \

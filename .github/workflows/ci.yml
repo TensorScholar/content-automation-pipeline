@@ -162,7 +162,7 @@ jobs:
           pip install \
             --index-url https://download.pytorch.org/whl/cpu \
             --extra-index-url https://pypi.org/simple \
-            "torch==2.9.0+cpu"
+            "torch==2.13.0+cpu"
           pip install -r /tmp/requirements-ci-cpu.txt
           python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers"
 
