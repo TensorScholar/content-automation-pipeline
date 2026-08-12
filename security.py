@@ -17,9 +17,10 @@ from uuid import uuid4
 
 import bcrypt
 import bleach
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jwt import PyJWTError
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -339,7 +340,7 @@ def decode_access_token(token: str) -> TokenData:
 
         return token_data
 
-    except JWTError:
+    except PyJWTError:
         raise credentials_exception
 
 
@@ -411,7 +412,7 @@ async def get_current_user(
             last_login=getattr(user_in_db, "last_login", None),
         )
 
-    except JWTError:
+    except PyJWTError:
         raise credentials_exception
     except Exception as e:
         logger.error(f"Authentication error in get_current_user: {e}")
@@ -557,7 +558,7 @@ def verify_password_reset_token(token: str) -> Optional[str]:
         email: str = decoded_token.get("sub")
         return email
 
-    except JWTError:
+    except PyJWTError:
         return None
 
 
