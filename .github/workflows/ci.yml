@@ -341,6 +341,7 @@ jobs:
       POSTGRES_PASSWORD: ci-postgres-password
       REDIS_PASSWORD: ci-redis-password
       SECRET_KEY: ci-secret-key-minimum-32-chars-long-for-validation
+      CREDENTIAL_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
       SERVER_NAME: localhost
       ALLOWED_HOSTS: localhost,127.0.0.1,api,nginx
       CORS_ORIGINS: https://localhost
