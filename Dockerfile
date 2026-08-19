@@ -43,9 +43,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name.startswith('cuda-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers" && \
     rm requirements.txt requirements.docker.txt
 
-# Download spacy model
-RUN python -m spacy download en_core_web_sm
-
 FROM python:3.11-slim AS final
 
 ENV VIRTUAL_ENV=/opt/venv \
