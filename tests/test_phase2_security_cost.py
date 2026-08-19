@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from uuid import uuid4
@@ -10,6 +11,18 @@ import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr, ValidationError
 from sqlalchemy.sql.dml import Insert
+
+# Some tests exercise get_settings()/Settings() construction directly, which
+# requires runtime configuration at boot. Provide deterministic local-only
+# placeholders so this module is self-contained and order-independent instead
+# of relying on another test module setting them via import side effects.
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+asyncpg://test:test@127.0.0.1:5432/test_phase2_security_cost"
+)
+os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:6379/15")
+os.environ.setdefault("CELERY_BROKER_URL", "redis://127.0.0.1:6379/14")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/13")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-phase2-security-cost-tests")
 
 from api.schemas import ProjectResponse
 from core.exceptions import DatabaseError, LLMError, TokenBudgetExceededError
@@ -188,6 +201,10 @@ def test_missing_credential_key_fails_in_production(monkeypatch):
     for name, value in production_env.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("CREDENTIAL_ENCRYPTION_KEY", raising=False)
+    # The repository's custom dotenv source always reads the class-level
+    # ".env" file, so _env_file=None alone is not hermetic; neutralize the
+    # file so a developer-local .env cannot satisfy the key requirement.
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
     with pytest.raises(ValidationError, match="CREDENTIAL_ENCRYPTION_KEY"):
         Settings(_env_file=None)

@@ -22,6 +22,15 @@ import pytest_asyncio
 os.environ["ENVIRONMENT"] = "development"
 os.environ["PYTEST_CURRENT_TEST"] = "true"
 
+# Self-contained runtime configuration: the application requires these values
+# at boot, so provide deterministic local-only placeholders instead of
+# depending on another test module setting them via import side effects.
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://test:test@127.0.0.1:5432/test_api_integration"
+os.environ["REDIS_URL"] = "redis://127.0.0.1:6379/15"
+os.environ["CELERY_BROKER_URL"] = "redis://127.0.0.1:6379/14"
+os.environ["CELERY_RESULT_BACKEND"] = "redis://127.0.0.1:6379/13"
+os.environ["SECRET_KEY"] = "test-secret-key-for-api-integration-tests"
+
 
 @pytest.fixture
 def mock_database():
