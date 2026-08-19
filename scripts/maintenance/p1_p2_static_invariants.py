@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -17,6 +18,60 @@ def read(relative: str) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def metrics_handler_name(module_source: str) -> str | None:
+    tree = ast.parse(module_source)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_api_route"
+            and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "/metrics"
+            and isinstance(node.args[1], ast.Name)
+        ):
+            return node.args[1].id
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            for decorator in node.decorator_list:
+                if (
+                    isinstance(decorator, ast.Call)
+                    and isinstance(decorator.func, ast.Attribute)
+                    and decorator.func.attr == "get"
+                    and len(decorator.args) == 1
+                    and isinstance(decorator.args[0], ast.Constant)
+                    and decorator.args[0].value == "/metrics"
+                ):
+                    return node.name
+    return None
+
+
+def function_calls(module_source: str, function_name: str, callee: str) -> bool:
+    tree = ast.parse(module_source)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != function_name:
+            continue
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call):
+                continue
+            sub_func = sub.func
+            if isinstance(sub_func, ast.Name) and sub_func.id == callee:
+                return True
+            if isinstance(sub_func, ast.Attribute) and sub_func.attr == callee:
+                return True
+    return False
+
+
+def validate_metrics_route_no_db_aggregation(module_source: str) -> None:
+    handler = metrics_handler_name(module_source)
+    if handler is None:
+        raise AssertionError("Prometheus metrics route registration is missing")
+    if function_calls(module_source, handler, "get_summary"):
+        raise AssertionError("Prometheus scrape must not trigger database aggregation")
 
 
 def main() -> int:
@@ -90,10 +145,7 @@ def main() -> int:
     require("render_integration_snapshot_metrics" in main_api, "Metrics endpoint does not export durable snapshot")
     require("get_cached_snapshot" in main_api, "Metrics endpoint is not cache-only")
     require('decode("utf-8", errors="replace")' in main_api, "Prometheus byte payload is not normalized safely")
-    require(
-        "get_summary(" not in re.search(r'@app.get\("/metrics".*?\n\n', main_api, re.S).group(0),
-        "Prometheus scrape must not trigger database aggregation",
-    )
+    validate_metrics_route_no_db_aggregation(main_api)
     require(
         "_refresh_integration_metrics" not in main_api,
         "Integration polling must not be duplicated in every API worker",
