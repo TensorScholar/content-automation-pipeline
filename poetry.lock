@@ -1663,6 +1663,20 @@ pipenv = ["pipenv"]
 poetry = ["poetry"]
 
 [[package]]
+name = "en_core_web_sm"
+version = "3.8.0"
+description = "English pipeline optimized for CPU. Components: tok2vec, tagger, parser, senter, ner, attribute_ruler, lemmatizer."
+optional = false
+python-versions = "*"
+files = [
+    {file = "en_core_web_sm-3.8.0-py3-none-any.whl", hash = "sha256:1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85"},
+]
+
+[package.source]
+type = "url"
+url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+
+[[package]]
 name = "fastapi"
 version = "0.133.1"
 description = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
@@ -8161,4 +8175,4 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "d7046ab8f4d4c1d0ddbe0c717deb3a0ed1114d9874259843dc8543e42ed48790"
+content-hash = "1916440fc0d228a54c62105941bdd78f5def3b36940c9790bd129b280e15622d"

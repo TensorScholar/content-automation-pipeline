@@ -37,6 +37,7 @@ sentence-transformers = ">=5.2.3,<5.3.0"
 torch = ">=2.13.0,<2.14.0"
 transformers = ">=5.5.0,<5.6.0"
 spacy = "^3.7.2"
+en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"}  # Pinned spaCy model required by PatternExtractor at runtime
 starlette = ">=1.3.1,<1.4.0"
 openai = ">=2.20.0,<3.0.0"
 anthropic = "^0.75.0"
@@ -91,7 +92,8 @@ load-test = "locust.main:main"
 
 # Post-install hook to download spacy model
 [tool.poetry.plugins."poetry.plugin"]
-# Note: Users should run 'make post-install' or 'python -m spacy download en_core_web_sm'
+# Note: The en_core_web_sm spaCy model is a pinned dependency (en-core-web-sm)
+# and is installed deterministically via 'poetry install'.
 
 
 [tool.ruff]
