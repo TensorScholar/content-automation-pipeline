@@ -117,6 +117,7 @@ services:
       ENVIRONMENT: production
       DEBUG: "false"
       MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,nginx}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
     networks:
@@ -171,6 +172,7 @@ services:
       ENVIRONMENT: production
       DEBUG: "false"
       RUN_MIGRATIONS: "false"
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
 
       # Security
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
@@ -353,6 +355,7 @@ services:
       MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: production
       DEBUG: "false"
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
       CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
       CELERY_LOG_LEVEL: info
       DB_POOL_SIZE: 5 # 3 replicas * 5 = 15 steady connections
@@ -439,6 +442,7 @@ services:
       MONITORING_LOG_LEVEL: ${MONITORING_LOG_LEVEL:-INFO}
       ENVIRONMENT: production
       DEBUG: "false"
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
       CELERY_LOG_LEVEL: info
     logging:
       driver: json-file
@@ -507,6 +511,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
       ENVIRONMENT: production
       DEBUG: "false"
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
       FLOWER_USER: ${FLOWER_USER:?Required}
       FLOWER_PASSWORD: ${FLOWER_PASSWORD:?Required}
     ports:

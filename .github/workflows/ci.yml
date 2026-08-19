@@ -57,6 +57,12 @@ jobs:
       - name: Run Ruff linter
         run: ruff check . --output-format=github
 
+      - name: Run Alembic migration graph validation
+        run: python scripts/maintenance/validate_migration_graph.py
+
+      - name: Run P0 static release invariants
+        run: python scripts/maintenance/p0_static_invariants.py
+
       - name: Run release-critical Ruff formatter check
         run: |
           ruff format --check \
@@ -127,6 +133,7 @@ jobs:
       ANTHROPIC_API_KEY: sk-ant-test-placeholder
       CELERY_BROKER_URL: redis://localhost:6379/0
       CELERY_RESULT_BACKEND: redis://localhost:6379/1
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
 
     steps:
       - name: Checkout code
@@ -165,9 +172,6 @@ jobs:
             "torch==2.13.0+cpu"
           pip install -r /tmp/requirements-ci-cpu.txt
           python -c "import importlib.metadata as md; names={dist.metadata['Name'].lower() for dist in md.distributions()}; blocked=sorted(name for name in names if name.startswith('nvidia-') or name.startswith('cuda-') or name == 'triton'); assert not blocked, blocked; import torch; assert torch.version.cuda is None, torch.version.cuda; import sentence_transformers"
-
-      - name: Download spaCy model
-        run: python -m spacy download en_core_web_sm
 
       - name: Run Phase 2 security and cost controls
         run: pytest tests/test_phase2_security_cost.py -q
@@ -229,6 +233,10 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+      - name: Audit frontend production dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev
 
   # ===========================================================================
   # Stage 4: Docker and Compose Validation

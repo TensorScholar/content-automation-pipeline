@@ -133,6 +133,9 @@ jobs:
               --frontend-url http://frontend:3001 \
               --nginx-url http://nginx
 
+      - name: Verify backup/restore with disposable database
+        run: scripts/maintenance/verify_backup_restore.sh --confirm-disposable-restore
+
       - name: Collect service logs
         if: always()
         run: |
