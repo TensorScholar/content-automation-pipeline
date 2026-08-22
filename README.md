@@ -9,7 +9,7 @@
 Automated content generation system with a Next.js frontend, optional Tauri
 desktop shell, FastAPI backend, and multi-provider LLM support.
 
-**Recent Updates (2026-01):**
+**Security & Performance Hardening:**
 - ✅ Security hardening: Network error handling, XSS prevention, session fixation fixes
 - ✅ Performance optimization: 7 database indexes, LLM caching, connection pooling
 - ✅ Automated maintenance: Celery Beat cleanup tasks, performance monitoring
@@ -65,9 +65,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 # See docs/production-deployment.md for full guide
 ```
 
-**Recommended Server:** Hetzner CX41 (8 vCPU, 16GB RAM) - $17/month
-- Handles 200-500 articles/day
-- Complete setup guide in [docs/production-deployment.md](docs/production-deployment.md) · production configuration contract in [docs/production-configuration.md](docs/production-configuration.md)
+Sizing guidance and server requirements are covered in
+[docs/production-deployment.md](docs/production-deployment.md) · production configuration contract in [docs/production-configuration.md](docs/production-configuration.md)
 
 ### Secrets Management Best Practices
 
@@ -628,8 +627,8 @@ alembic downgrade -1
 The P0 candidate adds durable WordPress publication, strict read-only Google
 Search Console synchronization, and release/restore gates. Start with:
 
-- `P0-IMPLEMENTATION-REPORT.md`
-- `P0-VALIDATION.md`
+- `docs/reports/P0-IMPLEMENTATION-REPORT.md`
+- `docs/reports/P0-VALIDATION.md`
 - `ops/P0_DEPLOYMENT_RUNBOOK.md`
 - `ops/P0_LIVE_CANARY.md`
 - `ops/P0_ROLLBACK_RUNBOOK.md`
@@ -644,6 +643,5 @@ See [LICENSE](LICENSE) file.
 ## Support
 
 For issues and questions:
-- GitHub Issues: [Report bugs or request features](https://github.com/your-org/content-automation-pipeline/issues)
+- GitHub Issues: [Report bugs or request features](https://github.com/TensorScholar/content-automation-pipeline/issues)
 - Documentation: See inline code comments and docstrings
-- Email: support@yourcompany.com
