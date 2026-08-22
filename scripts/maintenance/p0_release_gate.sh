@@ -90,6 +90,7 @@ else
 fi
 
 run_check "P0 architectural invariants" "$PYTHON_BIN" scripts/maintenance/p0_static_invariants.py
+run_check "Production configuration contract (static)" "$PYTHON_BIN" scripts/maintenance/validate_production_config.py --static
 
 if grep -q 'uq_publishing_success_idempotency' infrastructure/schema.py \
   && grep -q '_verify_wordpress_post' execution/distributer.py \

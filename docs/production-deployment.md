@@ -4,6 +4,13 @@ This document covers the Phase 1 production path for staging and controlled
 small-scale launches. It intentionally favors Docker Compose over more complex
 orchestration.
 
+> **Configuration contract**: the authoritative list of required and optional
+> settings, secret-issuance rules, external-database portability, and the
+> validation procedure lives in [docs/production-configuration.md](production-configuration.md).
+> Create the production `.env` from `.env.production.example` and validate it
+> with `scripts/maintenance/validate_production_config.py` before deploying.
+> Never copy the development `.env` to production.
+
 ## Required Services
 
 - nginx: public entry point and TLS termination.
@@ -17,37 +24,39 @@ orchestration.
 
 ## Required Environment Variables
 
-Production must set these values in `.env` or the deployment environment:
+Create the production `.env` from `.env.production.example`
+(see [docs/production-configuration.md](production-configuration.md) for the
+full contract). Summary:
 
-- `ENVIRONMENT=production`
-- `DEBUG=false`
-- `SERVER_NAME`
-- `POSTGRES_PASSWORD`
-- `REDIS_PASSWORD`
-- `DATABASE_URL`
-- `REDIS_URL`
-- `CELERY_BROKER_URL`
-- `CELERY_RESULT_BACKEND`
-- `SECRET_KEY`
-- `CREDENTIAL_ENCRYPTION_KEY`
-- `ALLOWED_HOSTS`
-- `CORS_ORIGINS`
-- `LLM_PROVIDER`
-- The selected provider credential:
+- `ENVIRONMENT=production`, `DEBUG=false`, `SERVER_NAME`
+- `POSTGRES_PASSWORD`, `REDIS_PASSWORD`
+- `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
+  (each is `${VAR:-local-default}` — leave empty for local Compose services,
+  or set to an external DSN with `?ssl=require` / `rediss://` for managed
+  PostgreSQL / Redis; see `docs/production-configuration.md` §6 / §7)
+- `SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY`
+- `ALLOWED_HOSTS` (must include `SERVER_NAME,localhost,127.0.0.1` for healthchecks),
+  `CORS_ORIGINS` (explicit HTTPS origins, no wildcards)
+- `LLM_PROVIDER` and the selected provider credential:
   - `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `LLM_GEMINI_API_KEY` when `LLM_PROVIDER=gemini`
   - `OPENAI_API_KEY` or `LLM_OPENAI_API_KEY` when `LLM_PROVIDER=openai`
   - `ANTHROPIC_API_KEY` or `LLM_ANTHROPIC_API_KEY` when `LLM_PROVIDER=anthropic`
   - `LOCAL_LLM_URL` when `LLM_PROVIDER=local`
-- `LLM_DAILY_COST_LIMIT_USD`
-- `LLM_MONTHLY_COST_LIMIT_USD`
+- `LLM_DAILY_COST_LIMIT_USD`, `LLM_MONTHLY_COST_LIMIT_USD`
+- `FLOWER_USER`, `FLOWER_PASSWORD` (no defaults accepted)
 
 Optional production settings:
 
 - project/user LLM limit variables documented in `docs/llm-cost-control.md`
 - `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, and `SENTRY_TRACES_SAMPLE_RATE`
-- `BACKUP_DIR` and `RETENTION_DAYS` for host-side PostgreSQL backups
+- `BACKUP_DIR` and `RETENTION_DAYS` for host-side PostgreSQL backups (default
+  `./backups`, 7 days)
+- `GRAFANA_ADMIN_PASSWORD`, `GRAFANA_ADMIN_USER` (monitoring overlay)
+- `NEXT_PUBLIC_API_URL` (`/api` in production — never a secret)
 
-Do not commit real secret values.
+Validate before deploying: `python scripts/maintenance/validate_production_config.py`.
+Do not commit real secret values and never copy the development `.env` to
+production.
 
 ## Kubernetes Secret (k8s)
 

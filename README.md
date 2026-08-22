@@ -9,7 +9,7 @@
 Automated content generation system with a Next.js frontend, optional Tauri
 desktop shell, FastAPI backend, and multi-provider LLM support.
 
-**Recent Updates (2026-01):**
+**Security & Performance Hardening:**
 - ✅ Security hardening: Network error handling, XSS prevention, session fixation fixes
 - ✅ Performance optimization: 7 database indexes, LLM caching, connection pooling
 - ✅ Automated maintenance: Celery Beat cleanup tasks, performance monitoring
@@ -52,7 +52,7 @@ require release-candidate verification before production approval:
 
 ## 🚀 Production Deployment
 
-> **📖 Complete Guide**: See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment instructions including Docker, systemd, Nginx, SSL, monitoring, and troubleshooting.
+> **📖 Complete Guide**: See [docs/production-deployment.md](docs/production-deployment.md) and the production configuration contract in [docs/production-configuration.md](docs/production-configuration.md) for comprehensive deployment instructions including Docker, systemd, Nginx, SSL, monitoring, and troubleshooting.
 
 ### Quick Start
 
@@ -62,12 +62,11 @@ cp .env.example .env  # Configure your API keys
 docker compose -f docker-compose.prod.yml up -d --build
 
 # Or systemd deployment (production recommended)
-# See DEPLOYMENT.md for full guide
+# See docs/production-deployment.md for full guide
 ```
 
-**Recommended Server:** Hetzner CX41 (8 vCPU, 16GB RAM) - $17/month
-- Handles 200-500 articles/day
-- Complete setup guide in [DEPLOYMENT.md](DEPLOYMENT.md)
+Sizing guidance and server requirements are covered in
+[docs/production-deployment.md](docs/production-deployment.md) · production configuration contract in [docs/production-configuration.md](docs/production-configuration.md)
 
 ### Secrets Management Best Practices
 
@@ -368,10 +367,10 @@ GET /api/metrics
 | `API_URL` | No | Auto | Dashboard API endpoint. Defaults to `http://localhost:8000` in development |
 | `ENVIRONMENT` | No | `development` | Environment mode: `development`, `staging`, or `production` |
 | `LOG_LEVEL` | No | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
-| `WORKERS` | No | `4` | Gunicorn worker count |
+| `GUNICORN_WORKERS` | No | `4` | Gunicorn worker count (use this name; `WORKERS` is not consumed) |
 | `FLOWER_USER` | Prod | - | Flower monitoring UI username (required in production) |
 | `FLOWER_PASSWORD` | Prod | - | Flower monitoring UI password (required in production) |
-| `BACKUP_DIR` | No | `/var/backups/postgres` | Directory for automated database backups |
+| `BACKUP_DIR` | No | `./backups` | Directory for automated database backups (host-side `backup_database.sh`) |
 | `RETENTION_DAYS` | No | `7` | Number of days to keep database backups |
 
 **Note**: Redis is required for semantic embeddings cache, rate limiting, and token blacklist. In production, always set `REDIS_PASSWORD` — the Docker Compose enforces this with `${REDIS_PASSWORD:?Required}`.
@@ -420,7 +419,7 @@ poetry run pytest --cov=. --cov-report=html
 
 ### Security Testing
 
-Production-ready security features (see [DEPLOYMENT.md](DEPLOYMENT.md) for details):
+Production-ready security features (see [docs/production-deployment.md](docs/production-deployment.md) and [docs/production-configuration.md](docs/production-configuration.md) for details):
 - ✅ Network error handling in login
 - ✅ API health checks before authentication
 - ✅ Secure session management and logout
@@ -628,8 +627,8 @@ alembic downgrade -1
 The P0 candidate adds durable WordPress publication, strict read-only Google
 Search Console synchronization, and release/restore gates. Start with:
 
-- `P0-IMPLEMENTATION-REPORT.md`
-- `P0-VALIDATION.md`
+- `docs/reports/P0-IMPLEMENTATION-REPORT.md`
+- `docs/reports/P0-VALIDATION.md`
 - `ops/P0_DEPLOYMENT_RUNBOOK.md`
 - `ops/P0_LIVE_CANARY.md`
 - `ops/P0_ROLLBACK_RUNBOOK.md`
@@ -644,6 +643,5 @@ See [LICENSE](LICENSE) file.
 ## Support
 
 For issues and questions:
-- GitHub Issues: [Report bugs or request features](https://github.com/your-org/content-automation-pipeline/issues)
+- GitHub Issues: [Report bugs or request features](https://github.com/TensorScholar/content-automation-pipeline/issues)
 - Documentation: See inline code comments and docstrings
-- Email: support@yourcompany.com

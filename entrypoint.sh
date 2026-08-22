@@ -170,7 +170,7 @@ main() {
             echo -e "${GREEN}Starting Flower monitoring...${NC}"
             exec celery -A orchestration.celery_app.app flower \
                 --port=${FLOWER_PORT:-5555} \
-                --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+                --basic_auth=${FLOWER_USER:?FLOWER_USER required}:${FLOWER_PASSWORD:?FLOWER_PASSWORD required}
             ;;
 
         migrate)

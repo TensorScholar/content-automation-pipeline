@@ -269,6 +269,11 @@ jobs:
           docker compose -f docker-compose.prod.yml config --quiet
           docker compose -f docker-compose.prod.yml -f docker-compose.prod.https.yml config --quiet
 
+      - name: Validate production configuration contract
+        run: |
+          pip install pyyaml -q
+          python scripts/maintenance/validate_production_config.py
+
       - name: Build backend Docker image
         run: docker build -f Dockerfile --build-arg POETRY_VERSION=1.8.3 .
 
