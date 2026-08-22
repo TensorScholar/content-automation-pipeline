@@ -180,3 +180,6 @@ CRITICAL_BUGS_FIXED.md
 .claude/
 # Host-side database backups contain production data.
 backups/
+
+# Local QA evidence (screenshots kept on disk only)
+qa/
