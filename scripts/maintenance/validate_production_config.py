@@ -379,6 +379,26 @@ def check_documentation_coverage() -> None:
 
 def _compose_rendered(extra_env: dict[str, str], files: list[str]) -> str | None:
     env = os.environ.copy()
+    # Hermetic rendering: ambient variables (CI job-level env, developer shell
+    # exports) must not leak into the rendered config under test. The validator
+    # defines every variable it asserts on; extra_env is reapplied below.
+    for var in (
+        "DATABASE_URL",
+        "REDIS_URL",
+        "CELERY_BROKER_URL",
+        "CELERY_RESULT_BACKEND",
+        "POSTGRES_PASSWORD",
+        "REDIS_PASSWORD",
+        "SECRET_KEY",
+        "CREDENTIAL_ENCRYPTION_KEY",
+        "FLOWER_USER",
+        "FLOWER_PASSWORD",
+        "SERVER_NAME",
+        "ALLOWED_HOSTS",
+        "CORS_ORIGINS",
+        "GRAFANA_ADMIN_PASSWORD",
+    ):
+        env.pop(var, None)
     env.update(extra_env)
     env["POSTGRES_PASSWORD"] = env.get("POSTGRES_PASSWORD", "validate-pg-placeholder")
     env["REDIS_PASSWORD"] = env.get("REDIS_PASSWORD", "validate-redis-placeholder")
