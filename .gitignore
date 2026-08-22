@@ -51,6 +51,7 @@ venv.bak/
 .env.*.local
 *.env
 !.env.example
+!.env.production.example
 
 # Testing
 .pytest_cache/

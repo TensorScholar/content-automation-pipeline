@@ -2,6 +2,16 @@
 # Production Docker Compose Configuration
 # Optimized for reliability, performance, and security
 # ============================================================================
+# Data-store portability contract:
+#   - By default the stack runs PostgreSQL (postgres) and Redis (redis) as
+#     local Compose services, and the application URLs point at those service
+#     names via nested interpolation defaults.
+#   - To use EXTERNAL PostgreSQL/Redis, export DATABASE_URL, REDIS_URL,
+#     CELERY_BROKER_URL, and CELERY_RESULT_BACKEND (see
+#     .env.production.example). Exported values win; POSTGRES_PASSWORD and
+#     REDIS_PASSWORD are then only needed by the local Compose data stores.
+#   - ${VAR:?...} required-var guards remain active whenever the outer
+#     override variable is unset (fail closed, never fail open).
 
 version: "3.9"
 
@@ -16,7 +26,7 @@ services:
     environment:
       POSTGRES_DB: content_automation
       POSTGRES_USER: content_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -77,10 +87,10 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
-      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://content_user:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/content_automation}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/2}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
@@ -139,12 +149,12 @@ services:
         condition: service_healthy
     environment:
       # Database configuration (async driver for Python app)
-      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://content_user:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/content_automation}
 
       # Redis configuration
-      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/2}
 
       # LLM provider configuration. LLM_PROVIDER selects the required key.
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
@@ -194,9 +204,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
 
       # Performance tuning - Adjusted for 2 API replicas
-      WORKERS: 4
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-4}
-      MAX_CONNECTIONS: ${MAX_CONNECTIONS:-100}
       DB_POOL_SIZE: 5 # 2 replicas * 5 = 10 total connections
       DB_MAX_OVERFLOW: 5 # Allow burst to 10 per replica
     expose:
@@ -312,10 +320,10 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
-      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://content_user:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/content_automation}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/2}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
@@ -399,10 +407,10 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
-      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://content_user:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/content_automation}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/2}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
@@ -470,10 +478,10 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation
-      REDIS_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Required}@redis:6379/1
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Required}@redis:6379/2
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://content_user:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/content_automation}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/2}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}

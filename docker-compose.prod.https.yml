@@ -104,8 +104,9 @@ services:
     expose:
       - "8000"
     environment:
-      FORCE_HTTPS: "true"
-      ALLOWED_HOSTS: ${SERVER_NAME:-localhost}
+      # localhost/127.0.0.1 stay allowed so the container-internal healthcheck
+      # (curl http://localhost:8000/health) keeps passing with a real domain.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-${SERVER_NAME},localhost,127.0.0.1}
       CORS_ORIGINS: "https://${SERVER_NAME:-localhost}"
 
   # --------------------------------------------------------------------------

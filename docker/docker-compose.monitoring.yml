@@ -68,15 +68,15 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      # Admin credentials
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+      # Admin credentials. Fail closed: no default password is accepted.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
 
       # Configuration
       GF_INSTALL_PLUGINS: grafana-piechart-panel
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: "https://localhost/grafana"
+      GF_SERVER_ROOT_URL: "https://${GRAFANA_SERVER_NAME:-${SERVER_NAME:-localhost}}/grafana"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
 
       # Security
@@ -111,7 +111,9 @@ services:
     container_name: content-automation-postgres-exporter
     restart: unless-stopped
     environment:
-      DATA_SOURCE_NAME: "postgresql://content_user:${POSTGRES_PASSWORD}@postgres:5432/content_automation?sslmode=disable"
+      # Defaults to the local Compose PostgreSQL. Override POSTGRES_EXPORTER_DSN
+      # when PostgreSQL is external (sslmode/sslcert as required by the provider).
+      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN:-postgresql://content_user:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/content_automation?sslmode=disable}
     networks:
       - content-automation-network
     depends_on:
@@ -144,8 +146,11 @@ services:
     container_name: content-automation-redis-exporter
     restart: unless-stopped
     environment:
-      REDIS_ADDR: "redis://redis:6379"
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # Defaults to the local Compose Redis. Override REDIS_EXPORTER_ADDR when
+      # Redis is external (e.g. rediss://:PASSWORD@redis.example.com:6379).
+      # The local Compose redis service already enforces REDIS_PASSWORD.
+      REDIS_ADDR: ${REDIS_EXPORTER_ADDR:-redis://redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     networks:
       - content-automation-network
     depends_on:
