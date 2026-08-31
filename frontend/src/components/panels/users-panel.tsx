@@ -10,6 +10,7 @@ import { InputField } from "@/components/ui/input-field";
 import { useToast } from "@/components/ui/toast";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Modal } from "@/components/ui/modal";
 
 /* ═══════════════════════════════════════════════════════════════
    Spec: Screen 7 — Users Management (Manager-Only)
@@ -33,6 +34,7 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
   const [newFullName, setNewFullName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newIsAdmin, setNewIsAdmin] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const loadUsers = useCallback(async (signal?: AbortSignal) => {
     if (!isAdmin) {
@@ -81,6 +83,7 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
       });
       showToast("success", t("users.userCreated"));
       setNewEmail(""); setNewFullName(""); setNewPassword(""); setNewIsAdmin(false);
+      setCreateOpen(false);
       await loadUsers();
     } catch (e) {
       showToast("error", e instanceof ApiError ? e.detail : t("common.unexpectedError"));
@@ -102,7 +105,14 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
   if (!isAdmin) {
     return (
       <EmptyState
-        illustration={<span className="text-[3rem]">🔒</span>}
+        illustration={(
+          <span className="grid h-10 w-10 place-items-center rounded-md border border-line bg-surface text-ink-secondary" aria-hidden>
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <rect x="5.5" y="10" width="13" height="9" rx="2" />
+              <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10" />
+            </svg>
+          </span>
+        )}
         title={t("users.adminRequired")}
         subtitle={t("users.adminRequiredMsg")}
       />
@@ -110,127 +120,105 @@ export function UsersPanel({ token, isAdmin, currentUserId }: UsersPanelProps) {
   }
 
   return (
-    <section className="smx-page !max-w-none relative flex min-h-[calc(100vh-112px)] flex-col space-y-4">
+    <section className="smx-page !max-w-none relative flex min-h-0 flex-col gap-4">
       <div className="smx-page-header">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <h2 className="smx-page-title">{t("users.title")}</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            {counts.total} {t("users.total")} · {counts.active} {t("users.active")}
+            {counts.inactive > 0 ? ` · ${counts.inactive} ${t("users.inactive")}` : ""}
+          </p>
         </div>
-        <div className="smx-toolbar flex-wrap">
-          <div className="rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-semibold text-ink-secondary dark:bg-white/10 dark:text-gray-200">{t("users.total")}: <span className="ms-1 font-bold tabular-nums text-ink">{counts.total}</span></div>
-          <div className="rounded-full bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">{t("users.active")}: <span className="ms-1 font-bold tabular-nums">{counts.active}</span></div>
-          {counts.inactive > 0 && (
-            <div className="rounded-full bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">{t("users.inactive")}: <span className="ms-1 font-bold tabular-nums">{counts.inactive}</span></div>
-          )}
-        </div>
+        <Button onClick={() => setCreateOpen(true)}>{t("users.addUser")}</Button>
       </div>
 
-      <div className="grid min-h-0 flex-1 items-start gap-4 xl:grid-cols-[1fr_minmax(300px,360px)]">
-        {/* ── Add User Form ── */}
-        <article className="smx-panel order-2 shrink-0 p-5 xl:order-2">
-          <div className="mb-5">
-            <h3 className="text-[16px] font-semibold text-ink">{t("users.addUser")}</h3>
+      <Modal
+        open={createOpen}
+        onClose={() => !creating && setCreateOpen(false)}
+        title={t("users.addUser")}
+        footer={null}
+      >
+        <form className="space-y-4" onSubmit={onCreate}>
+          <InputField label={t("common.email")} type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+          <InputField label={t("users.fullName")} required value={newFullName} onChange={(e) => setNewFullName(e.target.value)} />
+          <InputField label={t("users.password")} type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <div className="border-t border-line pt-4">
+            <ToggleSwitch checked={newIsAdmin} onChange={setNewIsAdmin} label={t("users.grantAdmin")} />
           </div>
-          <form className="space-y-4" onSubmit={onCreate}>
-            <InputField label={t("common.email")} type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
-            <InputField label={t("users.fullName")} required value={newFullName} onChange={(e) => setNewFullName(e.target.value)} />
-            <InputField label={t("users.password")} type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
+            <Button type="button" variant="ghost" disabled={creating} onClick={() => setCreateOpen(false)}>{t("common.cancel")}</Button>
+            <Button type="submit" loading={creating}>{t("users.createUser")}</Button>
+          </div>
+        </form>
+      </Modal>
 
-            <div className="border-b border-black/5 pb-4 pt-2 dark:border-white/10">
-              <ToggleSwitch checked={newIsAdmin} onChange={setNewIsAdmin} label={t("users.grantAdmin")} />
-            </div>
-
-            <Button type="submit" loading={creating} fullWidth className="h-10 rounded-[12px] text-sm font-semibold">
-              {t("users.createUser")}
-            </Button>
-          </form>
-        </article>
-
-        {/* ── Users Table ── */}
-        <div className="smx-panel order-1 flex min-h-0 flex-col overflow-hidden xl:order-1">
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-start border-collapse">
-              <thead className="sticky top-0 z-10 border-b border-black/5 bg-black/[0.02] dark:border-white/10 dark:bg-white/[0.03]">
-                <tr className="text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-tertiary">
-                  <th className="px-5 py-3.5 text-start font-semibold">{t("common.email")}</th>
-                  <th className="px-5 py-3.5 text-start font-semibold">{t("users.fullName")}</th>
-                  <th className="px-5 py-3.5 text-start font-semibold">{t("common.role")}</th>
-                  <th className="px-5 py-3.5 text-start font-semibold">{t("users.statusLabel")}</th>
-                  <th className="px-5 py-3.5 text-start font-semibold">{t("users.createdAt")}</th>
-                  <th className="px-6 py-3.5 text-end font-semibold sr-only w-16">{t("users.action")}</th>
+      <div className="min-h-0 flex-1 overflow-auto border-t border-line">
+        <table className="w-full border-collapse text-start">
+          <thead className="sticky top-0 z-10 border-b border-line bg-[rgb(var(--bg-secondary))]">
+            <tr className="text-xs font-medium text-ink-tertiary">
+              <th className="px-4 py-3 text-start font-medium">{t("common.email")}</th>
+              <th className="px-4 py-3 text-start font-medium">{t("users.fullName")}</th>
+              <th className="px-4 py-3 text-start font-medium">{t("common.role")}</th>
+              <th className="px-4 py-3 text-start font-medium">{t("users.statusLabel")}</th>
+              <th className="px-4 py-3 text-start font-medium">{t("users.createdAt")}</th>
+              <th className="sr-only w-14 px-4 py-3 text-end">{t("users.action")}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {loading ? (
+              [1, 2, 3, 4, 5].map((i) => (
+                <tr key={i} className="animate-pulse">
+                  <td className="px-4 py-4"><div className="h-4 w-3/4 rounded bg-ink/[0.055]" /></td>
+                  <td className="px-4 py-4"><div className="h-4 w-1/2 rounded bg-ink/[0.055]" /></td>
+                  <td className="px-4 py-4"><div className="h-4 w-16 rounded bg-ink/[0.055]" /></td>
+                  <td className="px-4 py-4"><div className="h-4 w-20 rounded bg-ink/[0.055]" /></td>
+                  <td className="px-4 py-4"><div className="h-4 w-24 rounded bg-ink/[0.055]" /></td>
+                  <td className="px-4 py-4" />
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-black/5 dark:divide-white/10">
-                {loading ? (
-                  [1, 2, 3, 4, 5].map((i) => (
-                    <tr key={i} className="animate-pulse">
-                      <td className="px-5 py-4"><div className="h-4 w-3/4 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-1/2 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
-                      <td className="px-5 py-4"><div className="h-6 w-16 rounded-full bg-slate-100 dark:bg-white/10"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-20 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-24 rounded-md bg-slate-100 dark:bg-white/10"></div></td>
-                      <td className="px-5 py-4 text-end"><div className="ms-auto h-9 w-9 rounded-full bg-slate-100 dark:bg-white/10"></div></td>
-                    </tr>
-                  ))
-                ) : users.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-14 text-center">
-                      <div className="flex flex-col items-center justify-center opacity-80">
-                        <svg className="mb-4 h-16 w-16 text-slate-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                        <span className="text-[14px] font-medium text-ink-tertiary">{t("common.noData") || "No users found"}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  users.map((user) => {
-                    const isActive = user.is_active !== false;
-                    const isManagerRole = user.is_superuser || user.role === "admin" || user.role === "manager";
-                    const roleLabel = isManagerRole ? t("role.manager") : t("role.user");
-                    const isSelf = user.id === currentUserId;
-                    return (
-                      <tr key={user.id} className="transition-colors duration-200 hover:bg-black/[0.025] dark:hover:bg-white/[0.04]">
-                        <td className="px-5 py-4 text-start text-[13px] font-semibold text-ink">{user.email}</td>
-                        <td className="px-5 py-4 text-[13px] font-medium text-ink-secondary">{user.full_name || "—"}</td>
-                        <td className="px-5 py-4">
-                          <span className={clsx("inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.03em]", isManagerRole ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-200" : "bg-black/[0.04] text-ink-secondary dark:bg-white/[0.07] dark:text-gray-300")}>
-                            {roleLabel}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4">
-                          <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold", isActive ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300")}>
-                            <span className={clsx("w-2 h-2 rounded-full", isActive ? "bg-emerald-500" : "bg-slate-300 dark:bg-white/35")} />
-                            {isActive ? t("users.active") : t("users.inactive")}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 text-[12px] font-medium tabular-nums text-ink-tertiary">{formatDate(user.created_at, locale)}</td>
-                        <td className="px-5 py-4 text-end">
-                          <button
-                            onClick={() => void toggleActive(user)}
-                            disabled={isSelf}
-                            title={isSelf ? t("users.cannotRemoveSelf") : isActive ? t("users.deactivate") : t("users.activate")}
-                            className={clsx(
-                              "rounded-full border p-2 transition-all duration-200",
-                              isSelf
-                                ? "cursor-not-allowed border-black/5 bg-black/[0.02] text-ink-tertiary opacity-40 dark:border-white/10 dark:bg-white/[0.05]"
-                                : isActive ? "cursor-pointer border-black/5 bg-black/[0.02] text-rose-500 hover:bg-rose-500/10 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-rose-500/15" : "cursor-pointer border-black/5 bg-black/[0.02] text-emerald-500 hover:bg-emerald-500/10 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-emerald-500/15"
-                            )}
-                          >
-                            {isActive ? (
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                            ) : (
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))
+            ) : users.length === 0 ? (
+              <tr><td colSpan={6} className="px-6 py-16 text-center text-base text-ink-muted">{t("common.noData")}</td></tr>
+            ) : users.map((user) => {
+              const isActive = user.is_active !== false;
+              const isManagerRole = user.is_superuser || user.role === "admin" || user.role === "manager";
+              const roleLabel = isManagerRole ? t("role.manager") : t("role.user");
+              const isSelf = user.id === currentUserId;
+              return (
+                <tr key={user.id} className="transition-colors duration-fast hover:bg-ink/[0.03]">
+                  <td className="px-4 py-3.5 text-sm font-medium text-ink">{user.email}</td>
+                  <td className="px-4 py-3.5 text-sm text-ink-secondary">{user.full_name || "—"}</td>
+                  <td className="px-4 py-3.5 text-sm text-ink-secondary">{roleLabel}</td>
+                  <td className="px-4 py-3.5">
+                    <span className={clsx("inline-flex items-center gap-2 text-sm font-medium", isActive ? "text-success" : "text-ink-muted")}>
+                      <span className={clsx("h-1.5 w-1.5 rounded-full", isActive ? "bg-success" : "bg-ink-tertiary")} />
+                      {isActive ? t("users.active") : t("users.inactive")}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5 text-xs tabular-nums text-ink-tertiary">{formatDate(user.created_at, locale)}</td>
+                  <td className="px-4 py-3.5 text-end">
+                    <button
+                      type="button"
+                      onClick={() => void toggleActive(user)}
+                      disabled={isSelf}
+                      aria-label={isSelf ? t("users.cannotRemoveSelf") : isActive ? t("users.deactivate") : t("users.activate")}
+                      title={isSelf ? t("users.cannotRemoveSelf") : isActive ? t("users.deactivate") : t("users.activate")}
+                      className={clsx(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-fast",
+                        isSelf ? "cursor-not-allowed text-ink-tertiary opacity-35" : isActive ? "text-ink-muted hover:bg-error/10 hover:text-error" : "text-success hover:bg-success/10",
+                      )}
+                    >
+                      {isActive ? (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                      ) : (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 13l4 4L19 7" /></svg>
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </section>
   );

@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/api";
 import { formatModelDisplayName } from "@/lib/model-display";
 import { IntegrationOperationalSummary, IntegrationOperationsResponse, LlmOptionsResponse } from "@/types/models";
 import { useI18n } from "@/i18n/provider";
+import type { MessageKey } from "@/i18n/types";
 import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/progress-bar";
 
@@ -281,10 +282,10 @@ function localeForNumbers(locale: string) {
 }
 
 function toneDotClasses(tone: HealthTone) {
-  if (tone === "good") return "bg-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.45)]";
-  if (tone === "warning") return "bg-amber-400 shadow-[0_0_16px_rgba(251,191,36,0.38)]";
-  if (tone === "critical") return "bg-rose-400 shadow-[0_0_16px_rgba(244,63,94,0.42)]";
-  return "bg-gray-300 dark:bg-white/25";
+  if (tone === "good") return "bg-success";
+  if (tone === "warning") return "bg-warning";
+  if (tone === "critical") return "bg-danger";
+  return "bg-ink-muted/35";
 }
 
 function parseStatusTone(rawStatus: string): HealthTone {
@@ -295,7 +296,7 @@ function parseStatusTone(rawStatus: string): HealthTone {
   return "neutral";
 }
 
-function getStatusCopy(rawStatus: string, locale: keyof typeof HEALTH_DETAIL_COPY, t: (key: any, vars?: Record<string, string | number>) => string): HealthStatusCopy {
+function getStatusCopy(rawStatus: string, locale: keyof typeof HEALTH_DETAIL_COPY, t: (key: MessageKey, vars?: Record<string, string | number>) => string): HealthStatusCopy {
   const normalized = rawStatus.toLowerCase();
   const detailCopy = HEALTH_DETAIL_COPY[locale];
   const activeWorkerMatch = rawStatus.match(/(\d+)\s+workers?\(s\)\s+are available|(\d+)\s+workers?\s+are available|(\d+)\s+workers?\s+active/i);
@@ -304,63 +305,63 @@ function getStatusCopy(rawStatus: string, locale: keyof typeof HEALTH_DETAIL_COP
   if (normalized.includes("healthy")) {
     if (activeWorkerCount) {
       return {
-        title: t("monitoring.healthy") || "Healthy",
+        title: t("monitoring.healthy"),
         detail: detailCopy.activeWorkers(activeWorkerCount),
       };
     }
 
     return {
-      title: t("monitoring.healthy") || "Healthy",
-      detail: t("monitoring.connected") || "Connected",
+      title: t("monitoring.healthy"),
+      detail: t("monitoring.connected"),
     };
   }
 
   if (activeWorkerCount) {
     return {
-      title: t("monitoring.healthy") || "Healthy",
+      title: t("monitoring.healthy"),
       detail: detailCopy.activeWorkers(activeWorkerCount),
     };
   }
 
   if (normalized.includes("degraded: no active workers")) {
     return {
-      title: t("monitoring.degraded") || "Degraded",
+      title: t("monitoring.degraded"),
       detail: detailCopy.noWorkers,
     };
   }
 
   if (normalized.includes("degraded: timeout")) {
     return {
-      title: t("monitoring.degraded") || "Degraded",
-      detail: t("monitoring.timeout") || "Timeout",
+      title: t("monitoring.degraded"),
+      detail: t("monitoring.timeout"),
     };
   }
 
   if (normalized === "degraded" || normalized.includes("degraded")) {
     return {
-      title: t("monitoring.degraded") || "Degraded",
-      detail: t("monitoring.lastCheck") || "Last Check",
+      title: t("monitoring.degraded"),
+      detail: t("monitoring.lastCheck"),
     };
   }
 
   if (normalized.includes("unhealthy:")) {
     return {
-      title: t("monitoring.down") || "Down",
-      detail: t("monitoring.error") || "Error",
+      title: t("monitoring.down"),
+      detail: t("monitoring.error"),
       technicalDetail: rawStatus.split(":").slice(1).join(":").trim(),
     };
   }
 
   if (normalized === "unknown") {
     return {
-      title: t("monitoring.statusUnknown") || "Unknown",
+      title: t("monitoring.statusUnknown"),
       detail: detailCopy.awaiting,
     };
   }
 
   return {
-    title: t("monitoring.statusUnknown") || "Unknown",
-    detail: t("monitoring.lastCheck") || "Last Check",
+    title: t("monitoring.statusUnknown"),
+    detail: t("monitoring.lastCheck"),
     technicalDetail: rawStatus,
   };
 }
@@ -374,32 +375,32 @@ function HealthCard({
   label: string;
   rawStatus: string;
   locale: keyof typeof HEALTH_DETAIL_COPY;
-  t: (key: any, vars?: Record<string, string | number>) => string;
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string;
 }) {
   const tone = parseStatusTone(rawStatus);
   const { title, detail, technicalDetail } = getStatusCopy(rawStatus, locale, t);
 
   return (
-    <article className="smx-panel min-w-0 p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="truncate text-[12px] font-medium text-ink-tertiary">{label}</p>
+    <article className="min-w-0 border-t border-line py-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="truncate text-xs font-medium text-ink-tertiary">{label}</p>
         <span className={clsx("h-3 w-3 shrink-0 rounded-full", toneDotClasses(tone))} aria-hidden />
       </div>
       <p
         className={clsx(
-          "truncate text-[18px] font-semibold leading-tight tracking-normal",
+          "truncate text-body-lg font-semibold leading-tight tracking-normal",
           tone === "critical"
-            ? "text-rose-600 dark:text-rose-300"
+            ? "text-danger"
             : tone === "warning"
-              ? "text-amber-700 dark:text-amber-300"
+              ? "text-warning"
               : "text-ink"
         )}
       >
         {title}
       </p>
-      <p className="mt-1.5 truncate text-[12px] font-medium text-ink-secondary">{detail}</p>
+      <p className="mt-1.5 truncate text-xs font-medium text-ink-secondary">{detail}</p>
       {technicalDetail ? (
-        <details className="mt-2 text-[11px] leading-4 text-ink-tertiary">
+        <details className="mt-2 text-xs leading-4 text-ink-tertiary">
           <summary className="cursor-pointer">{locale === "fa" ? "جزئیات فنی" : locale === "ar" ? "التفاصيل التقنية" : "Technical details"}</summary>
           <p className="mt-1 break-words" dir="auto">{technicalDetail}</p>
         </details>
@@ -422,17 +423,17 @@ function MetricStat({
   progress?: { value: number; label: string };
 }) {
   return (
-    <article className="smx-panel min-w-0 p-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="rounded-[12px] border border-black/5 bg-black/[0.02] p-2.5 text-brand dark:border-white/10 dark:bg-white/[0.04]">
+    <article className="min-w-0 border-t border-line py-3">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="text-brand">
           {icon}
         </div>
-        <p className="truncate text-[12px] font-medium text-ink-tertiary">{label}</p>
+        <p className="truncate text-xs font-medium text-ink-tertiary">{label}</p>
       </div>
-      <p className="truncate text-[22px] font-semibold leading-none tracking-normal text-ink tabular-nums" dir="ltr">
+      <p className="truncate text-xl font-semibold leading-none tracking-normal text-ink tabular-nums" dir="ltr">
         {value}
       </p>
-      <p className="mt-1.5 truncate text-[12px] font-medium text-ink-secondary">{detail}</p>
+      <p className="mt-1.5 truncate text-xs font-medium text-ink-secondary">{detail}</p>
       {progress ? (
         <div className="mt-4">
           <ProgressBar value={progress.value} showLabel label={progress.label} />
@@ -452,17 +453,17 @@ function IncidentInbox({
   locale: keyof typeof INCIDENT_COPY;
 }) {
   return (
-    <section className="smx-panel overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-3 dark:border-white/10">
-        <h3 className="text-[14px] font-semibold text-ink">{copy.title}</h3>
-        <span className="rounded-md border border-black/5 bg-black/[0.03] px-2 py-1 text-[11px] font-medium text-ink-secondary dark:border-white/10 dark:bg-white/[0.05]">
+    <section className="overflow-hidden border-t border-line">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <h3 className="text-base font-semibold text-ink">{copy.title}</h3>
+        <span className="text-xs font-medium text-ink-muted">
           {incidents.length} {copy.open}
         </span>
       </div>
       {incidents.length === 0 ? (
-        <p className="px-4 py-6 text-[13px] text-ink-tertiary">{copy.empty}</p>
+        <p className="px-4 py-6 text-sm text-ink-tertiary">{copy.empty}</p>
       ) : (
-        <div className="divide-y divide-black/5 dark:divide-white/10">
+        <div className="divide-y divide-line">
           {incidents.map((incident) => {
             const isCritical = incident.severity === "critical";
             const rawIncidentText = `${incident.source} ${incident.user_message} ${incident.manager_detail}`;
@@ -492,25 +493,25 @@ function IncidentInbox({
                 <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={clsx(
-                      "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-semibold",
+                      "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs font-semibold",
                       isCritical
-                        ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                        : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                        ? "bg-danger-subtle text-danger"
+                        : "bg-warning/10 text-warning"
                     )}
                   >
-                    <span className={clsx("h-1.5 w-1.5 rounded-full", isCritical ? "bg-rose-500" : "bg-amber-400")} aria-hidden />
+                    <span className={clsx("h-1.5 w-1.5 rounded-full", isCritical ? "bg-danger" : "bg-warning")} aria-hidden />
                     {isCritical ? copy.critical : copy.warning}
                   </span>
-                  <span className="text-[11px] font-medium uppercase tracking-normal text-ink-tertiary">
+                  <span className="text-xs font-medium uppercase tracking-normal text-ink-tertiary">
                     {localizedIncident.source}
                   </span>
                 </div>
-                <p className="mt-2 text-[13px] font-medium leading-5 text-ink">{localizedIncident.title}</p>
-                <p className="mt-1 text-[12px] leading-5 text-ink-secondary">
+                <p className="mt-2 text-sm font-medium leading-5 text-ink">{localizedIncident.title}</p>
+                <p className="mt-1 text-xs leading-5 text-ink-secondary">
                   {copy.detail}: {localizedIncident.detail}
                 </p>
                 {localizedIncident.technicalDetail ? (
-                  <details className="mt-2 text-[11px] leading-5 text-ink-tertiary">
+                  <details className="mt-2 text-xs leading-5 text-ink-tertiary">
                     <summary className="cursor-pointer">{copy.technicalDetails}</summary>
                     <p className="mt-1 break-words" dir="ltr">{localizedIncident.technicalDetail}</p>
                   </details>
@@ -542,65 +543,65 @@ function LlmProviderAccess({
     : options?.manager_detail;
 
   return (
-    <section className="smx-panel overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/5 px-4 py-3 dark:border-white/10">
+    <section className="overflow-hidden border-t border-line">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-semibold text-ink">{copy.title}</h3>
-          <p className="mt-1 truncate text-[12px] text-ink-secondary">
+          <h3 className="text-base font-semibold text-ink">{copy.title}</h3>
+          <p className="mt-1 truncate text-xs text-ink-secondary">
             {options ? `${copy.active}: ${formatModelDisplayName(options.active_model)}` : copy.noModels}
           </p>
         </div>
-        <span className="rounded-md border border-black/5 bg-black/[0.03] px-2 py-1 text-[11px] font-medium text-ink-secondary dark:border-white/10 dark:bg-white/[0.05]">
+        <span className="text-xs font-medium text-ink-muted">
           {selectableCount} {copy.selectable}
         </span>
       </div>
 
       {managerDetail ? (
-        <details className="border-b border-black/5 px-4 py-3 text-[12px] leading-5 text-ink-secondary dark:border-white/10">
+        <details className="border-b border-line px-4 py-3 text-xs leading-5 text-ink-secondary">
           <summary className="cursor-pointer font-medium text-ink-secondary">{copy.technicalDetails}</summary>
           <p className="mt-2" dir="auto">{copy.managerDetail}: {managerDetail}</p>
         </details>
       ) : null}
 
       {!activeProvider ? (
-        <p className="px-4 py-6 text-[13px] text-ink-tertiary">{copy.noModels}</p>
+        <p className="px-4 py-6 text-sm text-ink-tertiary">{copy.noModels}</p>
       ) : (
         <article className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-ink">{activeProvider.label}</p>
-            <p className="mt-1 truncate text-[12px] text-ink-secondary">
+            <p className="text-sm font-semibold text-ink">{activeProvider.label}</p>
+            <p className="mt-1 truncate text-xs text-ink-secondary">
               {formatModelDisplayName(options?.active_model)}
             </p>
           </div>
-          <span className="inline-flex h-6 items-center rounded-md bg-emerald-500/10 px-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+          <span className="inline-flex h-6 items-center rounded-md bg-success/10 px-2 text-xs font-semibold text-success">
             {copy.activeProvider}
           </span>
         </article>
       )}
 
       {providers.length > 0 ? (
-        <details className="border-t border-black/5 dark:border-white/10">
-          <summary className="cursor-pointer px-4 py-3 text-[12px] font-medium text-ink-secondary">
+        <details className="border-t border-line">
+          <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-ink-secondary">
             {copy.providerInventory}
           </summary>
-          <div className="divide-y divide-black/5 border-t border-black/5 dark:divide-white/10 dark:border-white/10">
+          <div className="divide-y divide-line border-t border-line">
             {providers.map((provider) => {
               const models = Array.isArray(provider.models) ? provider.models : [];
 
               return (
                 <article key={provider.provider} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-ink">{provider.label}</p>
-                    <p className="mt-1 truncate text-[12px] text-ink-secondary">
+                    <p className="text-sm font-semibold text-ink">{provider.label}</p>
+                    <p className="mt-1 truncate text-xs text-ink-secondary">
                       {models.map((model) => formatModelDisplayName(model.model)).join(", ") || provider.label}
                     </p>
                   </div>
                   <span
                     className={clsx(
-                      "inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold",
+                      "inline-flex h-6 items-center rounded-md px-2 text-xs font-semibold",
                       provider.configured
-                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                        : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                        ? "bg-success/10 text-success"
+                        : "bg-warning/10 text-warning"
                     )}
                   >
                     {provider.configured ? copy.configured : copy.missing}
@@ -616,10 +617,10 @@ function LlmProviderAccess({
 }
 
 function integrationTone(status: string) {
-  if (status === "healthy") return "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-700 dark:text-emerald-300";
-  if (status === "critical") return "border-rose-500/20 bg-rose-500/[0.07] text-rose-700 dark:text-rose-300";
-  if (status === "warning" || status === "degraded") return "border-amber-500/20 bg-amber-500/[0.07] text-amber-700 dark:text-amber-300";
-  return "border-black/5 bg-black/[0.03] text-ink-secondary dark:border-white/10 dark:bg-white/[0.05]";
+  if (status === "healthy") return "border-success/20 bg-success/[0.06] text-success";
+  if (status === "critical") return "border-danger/20 bg-danger-subtle text-danger";
+  if (status === "warning" || status === "degraded") return "border-warning/20 bg-warning/[0.07] text-warning";
+  return "border-line bg-ink/[0.035] text-ink-secondary";
 }
 
 function IntegrationSummaryCard({
@@ -638,11 +639,11 @@ function IntegrationSummaryCard({
     : null;
   const statusLabel = copy[summary.status as keyof typeof copy] ?? summary.status;
   return (
-    <article className="rounded-[16px] border border-black/5 bg-black/[0.015] p-4 dark:border-white/10 dark:bg-white/[0.025]">
+    <article className="rounded-lg border border-line bg-ink/[0.018] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-[13px] font-semibold text-ink">{label}</h4>
-          <p className="mt-1 text-[11px] text-ink-tertiary">
+          <h4 className="text-sm font-semibold text-ink">{label}</h4>
+          <p className="mt-1 text-xs text-ink-tertiary">
             {summary.reasons.length
               ? summary.reasons.map((reason) => INTEGRATION_REASON_COPY[locale as keyof typeof INTEGRATION_REASON_COPY]?.[reason as keyof typeof INTEGRATION_REASON_COPY.en] ?? reason).join(" · ")
               : summary.active_count > 0 || summary.recent_total > 0
@@ -650,24 +651,24 @@ function IntegrationSummaryCard({
                 : copy.empty}
           </p>
         </div>
-        <span className={clsx("rounded-full border px-2.5 py-1 text-[11px] font-semibold", integrationTone(summary.status))}>
+        <span className={clsx("rounded-full border px-2.5 py-1 text-xs font-semibold", integrationTone(summary.status))}>
           {statusLabel}
         </span>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-2">
         <div>
-          <p className="text-[11px] text-ink-tertiary">{copy.active}</p>
-          <p className="mt-1 text-[18px] font-semibold text-ink">{summary.active_count}</p>
+          <p className="text-xs text-ink-tertiary">{copy.active}</p>
+          <p className="mt-1 text-xl font-semibold text-ink">{summary.active_count}</p>
         </div>
         <div>
-          <p className="text-[11px] text-ink-tertiary">{copy.stale}</p>
-          <p className={clsx("mt-1 text-[18px] font-semibold", summary.stale_count ? "text-rose-600 dark:text-rose-300" : "text-ink")}>
+          <p className="text-xs text-ink-tertiary">{copy.stale}</p>
+          <p className={clsx("mt-1 text-xl font-semibold", summary.stale_count ? "text-danger" : "text-ink")}>
             {summary.stale_count}
           </p>
         </div>
         <div>
-          <p className="text-[11px] text-ink-tertiary">{copy.successRate}</p>
-          <p className="mt-1 text-[18px] font-semibold text-ink">
+          <p className="text-xs text-ink-tertiary">{copy.successRate}</p>
+          <p className="mt-1 text-xl font-semibold text-ink">
             {successRate === null
               ? "—"
               : `${new Intl.NumberFormat(localeForNumbers(locale), { maximumFractionDigits: 0 }).format(successRate)}%`}
@@ -675,13 +676,13 @@ function IntegrationSummaryCard({
         </div>
       </div>
       {summary.recent_failures.length > 0 ? (
-        <details className="mt-4 border-t border-black/5 pt-3 text-[12px] dark:border-white/10">
+        <details className="mt-4 border-t border-line pt-3 text-xs">
           <summary className="cursor-pointer font-medium text-ink-secondary">
             {copy.failures} ({summary.recent_failures.length})
           </summary>
           <div className="mt-2 space-y-2">
             {summary.recent_failures.slice(0, 3).map((failure) => (
-              <p key={failure.id} className="break-words rounded-lg bg-black/[0.025] px-3 py-2 leading-5 text-ink-secondary dark:bg-white/[0.035]" dir="auto">
+              <p key={failure.id} className="break-words rounded-lg bg-ink/[0.025] px-3 py-2 leading-5 text-ink-secondary" dir="auto">
                 <span className="font-semibold text-ink">{failure.error_category}</span>: {failure.error_message}
               </p>
             ))}
@@ -702,13 +703,13 @@ function IntegrationOperationsBoard({
   if (!payload) return null;
   const copy = INTEGRATION_COPY[locale] ?? INTEGRATION_COPY.en;
   return (
-    <section className="smx-panel overflow-hidden" aria-live="polite">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 px-4 py-3 dark:border-white/10">
+    <section className="overflow-hidden border-t border-line" aria-live="polite">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div>
-          <h3 className="text-[14px] font-semibold text-ink">{copy.title}</h3>
-          <p className="mt-1 text-[12px] text-ink-secondary">{copy.subtitle}</p>
+          <h3 className="text-base font-semibold text-ink">{copy.title}</h3>
+          <p className="mt-1 text-xs text-ink-secondary">{copy.subtitle}</p>
         </div>
-        <span className={clsx("rounded-full border px-2.5 py-1 text-[11px] font-semibold", integrationTone(payload.overall_status))}>
+        <span className={clsx("rounded-full border px-2.5 py-1 text-xs font-semibold", integrationTone(payload.overall_status))}>
           {copy[payload.overall_status as keyof typeof copy] ?? payload.overall_status}
         </span>
       </div>
@@ -717,12 +718,12 @@ function IntegrationOperationsBoard({
         <IntegrationSummaryCard label={copy.searchConsole} summary={payload.integrations.search_console} copy={copy} locale={locale} />
       </div>
       {payload.recommendations.length > 0 ? (
-        <div className="border-t border-black/5 px-4 py-3 dark:border-white/10">
-          <p className="text-[12px] font-semibold text-ink">{copy.recommendations}</p>
+        <div className="border-t border-line px-4 py-3">
+          <p className="text-xs font-semibold text-ink">{copy.recommendations}</p>
           <div className="mt-2 space-y-2">
             {payload.recommendations.map((recommendation) => (
-              <div key={`${recommendation.integration}-${recommendation.code}`} className="flex gap-2 text-[12px] leading-5 text-ink-secondary">
-                <span className={clsx("mt-1.5 h-2 w-2 shrink-0 rounded-full", recommendation.priority === "critical" ? "bg-rose-500" : recommendation.priority === "high" ? "bg-amber-500" : "bg-brand")} aria-hidden />
+              <div key={`${recommendation.integration}-${recommendation.code}`} className="flex gap-2 text-xs leading-5 text-ink-secondary">
+                <span className={clsx("mt-1.5 h-2 w-2 shrink-0 rounded-full", recommendation.priority === "critical" ? "bg-danger" : recommendation.priority === "high" ? "bg-warning" : "bg-brand")} aria-hidden />
                 <p>{INTEGRATION_ACTION_COPY[locale]?.[recommendation.code as keyof typeof INTEGRATION_ACTION_COPY.en] ?? recommendation.message}</p>
               </div>
             ))}
@@ -843,16 +844,16 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
     <section className="smx-page flex min-h-full flex-col gap-4">
       <header className="smx-page-header">
         <div className="min-w-0">
-          <p className="text-[12px] font-medium text-ink-tertiary">{t("monitoring.subtitle") || "Review backend service health"}</p>
+          <p className="text-xs font-medium text-ink-tertiary">{t("monitoring.subtitle")}</p>
           <h2 className="smx-page-title">
-            {t("monitoring.title") || "System Monitoring"}
+            {t("monitoring.title")}
           </h2>
         </div>
 
         <div className="smx-toolbar shrink-0">
           {lastCheckTime ? (
-            <span className="px-2 text-[12px] font-medium text-ink-secondary">
-              {t("monitoring.lastCheck") || "Last Check"}: {lastCheckTime}
+            <span className="px-2 text-xs font-medium text-ink-secondary">
+              {t("monitoring.lastCheck")}: {lastCheckTime}
             </span>
           ) : null}
           <Button variant="outlined" size="sm" onClick={refresh}>
@@ -865,12 +866,12 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[1, 2, 3, 4].map((item) => (
-              <div key={item} className="smx-panel h-[118px] animate-pulse" />
+              <div key={item} className="h-[90px] animate-pulse border-t border-line bg-ink/[0.02]" />
             ))}
           </div>
           <div className="grid gap-3 lg:grid-cols-3">
             {[1, 2, 3].map((item) => (
-              <div key={item} className="smx-panel h-[154px] animate-pulse" />
+              <div key={item} className="h-[120px] animate-pulse border-t border-line bg-ink/[0.02]" />
             ))}
           </div>
         </>
@@ -933,7 +934,7 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
           <IntegrationOperationsBoard payload={integrationOperations} locale={locale} />
           {integrationOperationsUnavailable ? (
             <section
-              className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-800 dark:text-amber-200"
+              className="border-s-2 border-s-warning px-4 py-3 text-sm text-warning"
               role="status"
             >
               {(INTEGRATION_COPY[locale] ?? INTEGRATION_COPY.en).unavailable}
@@ -943,30 +944,30 @@ export function MonitoringPanel({ token }: MonitoringPanelProps) {
           <IncidentInbox incidents={incidents} copy={incidentCopy} locale={locale} />
 
           {GRAFANA_URL ? (
-            <section className="smx-panel overflow-hidden">
-              <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
-                <h3 className="text-[14px] font-semibold text-ink">{t("monitoring.grafana") || "Grafana Dashboard"}</h3>
+            <section className="overflow-hidden border-t border-line">
+              <div className="border-b border-line px-4 py-3">
+                <h3 className="text-base font-semibold text-ink">{t("monitoring.grafana")}</h3>
               </div>
               <iframe
                 src={GRAFANA_URL}
-                title="Grafana Dashboard"
+                title={t("monitoring.grafana")}
                 className="h-[520px] w-full border-0 bg-transparent"
                 loading="lazy"
               />
             </section>
           ) : (
-            <section className="smx-panel flex items-center justify-between gap-4 px-4 py-3">
+            <section className="flex items-center justify-between gap-4 border-t border-line py-4">
               <div className="min-w-0">
-                <h3 className="text-[14px] font-semibold text-ink">{t("monitoring.grafana") || "Grafana Dashboard"}</h3>
-                <p className="mt-1 text-[12px] text-ink-tertiary">
-                  {t("monitoring.grafanaSetup") || "Grafana dashboard is not configured."}
+                <h3 className="text-base font-semibold text-ink">{t("monitoring.grafana")}</h3>
+                <p className="mt-1 text-xs text-ink-tertiary">
+                  {t("monitoring.grafanaSetup")}
                 </p>
-                <p className="mt-1 text-[12px] text-ink-secondary">
-                  {(health?.version ? `v${health.version}` : t("monitoring.statusUnknown")) || "Unknown"}
+                <p className="mt-1 text-xs text-ink-secondary">
+                  {health?.version ? `v${health.version}` : t("monitoring.statusUnknown")}
                 </p>
               </div>
-              <span className="shrink-0 rounded-full border border-black/5 bg-black/[0.03] px-2.5 py-1 text-[11px] font-medium text-ink-secondary dark:border-white/10 dark:bg-white/[0.05]">
-                {t("monitoring.offline") || "Offline"}
+              <span className="shrink-0 text-xs font-medium text-ink-muted">
+                {t("monitoring.offline")}
               </span>
             </section>
           )}

@@ -21,10 +21,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fa" dir="rtl" className="macos-app-bg" suppressHydrationWarning>
-      <body className="macos-app-bg">
+    <html lang="fa" dir="rtl" suppressHydrationWarning>
+      <body>
         <div id="toast-root" />
-        <div id="app-root" className="macos-app-bg min-h-screen">
+        <div id="app-root" className="min-h-screen bg-[rgb(var(--bg-primary))]">
           <AppProviders>{children}</AppProviders>
         </div>
       </body>

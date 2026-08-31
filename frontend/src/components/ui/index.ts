@@ -1,4 +1,3 @@
-// Barrel export for all shared UI components
 export { InputField } from "./input-field";
 export type { InputFieldProps } from "./input-field";
 export { SelectDropdown } from "./select-dropdown";
@@ -7,23 +6,13 @@ export { Button } from "./button";
 export type { ButtonProps } from "./button";
 export { StatusBadge, StatusDot } from "./status-badge";
 export type { StatusBadgeProps, BadgeVariant } from "./status-badge";
-export { MetricCard } from "./metric-card";
-export type { MetricCardProps } from "./metric-card";
 export { ToastProvider, useToast } from "./toast";
 export type { ToastVariant } from "./toast";
-export { SkeletonLoader, SkeletonRows } from "./skeleton-loader";
-export type { SkeletonLoaderProps } from "./skeleton-loader";
 export { EmptyState, EmptyIllustration } from "./empty-state";
 export type { EmptyStateProps } from "./empty-state";
 export { Modal } from "./modal";
 export type { ModalProps } from "./modal";
 export { ToggleSwitch } from "./toggle-switch";
 export type { ToggleSwitchProps } from "./toggle-switch";
-export { TabBar } from "./tab-bar";
-export type { TabBarProps, TabItem } from "./tab-bar";
-export { Tooltip } from "./tooltip";
-export type { TooltipProps } from "./tooltip";
 export { ProgressBar } from "./progress-bar";
 export type { ProgressBarProps } from "./progress-bar";
-export { RoleGuard, useUserRole, useHasRole } from "./role-guard";
-export type { RoleGuardProps } from "./role-guard";

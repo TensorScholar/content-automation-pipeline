@@ -21,12 +21,7 @@ import { InputField } from "@/components/ui/input-field";
 import { SelectDropdown } from "@/components/ui/select-dropdown";
 import type { SelectOption } from "@/components/ui/select-dropdown";
 
-/* ═══════════════════════════════════════════════════════════════
-   Spec: Screen 3 — Projects Page (Apple/Linear SaaS UI Tier)
-   Architecture: 100vh Master-Detail split layout (NO SCROLL)
-   - Left (30%): macOS-style Sidebar Project List
-   - Right (70%): Tabbed Editor (Zero layout shift, Spatial Forms)
-   ═══════════════════════════════════════════════════════════════ */
+/* Projects workspace: master list + contextual configuration and operational state. */
 
 interface ProjectsPanelProps {
   token: string;
@@ -52,8 +47,8 @@ const VERTICAL_OPTIONS = [
 
 const READINESS_COPY = {
   en: {
-    tab: "Flight Check",
-    title: "Project Flight Check",
+    tab: "Readiness",
+    title: "Project readiness",
     subtitle: "Operational readiness for generation and publishing.",
     loading: "Checking project readiness...",
     refresh: "Run check",
@@ -625,11 +620,9 @@ function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () =
 /* ── Workspace illustration for empty state ── */
 function FolderIllustration() {
   return (
-    <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-teal-50 to-teal-100/60 shadow-sm border border-teal-100/50">
-      <svg viewBox="0 0 48 48" fill="none" className="h-10 w-10 text-teal-600">
-        <path d="M4 12C4 9.79086 5.79086 8 8 8H18.8284C19.8893 8 20.9067 8.42143 21.6569 9.17157L24 11.5147M24 11.5147L26.3431 13.8579C27.0933 14.608 28.1107 15.0294 29.1716 15.0294H40C42.2091 15.0294 44 16.8203 44 19.0294V36C44 38.2091 42.2091 40 40 40H8C5.79086 40 4 38.2091 4 36V12Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M14 26H28" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
-        <path d="M14 32H22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+    <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center text-ink-tertiary">
+      <svg viewBox="0 0 48 48" fill="none" className="h-10 w-10" aria-hidden>
+        <path d="M5 13a4 4 0 0 1 4-4h10l5 5h15a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V13Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </div>
   );
@@ -691,7 +684,17 @@ export function ProjectsPanel({
   // Kebab Menu State
   const [kebabOpen, setKebabOpen] = useState(false);
   const kebabRef = useRef<HTMLDivElement>(null);
+  const searchConsoleRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useClickOutside(kebabRef, () => setKebabOpen(false));
+
+  useEffect(() => {
+    return () => {
+      if (searchConsoleRefreshTimerRef.current !== null) {
+        globalThis.clearTimeout(searchConsoleRefreshTimerRef.current);
+        searchConsoleRefreshTimerRef.current = null;
+      }
+    };
+  }, [selectedProjectId]);
 
   const selectedProject = useMemo(
     () => projects.find((p) => p.id === selectedProjectId) ?? null,
@@ -974,7 +977,11 @@ export function ProjectsPanel({
       await apiRequest(`/projects/${selectedProject.id}/search-console/sync`, { method: "POST", token, body: {}, timeoutMs: 15000 });
       showToast("success", searchConsoleCopy.syncing);
       await refreshSearchConsole();
-      globalThis.setTimeout(() => {
+      if (searchConsoleRefreshTimerRef.current !== null) {
+        globalThis.clearTimeout(searchConsoleRefreshTimerRef.current);
+      }
+      searchConsoleRefreshTimerRef.current = globalThis.setTimeout(() => {
+        searchConsoleRefreshTimerRef.current = null;
         void refreshSearchConsole();
         void refreshPerformance();
         void refreshSeoIntelligence();
@@ -1098,19 +1105,16 @@ export function ProjectsPanel({
      ═══════════════════════════════════════════════════════════════ */
   if (projects.length === 0) {
     return (
-      <section className="animate-fade-in flex min-h-[calc(100vh-96px)] items-center justify-center p-4">
-        <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-black/5 bg-white p-8 dark:border-white/10 dark:bg-surface">
-          {/* Subtle gradient orb for Apple feel */}
-          <div className="pointer-events-none absolute inset-inline-start-0 top-0 h-1 w-full bg-teal-600/70" />
-
-          <div className="text-center mb-8 relative z-10">
+      <section className="smx-page flex min-h-[calc(100dvh-110px)] items-center justify-center">
+        <div className="w-full max-w-[520px] py-10">
+          <div className="mb-8 text-center">
             <FolderIllustration />
-            <h2 className="mb-2 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.emptyTitle")}</h2>
-            <p className="text-[14px] text-slate-500 dark:text-gray-400">{t("projects.emptySubtitle")}</p>
+            <h2 className="mb-2 text-xl font-semibold text-ink">{t("projects.emptyTitle")}</h2>
+            <p className="text-base leading-[22px] text-ink-secondary">{t("projects.emptySubtitle")}</p>
           </div>
 
           {canManageProjects ? (
-          <form className="space-y-6 relative z-10" onSubmit={onCreate}>
+          <form className="space-y-6" onSubmit={onCreate}>
             <div className="space-y-4">
               <InputField
                 label={t("projects.projectName")}
@@ -1147,11 +1151,12 @@ export function ProjectsPanel({
                   onChange={(e) => setNewProject((p) => ({ ...p, customVertical: e.target.value }))}
                 />
               )}
-              <div className="flex flex-col gap-[6px]">
-                <label className="text-[13px] font-semibold text-slate-700 dark:text-gray-200">{t("projects.description")}</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-ink-secondary">{t("projects.description")}</label>
                 <textarea
+                  aria-label={t("projects.description")}
                   placeholder={t("projects.descriptionPlaceholder")}
-                  className="min-h-[100px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100 dark:placeholder:text-gray-400"
+                  className="smx-input min-h-[100px] w-full resize-none"
                   value={newProject.description}
                   onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                 />
@@ -1163,7 +1168,7 @@ export function ProjectsPanel({
             </Button>
           </form>
           ) : (
-            <p className="relative z-10 rounded-lg border border-black/5 bg-slate-50 px-4 py-3 text-center text-[13px] text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
+            <p className="border-s-2 border-warning bg-warning-subtle px-4 py-3 text-center text-sm text-warning">
               {t("toast.accessDenied")}
             </p>
           )}
@@ -1176,7 +1181,7 @@ export function ProjectsPanel({
      STATE B: MASTER-DETAIL (1+ Projects)
      ═══════════════════════════════════════════════════════════════ */
   return (
-    <section className="smx-page !max-w-none grid min-h-full min-w-0 items-start gap-4 lg:grid-cols-[272px_minmax(0,1fr)]">
+    <section className="smx-page !max-w-none !py-0 grid min-h-full min-w-0 items-start lg:grid-cols-[240px_minmax(0,1fr)]">
 
       {/* Delete confirmation modal */}
       <Modal
@@ -1204,7 +1209,7 @@ export function ProjectsPanel({
           </>
         }
       >
-        <p className="text-[14px] text-slate-600 dark:text-gray-300 leading-relaxed">{t("projects.confirmDeleteMsg")}</p>
+        <p className="text-base text-ink-secondary leading-relaxed">{t("projects.confirmDeleteMsg")}</p>
       </Modal>
 
       <Modal
@@ -1235,14 +1240,15 @@ export function ProjectsPanel({
         }
       >
         <div className="space-y-3">
-          <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">
+          <p className="text-sm leading-5 text-ink-secondary">
             {performanceCopy.importSubtitle}
           </p>
-          <code className="block overflow-x-auto rounded-md bg-black/[0.04] px-3 py-2 text-[12px] text-slate-700 dark:bg-white/[0.06] dark:text-gray-200" dir="ltr">
+          <code className="block overflow-x-auto rounded-md bg-ink/[0.04] px-3 py-2 text-xs text-ink-secondary" dir="ltr">
             {performanceCopy.importColumns}
           </code>
           <textarea
-            className="min-h-[220px] w-full resize-y rounded-xl border border-black/5 bg-white px-3 py-3 font-mono text-[13px] leading-5 text-slate-900 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100 dark:placeholder:text-gray-500"
+            aria-label={performanceCopy.importTitle}
+            className="min-h-[220px] w-full resize-y rounded-xl border border-line bg-surface px-3 py-3 font-mono text-sm leading-5 text-ink outline-none transition-colors duration-150 placeholder:text-ink-muted focus:border-brand focus:ring-1 focus:ring-brand/20"
             placeholder={performanceCopy.importPlaceholder}
             value={performanceCsv}
             onChange={(event) => setPerformanceCsv(event.target.value)}
@@ -1252,14 +1258,15 @@ export function ProjectsPanel({
         </div>
       </Modal>
 
-      {/* ── LEFT COLUMN (MASTER: macOS style sidebar list) ── */}
-      <aside className="smx-panel relative z-10 flex max-h-[280px] min-h-[220px] min-w-0 flex-col overflow-hidden lg:sticky lg:top-0 lg:max-h-[calc(100dvh-126px)]">
-        <header className="smx-section-header h-[52px] shrink-0">
-          <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.title")}</h2>
+      {/* Project list */}
+      <aside className="relative z-10 flex max-h-[280px] min-h-[220px] min-w-0 flex-col overflow-hidden border-e border-line bg-[rgb(var(--bg-secondary)/0.55)] lg:sticky lg:top-0 lg:max-h-[calc(100dvh-96px)]">
+        <header className="flex h-[52px] shrink-0 items-center justify-between gap-3 border-b border-line px-4">
+          <h2 className="text-base font-semibold text-ink">{t("projects.title")}</h2>
           <div className="flex items-center gap-1.5">
-            <button
+            <button type="button"
               onClick={() => void onProjectsRefresh()}
-              className="h-8 w-8 flex items-center justify-center rounded-md text-slate-400 hover:bg-black/5 hover:text-slate-700 dark:text-gray-500 dark:hover:bg-white/10 dark:hover:text-gray-200 transition-all duration-200"
+              className="smx-icon-button !h-8 !w-8"
+              aria-label={t("common.refresh")}
               title={t("common.refresh")}
             >
               <svg className="w-[15px] h-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1268,13 +1275,14 @@ export function ProjectsPanel({
             </button>
             {canManageProjects && (
               <>
-                <div className="w-[1px] h-4 bg-black/5 dark:bg-white/10 mx-0.5" />
-                <button
+                <div className="w-[1px] h-4 bg-ink/[0.06] mx-0.5" />
+                <button type="button"
                   onClick={() => {
                     setNewProject({ name: "", domain: "", vertical: VERTICAL_OPTIONS[0].value, customVertical: "", description: "" });
                     onSelectProject("__new__");
                   }}
-                  className="h-8 w-8 flex items-center justify-center rounded-md text-teal-600 bg-teal-500/10 hover:bg-teal-500/20 transition-all duration-200"
+                  className="flex h-8 w-8 items-center justify-center rounded-md bg-brand text-white transition-colors hover:bg-brand-hover"
+                  aria-label={t("projects.createNew")}
                   title={t("projects.createNew")}
                 >
                   <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1287,27 +1295,27 @@ export function ProjectsPanel({
         </header>
 
         {/* The Seamless List */}
-        <div className="flex-1 overflow-y-auto py-3">
+        <div className="flex-1 overflow-y-auto py-2">
           {projects.map((project) => (
-            <button
+            <button type="button"
               key={project.id}
               onClick={() => onSelectProject(project.id)}
               className={clsx(
-                "w-full text-start px-6 py-3 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] relative group focus:outline-none",
+                "group relative w-full px-4 py-3 text-start transition-colors duration-fast",
                 selectedProjectId === project.id
-                  ? "bg-brand/[0.08] shadow-[inset_3px_0_0_0_rgb(var(--color-primary))] dark:bg-brand/[0.12]"
-                  : "bg-transparent hover:bg-slate-900/5 focus:bg-slate-900/5 dark:hover:bg-white/[0.08] dark:focus:bg-white/[0.08]" // Native feel hover
+                  ? "bg-ink/[0.055]"
+                  : "bg-transparent hover:bg-ink/[0.035]"
               )}
             >
               <div className="flex items-center justify-between gap-2 mb-0.5">
-                <span className={clsx("truncate text-[14px]", selectedProjectId === project.id ? "font-semibold text-brand dark:text-teal-200" : "font-medium text-slate-900 group-hover:text-black dark:text-gray-200 dark:group-hover:text-white")}>
+                <span className={clsx("truncate text-base", selectedProjectId === project.id ? "font-semibold text-ink" : "font-medium text-ink-secondary group-hover:text-ink")}>
                   {project.name}
                 </span>
                 {project.wordpress_url && (
-                  <span className={clsx("shrink-0 rounded-[4px] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", selectedProjectId === project.id ? "bg-teal-100 text-teal-700 dark:bg-teal-400/15 dark:text-teal-200" : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-gray-400")}>WP</span>
+                  <span className={clsx("shrink-0 text-xs font-medium", selectedProjectId === project.id ? "text-success" : "text-ink-tertiary")}>WP</span>
                 )}
               </div>
-              <span className={clsx("truncate block text-[12px]", selectedProjectId === project.id ? "text-teal-700/80 font-medium dark:text-teal-200/80" : "text-slate-500 dark:text-gray-400")} dir="ltr">
+              <span className={clsx("truncate block text-xs", selectedProjectId === project.id ? "text-ink-secondary" : "text-ink-tertiary")} dir="ltr">
                 {project.domain || t("projects.noDomain")}
               </span>
             </button>
@@ -1316,13 +1324,13 @@ export function ProjectsPanel({
       </aside>
 
       {/* ── RIGHT COLUMN (DETAIL) ── */}
-      <main className="smx-panel min-w-0 overflow-hidden">
+      <main className="min-w-0 overflow-hidden">
 
         {selectedProjectId === "__new__" ? (
           // Create Mode
-          <div className="p-6 md:p-8">
+          <div className="p-6 lg:p-8">
             <div className="max-w-xl">
-              <h3 className="mb-6 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{t("projects.createNew")}</h3>
+              <h3 className="mb-6 text-xl font-semibold text-ink">{t("projects.createNew")}</h3>
               <form className="space-y-6" onSubmit={onCreate}>
                 <div className="space-y-4">
                   <InputField
@@ -1360,18 +1368,19 @@ export function ProjectsPanel({
                       onChange={(e) => setNewProject((p) => ({ ...p, customVertical: e.target.value }))}
                     />
                   )}
-                  <div className="flex flex-col gap-[6px]">
-                    <label className="text-[13px] font-semibold text-slate-700 dark:text-gray-200">{t("projects.description")}</label>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium text-ink-secondary">{t("projects.description")}</label>
                     <textarea
+                      aria-label={t("projects.description")}
                       placeholder={t("projects.descriptionPlaceholder")}
-                      className="min-h-[100px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100 dark:placeholder:text-gray-400"
+                      className="smx-input min-h-[100px] w-full resize-none"
                       value={newProject.description}
                       onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                     />
                   </div>
                 </div>
 
-                <div className="flex flex-row gap-3 pt-6 border-block-start border-black/5 dark:border-white/10">
+                <div className="flex flex-row gap-2 border-block-start border-line pt-5">
                   <Button type="button" variant="outlined" onClick={() => onSelectProject(projects[0]?.id || null)} size="lg">
                     {t("common.cancel")}
                   </Button>
@@ -1385,30 +1394,30 @@ export function ProjectsPanel({
         ) : selectedProject ? (
           // View/Edit Mode
           <>
-            <header className="flex flex-col border-block-end border-black/5 dark:border-white/10 shrink-0">
-              <div className="flex min-w-0 items-start justify-between gap-4 px-6 pb-4 pt-6">
+            <header className="flex shrink-0 flex-col border-block-end border-line">
+              <div className="flex min-w-0 items-start justify-between gap-4 px-6 pb-4 pt-7 lg:px-8">
                 <div className="min-w-0 flex-1">
-                  <h2 className="mb-1.5 truncate text-[18px] font-semibold leading-none tracking-tight text-slate-900 dark:text-gray-100">{selectedProject.name}</h2>
-                  <p className="truncate text-[13px] font-medium text-slate-500 dark:text-gray-400" dir="ltr">{selectedProject.domain || ""}</p>
+                  <h2 className="mb-1.5 truncate text-xl font-semibold leading-6 text-ink">{selectedProject.name}</h2>
+                  <p className="truncate text-sm text-ink-tertiary" dir="ltr">{selectedProject.domain || ""}</p>
                 </div>
 
-                {/* ── Polished Kebab Kenu ── */}
+                {/* Project actions */}
                 {canManageProjects && <div className="relative shrink-0" ref={kebabRef}>
-                  <button
+                  <button type="button"
                     onClick={() => setKebabOpen(!kebabOpen)}
                     className={clsx(
                       "flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200",
-                      kebabOpen ? "bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-gray-100" : "text-slate-400 hover:text-slate-700 hover:bg-slate-50 dark:text-gray-500 dark:hover:text-gray-200 dark:hover:bg-white/10"
+                      kebabOpen ? "bg-ink/[0.055] text-ink" : "text-ink-muted hover:bg-ink/[0.045] hover:text-ink"
                     )}
-                    aria-label="More options"
+                    aria-label={t("common.moreOptions")}
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
                   </button>
                   {kebabOpen && (
-                    <div className="absolute top-full inset-inline-end-0 z-50 mt-1 w-48 origin-top-right animate-fade-in rounded-xl border border-black/5 bg-white py-1 dark:border-white/10 dark:bg-surface-alt">
-                      <button
+                    <div className="absolute top-full inset-inline-end-0 z-50 mt-1 w-48 origin-top-right animate-fade-in rounded-xl border border-line bg-surface py-1">
+                      <button type="button"
                         onClick={() => { setKebabOpen(false); setDeleteConfirmId(selectedProject.id); }}
-                        className="w-full text-start px-4 py-2 text-[13px] font-medium text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10 flex items-center gap-2 transition-colors duration-fast"
+                        className="w-full text-start px-4 py-2 text-sm font-medium text-danger hover:bg-danger-subtle flex items-center gap-2 transition-colors duration-fast"
                       >
                         <svg className="w-[14px] h-[14px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                         {t("common.delete")}
@@ -1418,8 +1427,8 @@ export function ProjectsPanel({
                 </div>}
               </div>
 
-              <div className="overflow-x-auto px-6">
-                <div className="flex min-w-max border-b border-black/5 dark:border-white/10">
+              <div className="overflow-x-auto px-6 lg:px-8">
+                <div className="flex min-w-max gap-5">
                   {[
                     { id: "readiness", label: readinessCopy.tab },
                     { id: "general", label: t("projects.tabGeneral") },
@@ -1427,14 +1436,14 @@ export function ProjectsPanel({
                     { id: "performance", label: performanceCopy.tab },
                     { id: "rules", label: t("projects.tabRules") },
                   ].map((tab) => (
-                    <button
+                    <button type="button"
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id as ProjectTab)}
                       className={clsx(
-                        "min-h-10 border-b-2 px-4 py-2 text-center text-[12px] font-semibold leading-4 transition-colors duration-150",
+                        "min-h-10 border-b-2 px-0.5 py-2 text-center text-sm font-medium leading-5 transition-colors duration-fast",
                         activeTab === tab.id
-                          ? "border-teal-500 text-teal-700 dark:border-teal-300 dark:text-teal-200"
-                          : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:text-gray-400 dark:hover:border-white/20 dark:hover:text-gray-100"
+                          ? "border-brand text-ink"
+                          : "border-transparent text-ink-tertiary hover:text-ink"
                       )}
                     >
                       {tab.label}
@@ -1444,7 +1453,7 @@ export function ProjectsPanel({
               </div>
             </header>
 
-            <div className="relative min-w-0 p-6">
+            <div className="relative min-w-0 p-6 lg:p-8">
               {activeTab === "readiness" && (
                 <ReadinessTab
                   copy={readinessCopy}
@@ -1523,23 +1532,23 @@ export function ProjectsPanel({
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   TAB COMPONENTS — Form Containment and Spatial Grouping
+   Project detail sections
    ═══════════════════════════════════════════════════════════════ */
 
 function readinessStatusClasses(status: string) {
   if (status === "ready" || status === "pass") {
-    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+    return "border-success/20 bg-success/10 text-success";
   }
   if (status === "blocked" || status === "fail") {
-    return "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300";
+    return "border-danger/20 bg-danger/10 text-danger";
   }
-  return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  return "border-warning/20 bg-warning/10 text-warning";
 }
 
 function readinessDotClasses(status: string) {
-  if (status === "ready" || status === "pass") return "bg-emerald-500";
-  if (status === "blocked" || status === "fail") return "bg-red-500";
-  return "bg-amber-400";
+  if (status === "ready" || status === "pass") return "bg-success";
+  if (status === "blocked" || status === "fail") return "bg-danger";
+  return "bg-warning";
 }
 
 function ReadinessTab({
@@ -1584,14 +1593,14 @@ function ReadinessTab({
       <section className="smx-panel-subtle p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
-            <h3 className="mt-1 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">
+            <p className="text-xs font-medium text-ink-muted">{copy.subtitle}</p>
+            <h3 className="mt-1 text-xl font-semibold tracking-tight text-ink">
               {copy.title}
             </h3>
           </div>
           <div className="flex items-center gap-2">
             {readiness && (
-              <span className={clsx("inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-[12px] font-semibold", readinessStatusClasses(displayStatus ?? "warning"))}>
+              <span className={clsx("inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-semibold", readinessStatusClasses(displayStatus ?? "warning"))}>
                 <span className={clsx("h-2 w-2 rounded-full", readinessDotClasses(displayStatus ?? "warning"))} aria-hidden />
                 {statusLabel}
               </span>
@@ -1603,13 +1612,13 @@ function ReadinessTab({
         </div>
 
         {loading && !readiness && (
-          <div className="mt-5 rounded-lg border border-black/5 bg-slate-50 px-4 py-3 text-[13px] font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
+          <div className="mt-5 rounded-lg border border-line bg-surface-alt px-4 py-3 text-sm font-medium text-ink-secondary">
             {copy.loading}
           </div>
         )}
 
         {error && (
-          <div className="mt-5 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] font-medium text-red-700 dark:text-red-300" role="alert">
+          <div className="mt-5 rounded-lg border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger" role="alert">
             {copy.failed} {localizeProjectError(error, locale)}
           </div>
         )}
@@ -1621,16 +1630,16 @@ function ReadinessTab({
                 className={clsx(
                   "rounded-xl border p-4",
                   canGenerateForDisplay
-                    ? "border-emerald-500/20 bg-emerald-500/[0.06]"
-                    : "border-red-500/20 bg-red-500/[0.06]"
+                    ? "border-success/20 bg-success/[0.06]"
+                    : "border-danger/20 bg-danger/[0.06]"
                 )}
               >
-                <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.canGenerate}</p>
-                <p className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-gray-100">
+                <p className="text-xs font-medium text-ink-muted">{copy.canGenerate}</p>
+                <p className="mt-2 text-lg font-semibold text-ink">
                   {canGenerateForDisplay ? copy.available : copy.unavailable}
                 </p>
                 {!canGenerateForDisplay && generationBlocker && (
-                  <p className="mt-2 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                  <p className="mt-2 text-xs leading-5 text-ink-muted">
                     {localizeReadinessText(generationBlocker.message, locale)}
                   </p>
                 )}
@@ -1639,22 +1648,22 @@ function ReadinessTab({
                 className={clsx(
                   "rounded-xl border p-4",
                   readiness.can_publish
-                    ? "border-emerald-500/20 bg-emerald-500/[0.06]"
-                    : "border-amber-500/20 bg-amber-500/[0.06]"
+                    ? "border-success/20 bg-success/[0.06]"
+                    : "border-warning/20 bg-warning/[0.06]"
                 )}
               >
-                <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.canPublish}</p>
-                <p className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-gray-100">
+                <p className="text-xs font-medium text-ink-muted">{copy.canPublish}</p>
+                <p className="mt-2 text-lg font-semibold text-ink">
                   {readiness.can_publish ? copy.available : copy.unavailable}
                 </p>
                 {!readiness.can_publish && publishingBlocker && (
-                  <p className="mt-2 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                  <p className="mt-2 text-xs leading-5 text-ink-muted">
                     {localizeReadinessText(publishingBlocker.message, locale)}
                   </p>
                 )}
               </div>
             </div>
-            <p className="mt-4 text-[12px] text-slate-500 dark:text-gray-400">
+            <p className="mt-4 text-xs text-ink-muted">
               {copy.lastChecked}: {formatReadinessDate(readiness.last_checked_at, locale)}
             </p>
           </>
@@ -1663,25 +1672,25 @@ function ReadinessTab({
 
       {readiness && (
         <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-          <div className="min-w-0 rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
-            <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
-              <h4 className="text-[14px] font-semibold text-slate-900 dark:text-gray-100">{copy.allChecks}</h4>
+          <div className="min-w-0 rounded-xl border border-line bg-surface">
+            <div className="border-b border-line px-4 py-3">
+              <h4 className="text-base font-semibold text-ink">{copy.allChecks}</h4>
             </div>
-            <div className="divide-y divide-black/5 dark:divide-white/10">
+            <div className="divide-y divide-line">
               {readiness.checks.map((check) => (
                 <div key={check.id} className="grid gap-3 px-4 py-3 sm:grid-cols-[160px_minmax(0,1fr)]">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className={clsx("h-2 w-2 shrink-0 rounded-full", readinessDotClasses(check.status))} aria-hidden />
-                    <span className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100">
+                    <span className="truncate text-sm font-semibold text-ink">
                       {localizeReadinessLabel(check.id, check.label, locale)}
                     </span>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">
+                    <p className="text-sm leading-5 text-ink-secondary">
                       {localizeReadinessText(check.message, locale)}
                     </p>
                     {check.remediation && (
-                      <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                      <p className="mt-1 text-xs leading-5 text-ink-muted">
                         {localizeReadinessText(check.remediation, locale)}
                       </p>
                     )}
@@ -1692,23 +1701,23 @@ function ReadinessTab({
           </div>
 
           <aside className="min-w-0 space-y-4">
-            <div className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-surface-alt">
-              <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.blockers}</h4>
-              <p className="mt-2 text-[20px] font-semibold tabular-nums text-slate-900 dark:text-gray-100">
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <h4 className="text-sm font-semibold text-ink">{copy.blockers}</h4>
+              <p className="mt-2 text-metric font-semibold tabular-nums text-ink">
                 {readiness.blocking_items.length}
               </p>
             </div>
-            <div className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-surface-alt">
-              <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.warnings}</h4>
-              <p className="mt-2 text-[20px] font-semibold tabular-nums text-slate-900 dark:text-gray-100">
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <h4 className="text-sm font-semibold text-ink">{copy.warnings}</h4>
+              <p className="mt-2 text-metric font-semibold tabular-nums text-ink">
                 {readiness.warnings.length}
               </p>
             </div>
-            <div className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/10 dark:bg-surface-alt">
-              <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.actions}</h4>
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <h4 className="text-sm font-semibold text-ink">{copy.actions}</h4>
               <div className="mt-3 space-y-2">
                 {readiness.manager_actions.length === 0 ? (
-                  <p className="text-[12px] text-slate-500 dark:text-gray-400">{copy.noActions}</p>
+                  <p className="text-xs text-ink-muted">{copy.noActions}</p>
                 ) : (
                   readiness.manager_actions.map((action) => (
                     <Button
@@ -1740,12 +1749,12 @@ function ReadinessTab({
 
 function performanceSeverityClasses(severity: string) {
   if (severity === "high") {
-    return "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300";
+    return "border-danger/20 bg-danger/10 text-danger";
   }
   if (severity === "medium") {
-    return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    return "border-warning/20 bg-warning/10 text-warning";
   }
-  return "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  return "border-info/20 bg-info-subtle text-info";
 }
 
 function performanceTypeLabel(copy: typeof PERFORMANCE_COPY.en, type: string) {
@@ -1805,10 +1814,10 @@ function SeoIntelligenceCard({
 }) {
   const localeName = locale === "fa" ? "fa-IR" : locale === "ar" ? "ar-SA" : "en-US";
   if (loading && !payload) {
-    return <section className="smx-panel-subtle animate-pulse px-5 py-6 text-[13px] text-slate-500 dark:text-gray-400">{copy.loading}</section>;
+    return <section className="smx-panel-subtle animate-pulse px-5 py-6 text-sm text-ink-muted">{copy.loading}</section>;
   }
   if (error && !payload) {
-    return <section className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-5 py-4 text-[13px] text-amber-800 dark:text-amber-200" role="alert">{copy.failed} {localizeProjectError(error, locale)}</section>;
+    return <section className="rounded-xl border border-warning/20 bg-warning/10 px-5 py-4 text-sm text-warning" role="alert">{copy.failed} {localizeProjectError(error, locale)}</section>;
   }
   if (!payload) return null;
 
@@ -1821,13 +1830,13 @@ function SeoIntelligenceCard({
   const nextActionCopy = SEO_NEXT_ACTION_COPY[locale] ?? SEO_NEXT_ACTION_COPY.en;
   return (
     <section className="smx-panel-subtle overflow-hidden" aria-live="polite">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-black/5 px-5 py-4 dark:border-white/10">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-4">
         <div>
-          <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
-          <h3 className="mt-1 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">{copy.title}</h3>
-          <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">{copy.safe}</p>
+          <p className="text-xs font-medium text-ink-muted">{copy.subtitle}</p>
+          <h3 className="mt-1 text-xl font-semibold tracking-tight text-ink">{copy.title}</h3>
+          <p className="mt-1 text-xs text-ink-muted">{copy.safe}</p>
         </div>
-        <span className={clsx("rounded-full border px-2.5 py-1 text-[11px] font-semibold", payload.data_quality.status === "good" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : payload.data_quality.status === "insufficient" ? "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300" : "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300")}>
+        <span className={clsx("rounded-full border px-2.5 py-1 text-xs font-semibold", payload.data_quality.status === "good" ? "border-success/20 bg-success/10 text-success" : payload.data_quality.status === "insufficient" ? "border-danger/20 bg-danger-subtle text-danger" : "border-warning/20 bg-warning/10 text-warning")}>
           {copy.dataQuality}: {dataStatusLabel}
         </span>
       </div>
@@ -1836,24 +1845,24 @@ function SeoIntelligenceCard({
         <PerformanceSummaryCard label={copy.coverage} value={`${new Intl.NumberFormat(localeName).format(coverage)}%`} />
         <PerformanceSummaryCard label={copy.highPriority} value={payload.portfolio.high_priority_count} tone={payload.portfolio.high_priority_count > 0 ? "warning" : "default"} />
       </div>
-      <div className="border-t border-black/5 px-5 py-4 dark:border-white/10">
-        <h4 className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">{copy.queue}</h4>
+      <div className="border-t border-line px-5 py-4">
+        <h4 className="text-sm font-semibold text-ink">{copy.queue}</h4>
         {payload.recommended_queue.length === 0 ? (
-          <p className="mt-3 text-[13px] text-slate-500 dark:text-gray-400">{copy.noQueue}</p>
+          <p className="mt-3 text-sm text-ink-muted">{copy.noQueue}</p>
         ) : (
           <div className="mt-3 space-y-2">
             {payload.recommended_queue.slice(0, 5).map((item) => (
-              <article key={item.opportunity_id} className="flex items-start gap-3 rounded-xl border border-black/5 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-500/10 text-[12px] font-bold text-teal-700 dark:text-teal-200">{item.rank}</span>
+              <article key={item.opportunity_id} className="flex items-start gap-3 rounded-xl border border-line bg-surface px-3 py-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-bold text-brand">{item.rank}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100">{item.article_title || item.url}</p>
-                    <span className="rounded-md bg-black/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-white/[0.07] dark:text-gray-300">{item.priority_score}/100</span>
+                    <p className="truncate text-sm font-semibold text-ink">{item.article_title || item.url}</p>
+                    <span className="rounded-md bg-ink/[0.04] px-2 py-0.5 text-xs font-semibold text-ink-secondary">{item.priority_score}/100</span>
                   </div>
-                  <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-gray-400">
+                  <p className="mt-1 text-xs leading-5 text-ink-muted">
                     {nextActionCopy[item.type as keyof typeof SEO_NEXT_ACTION_COPY.en] ?? item.next_action?.title ?? item.type}
                   </p>
-                  <p className="mt-1 text-[11px] text-slate-400 dark:text-gray-500">{Math.round(item.confidence * 100)}% {copy.confidence}</p>
+                  <p className="mt-1 text-xs text-ink-muted">{Math.round(item.confidence * 100)}% {copy.confidence}</p>
                 </div>
               </article>
             ))}
@@ -1861,7 +1870,7 @@ function SeoIntelligenceCard({
         )}
       </div>
       {payload.data_quality.warnings.length > 0 ? (
-        <details className="border-t border-black/5 px-5 py-3 text-[12px] text-slate-600 dark:border-white/10 dark:text-gray-300">
+        <details className="border-t border-line px-5 py-3 text-xs text-ink-secondary">
           <summary className="cursor-pointer font-medium">{copy.dataQuality} ({payload.data_quality.warnings.length})</summary>
           <ul className="mt-2 space-y-1.5">
             {payload.data_quality.warnings.map((warning) => (
@@ -1960,8 +1969,8 @@ function PerformanceTab({
       <section className="smx-panel-subtle p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
-            <h3 className="mt-1 text-[18px] font-semibold tracking-tight text-slate-900 dark:text-gray-100">
+            <p className="text-xs font-medium text-ink-muted">{copy.subtitle}</p>
+            <h3 className="mt-1 text-xl font-semibold tracking-tight text-ink">
               {copy.title}
             </h3>
           </div>
@@ -1978,13 +1987,13 @@ function PerformanceTab({
         </div>
 
         {loading && !feedback && (
-          <div className="mt-5 rounded-lg border border-black/5 bg-slate-50 px-4 py-3 text-[13px] font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
+          <div className="mt-5 rounded-lg border border-line bg-surface-alt px-4 py-3 text-sm font-medium text-ink-secondary">
             {copy.loading}
           </div>
         )}
 
         {error && (
-          <div className="mt-5 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] font-medium text-red-700 dark:text-red-300" role="alert">
+          <div className="mt-5 rounded-lg border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger" role="alert">
             {copy.failed} {localizeProjectError(error, locale)}
           </div>
         )}
@@ -1997,21 +2006,21 @@ function PerformanceTab({
             <PerformanceSummaryCard
               label={copy.latestImport}
               value={feedback.summary.latest_imported_at ? formatShortDate(feedback.summary.latest_imported_at, locale) : copy.noImport}
-              valueClassName="text-[14px]"
+              valueClassName="text-base"
             />
           </div>
         )}
       </section>
 
       {feedback && !hasData && !loading && (
-        <section className="rounded-xl border border-dashed border-black/10 bg-white p-6 text-center dark:border-white/15 dark:bg-surface-alt">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-teal-500/15 bg-teal-500/10 text-teal-700 dark:text-teal-200">
+        <section className="rounded-xl border border-dashed border-line bg-surface p-6 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-brand/15 bg-brand/10 text-brand">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 19V5m0 14h16M8 16v-5m4 5V8m4 8v-7" />
             </svg>
           </div>
-          <h4 className="text-[15px] font-semibold text-slate-900 dark:text-gray-100">{copy.emptyTitle}</h4>
-          <p className="mx-auto mt-2 max-w-xl text-[13px] leading-5 text-slate-500 dark:text-gray-400">
+          <h4 className="text-body-lg font-semibold text-ink">{copy.emptyTitle}</h4>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-5 text-ink-muted">
             {copy.emptyBody}
           </p>
           {canManageProjects && (
@@ -2024,14 +2033,14 @@ function PerformanceTab({
 
       {feedback && hasData && (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
-            <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
-              <h4 className="text-[14px] font-semibold text-slate-900 dark:text-gray-100">{copy.opportunitiesTitle}</h4>
+          <div className="rounded-xl border border-line bg-surface">
+            <div className="border-b border-line px-4 py-3">
+              <h4 className="text-base font-semibold text-ink">{copy.opportunitiesTitle}</h4>
             </div>
             {feedback.opportunities.length === 0 ? (
-              <p className="px-4 py-6 text-[13px] leading-5 text-slate-500 dark:text-gray-400">{copy.noOpportunities}</p>
+              <p className="px-4 py-6 text-sm leading-5 text-ink-muted">{copy.noOpportunities}</p>
             ) : (
-              <div className="divide-y divide-black/5 dark:divide-white/10">
+              <div className="divide-y divide-line">
                 {feedback.opportunities.map((opportunity) => (
                   <PerformanceOpportunityCard
                     key={opportunity.id}
@@ -2046,14 +2055,14 @@ function PerformanceTab({
             )}
           </div>
 
-          <aside className="rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-alt">
-            <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
-              <h4 className="text-[14px] font-semibold text-slate-900 dark:text-gray-100">{copy.recentSnapshots}</h4>
+          <aside className="rounded-xl border border-line bg-surface">
+            <div className="border-b border-line px-4 py-3">
+              <h4 className="text-base font-semibold text-ink">{copy.recentSnapshots}</h4>
             </div>
             {feedback.snapshots.length === 0 ? (
-              <p className="px-4 py-5 text-[13px] leading-5 text-slate-500 dark:text-gray-400">{copy.noSnapshots}</p>
+              <p className="px-4 py-5 text-sm leading-5 text-ink-muted">{copy.noSnapshots}</p>
             ) : (
-              <div className="divide-y divide-black/5 dark:divide-white/10">
+              <div className="divide-y divide-line">
                 {feedback.snapshots.slice(0, 8).map((snapshot) => (
                   <PerformanceSnapshotRow key={snapshot.id} copy={copy} locale={locale} snapshot={snapshot} />
                 ))}
@@ -2101,34 +2110,34 @@ function SearchConsoleCard({
     label: item.site_url,
   }));
   const statusTone = latestRun?.status === "failed"
-    ? "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300"
+    ? "border-danger/20 bg-danger/10 text-danger"
     : latestRun?.status === "succeeded"
-      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-      : "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+      ? "border-success/20 bg-success/10 text-success"
+      : "border-info/20 bg-info/10 text-info";
   return (
     <section className="smx-panel-subtle p-5" aria-labelledby="search-console-title">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 id="search-console-title" className="text-[16px] font-semibold text-slate-900 dark:text-gray-100">{copy.title}</h3>
-            <span className="rounded-md border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 text-[11px] font-semibold text-teal-700 dark:text-teal-200">{copy.readOnly}</span>
+            <h3 id="search-console-title" className="text-lg font-semibold text-ink">{copy.title}</h3>
+            <span className="rounded-md border border-brand/20 bg-brand/10 px-2 py-0.5 text-xs font-semibold text-brand">{copy.readOnly}</span>
             <span className={clsx(
-              "rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+              "rounded-md border px-2 py-0.5 text-xs font-semibold",
               status?.connected
-                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                : "border-black/10 bg-black/[0.03] text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-400",
+                ? "border-success/20 bg-success/10 text-success"
+                : "border-line bg-ink/[0.03] text-ink-muted",
             )}>
               {status?.connected ? copy.connected : copy.disconnected}
             </span>
           </div>
-          <p className="mt-2 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-gray-400">{copy.subtitle}</p>
+          <p className="mt-2 max-w-2xl text-xs leading-5 text-ink-muted">{copy.subtitle}</p>
         </div>
         <Button variant="outlined" size="sm" loading={loading} onClick={onRefresh}>{PERFORMANCE_COPY[locale].refresh}</Button>
       </div>
 
-      {loading && !status && <p className="mt-4 text-[13px] text-slate-500 dark:text-gray-400">{copy.loading}</p>}
-      {error && <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300" role="alert">{error}</div>}
-      {status && !status.configured && <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300">{copy.notConfigured}</div>}
+      {loading && !status && <p className="mt-4 text-sm text-ink-muted">{copy.loading}</p>}
+      {error && <div className="mt-4 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">{error}</div>}
+      {status && !status.configured && <div className="mt-4 rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning">{copy.notConfigured}</div>}
 
       {status?.configured && !status.connected && canManageProjects && (
         <Button className="mt-4" variant="primary" size="sm" loading={action === "connect"} onClick={onConnect}>{copy.connect}</Button>
@@ -2154,9 +2163,9 @@ function SearchConsoleCard({
               )}
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/5 bg-slate-50 px-3 py-3 dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="min-w-0 text-[12px] text-slate-500 dark:text-gray-400">
-              <span className="font-semibold text-slate-700 dark:text-gray-200">{copy.lastSync}: </span>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface-alt px-3 py-3">
+            <div className="min-w-0 text-xs text-ink-muted">
+              <span className="font-semibold text-ink-secondary">{copy.lastSync}: </span>
               {status.last_sync_at ? formatReadinessDate(status.last_sync_at, locale) : copy.never}
               {latestRun && (
                 <span className={clsx("ms-2 inline-flex rounded-md border px-2 py-0.5 font-semibold", statusTone)}>
@@ -2173,7 +2182,7 @@ function SearchConsoleCard({
             )}
           </div>
           {(status.last_error_message || latestRun?.error_message) && (
-            <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300" role="alert">
+            <div className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
               {status.last_error_message || latestRun?.error_message}
             </div>
           )}
@@ -2195,12 +2204,12 @@ function PerformanceSummaryCard({
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-xl border border-black/5 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
-      <p className="text-[12px] font-medium text-slate-500 dark:text-gray-400">{label}</p>
+    <div className="rounded-xl border border-line bg-surface-alt p-4">
+      <p className="text-xs font-medium text-ink-muted">{label}</p>
       <p className={clsx(
-        "mt-2 truncate font-semibold tabular-nums text-slate-900 dark:text-gray-100",
-        typeof value === "number" ? "text-[22px]" : "text-[15px]",
-        tone === "warning" && "text-amber-700 dark:text-amber-300",
+        "mt-2 truncate font-semibold tabular-nums text-ink",
+        typeof value === "number" ? "text-2xl" : "text-body-lg",
+        tone === "warning" && "text-warning",
         valueClassName,
       )}>
         {typeof value === "number" ? formatCompactNumber(value) : value}
@@ -2233,15 +2242,15 @@ function PerformanceOpportunityCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className={clsx("inline-flex items-center rounded-lg border px-2.5 py-1 text-[12px] font-semibold", performanceSeverityClasses(opportunity.severity))}>
+            <span className={clsx("inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-semibold", performanceSeverityClasses(opportunity.severity))}>
               {copy.severity[opportunity.severity as keyof typeof copy.severity] ?? opportunity.severity}
             </span>
-            <span className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">
+            <span className="text-sm font-semibold text-ink">
               {performanceTypeLabel(copy, opportunity.type)}
             </span>
           </div>
-          <p className="text-[13px] leading-5 text-slate-600 dark:text-gray-300">{opportunity.reason}</p>
-          <p className="mt-1 text-[13px] leading-5 text-slate-500 dark:text-gray-400">{opportunity.suggested_action}</p>
+          <p className="text-sm leading-5 text-ink-secondary">{opportunity.reason}</p>
+          <p className="mt-1 text-sm leading-5 text-ink-muted">{opportunity.suggested_action}</p>
         </div>
         {canManageProjects && (
           <Button variant="ghost" size="sm" loading={dismissing} onClick={onDismiss}>
@@ -2263,7 +2272,7 @@ function PerformanceOpportunityCard({
         {position !== null && <PerformancePill label={copy.position} value={formatFixedNumber(position)} />}
       </div>
 
-      <p className="mt-3 truncate text-[12px] text-slate-400 dark:text-gray-500" dir="ltr">
+      <p className="mt-3 truncate text-xs text-ink-muted" dir="ltr">
         {opportunity.url}
       </p>
     </article>
@@ -2272,9 +2281,9 @@ function PerformanceOpportunityCard({
 
 function PerformancePill({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1 rounded-lg border border-black/5 bg-slate-50 px-2.5 py-1 text-[12px] dark:border-white/10 dark:bg-white/[0.04]">
-      <span className="shrink-0 text-slate-400 dark:text-gray-500">{label}</span>
-      <span className="min-w-0 truncate font-semibold text-slate-700 dark:text-gray-200">{value}</span>
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-lg border border-line bg-surface-alt px-2.5 py-1 text-xs">
+      <span className="shrink-0 text-ink-muted">{label}</span>
+      <span className="min-w-0 truncate font-semibold text-ink-secondary">{value}</span>
     </span>
   );
 }
@@ -2290,10 +2299,10 @@ function PerformanceSnapshotRow({
 }) {
   return (
     <div className="px-4 py-3">
-      <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-gray-100" dir="ltr">
+      <p className="truncate text-sm font-semibold text-ink" dir="ltr">
         {snapshot.url}
       </p>
-      <p className="mt-1 text-[12px] text-slate-500 dark:text-gray-400">
+      <p className="mt-1 text-xs text-ink-muted">
         {copy.period}: {formatShortDate(snapshot.date_from, locale)} - {formatShortDate(snapshot.date_to, locale)}
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -2308,9 +2317,9 @@ function PerformanceSnapshotRow({
 
 function PerformanceMiniMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-black/5 bg-slate-50 px-2.5 py-2 dark:border-white/10 dark:bg-white/[0.04]">
-      <p className="text-[11px] font-medium text-slate-400 dark:text-gray-500">{label}</p>
-      <p className="mt-1 text-[13px] font-semibold tabular-nums text-slate-900 dark:text-gray-100">{value}</p>
+    <div className="rounded-lg border border-line bg-surface-alt px-2.5 py-2">
+      <p className="text-xs font-medium text-ink-muted">{label}</p>
+      <p className="mt-1 text-sm font-semibold tabular-nums text-ink">{value}</p>
     </div>
   );
 }
@@ -2424,11 +2433,12 @@ function GeneralTab({
             }))}
           />
         )}
-        <div className="flex flex-col gap-[6px]">
-          <label className="text-[13px] font-semibold text-slate-700 dark:text-gray-200">{t("projects.description")}</label>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-ink-secondary">{t("projects.description")}</label>
           <textarea
+            aria-label={t("projects.description")}
             disabled={!canManageProjects}
-            className="min-h-[120px] w-full resize-none rounded-xl border border-black/5 bg-white px-3 py-2 text-[14px] text-slate-900 outline-none transition-colors duration-150 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-surface-alt dark:text-gray-100"
+            className="min-h-[120px] w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 text-base text-ink outline-none transition-colors duration-150 focus:border-brand focus:ring-1 focus:ring-brand/20 disabled:cursor-not-allowed disabled:opacity-60"
             value={draft.description}
             onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
           />
@@ -2507,11 +2517,11 @@ function WordPressTab({
   return (
     <div className="max-w-2xl animate-fade-in">
       <div className="mb-6">
-        <h3 className="mb-1 text-[15px] font-bold text-slate-900 dark:text-gray-100">{t("projects.tabWordpress")}</h3>
-        <p className="text-[13px] font-medium text-slate-500 dark:text-gray-400 leading-relaxed">{t("projects.wpSubtitle")}</p>
+        <h3 className="mb-1 text-body-lg font-bold text-ink">{t("projects.tabWordpress")}</h3>
+        <p className="text-sm text-ink-tertiary leading-relaxed">{t("projects.wpSubtitle")}</p>
       </div>
 
-      {/* Form Spatial Containment */}
+      {/* WordPress settings */}
       <div className="space-y-6 smx-panel-subtle p-5 md:p-6">
         <InputField
           label={t("projects.wpUrl")}
@@ -2540,7 +2550,7 @@ function WordPressTab({
           />
         </div>
 
-        <div className="flex justify-end gap-3 pt-6 border-block-start border-black/5 dark:border-white/10">
+        <div className="flex justify-end gap-3 pt-6 border-block-start border-line">
           <Button variant="outlined" loading={testing} onClick={() => void testConnection()}>{t("projects.wpTestConnection")}</Button>
           {canManageProjects && (
             <Button variant="primary" loading={saving} onClick={() => void save()} className="min-w-[120px]">
@@ -2603,22 +2613,23 @@ function RulebookTab({
     <div className="flex flex-col h-full max-w-4xl animate-fade-in relative pb-16">
 
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-[13px] font-medium text-slate-500 dark:text-gray-400">{t("projects.rulebookEmpty")}</p>
+        <p className="text-sm text-ink-tertiary">{t("projects.rulebookEmpty")}</p>
       </div>
 
-      {/* AI-Native Smart Container */}
-      <div className="group relative flex min-h-[400px] flex-1 flex-col overflow-hidden rounded-xl border border-black/5 bg-white transition-colors duration-150 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/20 dark:border-white/10 dark:bg-surface-alt dark:focus-within:bg-surface">
+      {/* Rulebook editor */}
+      <div className="group relative flex min-h-[400px] flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface transition-colors duration-150 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20">
 
           <textarea
+            aria-label={t("projects.rulebook")}
             disabled={loading || !canManageProjects}
-            className="w-full h-full flex-1 bg-transparent p-6 text-[14px] text-slate-900 dark:text-gray-100 leading-relaxed outline-none border-none resize-y disabled:opacity-50"
+            className="w-full h-full flex-1 bg-transparent p-6 text-base text-ink leading-relaxed outline-none border-none resize-y disabled:opacity-50"
             value={rulebook}
             onChange={(e) => setRulebook(e.target.value)}
             placeholder={rulebookPlaceholder}
           />
       </div>
 
-      {/* Primary Action Button (Spatially separated from the textarea) */}
+      {/* Save action */}
       {canManageProjects && (
         <div className="absolute bottom-0 inset-inline-end-0 flex justify-end">
           <Button

@@ -6,11 +6,11 @@
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3001",
-    "beforeDevCommand": "sh -c 'curl -fsS http://127.0.0.1:3001 >/dev/null || npm run dev'",
+    "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build:tauri"
   },
   "app": {
-    "macOSPrivateApi": true,
+    "macOSPrivateApi": false,
     "windows": [
       {
         "title": "Smarlux Content OS",
@@ -21,13 +21,18 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "transparent": true,
+        "transparent": false,
         "titleBarStyle": "Transparent",
         "hiddenTitle": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://*.smarlux.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8000 http://localhost:8000 https://*.smarlux.com; frame-src 'self' http://127.0.0.1:* http://localhost:* https://*.smarlux.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+      }
     }
   },
   "bundle": {

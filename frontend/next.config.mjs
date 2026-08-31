@@ -6,6 +6,8 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   devIndicators: false,
+  // Tauri ships a static export; local UI assets must not depend on Next's image optimizer server.
+  images: { unoptimized: true },
   ...(staticExport
     ? {
         output: "export"
