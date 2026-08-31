@@ -81,7 +81,8 @@ assert(csp.includes("object-src 'none'"), "CSP object-src is not locked down");
 assert(csp.includes("base-uri 'none'"), "CSP base-uri is not locked down");
 
 // Trilingual generation must alter the actual request instruction, not just the UI selector.
-const studio = fs.readFileSync(path.join(root, "src/components/panels/content-studio-panel.tsx"), "utf8");
+const studioFiles = files.filter((f) => f.includes("src/components/panels/studio") || f.includes("src/components/panels/content-studio"));
+const studio = studioFiles.map((f) => textByFile.get(f) ?? fs.readFileSync(f, "utf8")).join("\n");
 assert(studio.includes('ar: "Output language must be Arabic."'), "Arabic generation instruction is missing");
 assert(studio.includes('fa: "Output language must be Persian (Farsi)."'), "Persian generation instruction is missing");
 assert(studio.includes('en: "Output language must be English."'), "English generation instruction is missing");
