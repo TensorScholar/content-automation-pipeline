@@ -1,36 +1,26 @@
 import type { Config } from "tailwindcss";
 
-/* ═══════════════════════════════════════════════════════════════════
-   SMARLUX CONTENT OS — Design Token System (Tailwind)
-   Spec: Smarlux_UI_Master_Redesign_Prompt.md
-   Deep Teal brand · macOS system typography · 4px grid
-   ═══════════════════════════════════════════════════════════════════ */
-
+/**
+ * Smarlux Composition Desk design tokens.
+ * CSS variables in app/globals.css are canonical; Tailwind exposes semantic aliases only.
+ */
 const config: Config = {
   darkMode: "class",
-  content: [
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  content: ["./app/**/*.{js,ts,jsx,tsx,mdx}", "./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
-
-      /* ─── Color System ─────────────────────────────────────── */
       colors: {
-        /* Brand */
         brand: {
           DEFAULT: "rgb(var(--color-brand) / <alpha-value>)",
           hover: "rgb(var(--color-brand-hover) / <alpha-value>)",
           light: "rgb(var(--color-brand-light) / <alpha-value>)",
           accent: "rgb(var(--color-brand-accent) / <alpha-value>)",
         },
-        /* Legacy aliases — keep for backward compat during migration */
         accent: {
           DEFAULT: "rgb(var(--color-brand) / <alpha-value>)",
           hover: "rgb(var(--color-brand-hover) / <alpha-value>)",
           subtle: "rgb(var(--color-brand-light) / <alpha-value>)",
         },
-        /* Surfaces */
         surface: {
           DEFAULT: "rgb(var(--color-surface) / <alpha-value>)",
           alt: "rgb(var(--color-surface-alt) / <alpha-value>)",
@@ -39,21 +29,25 @@ const config: Config = {
           elevated: "rgb(var(--color-surface) / <alpha-value>)",
           sunken: "rgb(var(--color-surface-tertiary) / <alpha-value>)",
         },
-        /* Text */
         ink: {
           DEFAULT: "rgb(var(--color-text-primary) / <alpha-value>)",
           secondary: "rgb(var(--color-text-secondary) / <alpha-value>)",
-          tertiary: "rgb(var(--color-text-placeholder) / <alpha-value>)",
+          muted: "rgb(var(--color-text-muted) / <alpha-value>)",
+          tertiary: "rgb(var(--color-text-muted) / <alpha-value>)",
           inverse: "rgb(255 255 255 / <alpha-value>)",
         },
-        /* Borders */
+        line: "rgb(var(--color-border) / var(--color-border-alpha))",
         border: {
-          DEFAULT: "rgb(var(--color-border) / <alpha-value>)",
-          secondary: "rgb(var(--color-border) / <alpha-value>)",
+          DEFAULT: "rgb(var(--color-border) / var(--color-border-alpha))",
+          strong: "rgb(var(--color-border) / var(--color-border-strong-alpha))",
+          secondary: "rgb(var(--color-border) / var(--color-border-alpha))",
           focus: "rgb(var(--color-brand) / <alpha-value>)",
         },
-        /* Status */
         danger: {
+          DEFAULT: "rgb(var(--color-error) / <alpha-value>)",
+          subtle: "rgb(var(--color-error-subtle) / <alpha-value>)",
+        },
+        error: {
           DEFAULT: "rgb(var(--color-error) / <alpha-value>)",
           subtle: "rgb(var(--color-error-subtle) / <alpha-value>)",
         },
@@ -69,92 +63,58 @@ const config: Config = {
           DEFAULT: "rgb(var(--color-info) / <alpha-value>)",
           subtle: "rgb(var(--color-info-subtle) / <alpha-value>)",
         },
-        /* macOS glassmorphism pivot tokens */
-        macos: {
-          app: "rgb(var(--macos-app-bg) / <alpha-value>)",
-          glass: "rgb(var(--macos-glass-bg) / <alpha-value>)",
-          "glass-border": "rgb(var(--macos-glass-border) / <alpha-value>)",
-          "segment-bg": "rgb(var(--macos-segment-bg) / <alpha-value>)",
-          "shadow-ring": "rgb(var(--macos-shadow-ring) / <alpha-value>)",
-          light: {
-            app: "#f5f5f7",
-            glass: "rgb(255 255 255 / 0.7)",
-            border: "rgb(0 0 0 / 0.05)",
-            segment: "rgb(0 0 0 / 0.05)",
-          },
-          dark: {
-            app: "#151515",
-            glass: "rgb(30 30 30 / 0.8)",
-            border: "rgb(255 255 255 / 0.1)",
-            segment: "rgb(255 255 255 / 0.1)",
-          },
-        },
       },
-
-      /* ─── Typography ───────────────────────────────────────── */
       fontFamily: {
         sans: ["var(--font-family-system)"],
-        persian: ["var(--font-family-farsi)"],
-        mono: ["\"SF Mono\"", "ui-monospace", "Menlo", "Consolas", "monospace"],
+        rtl: ["var(--font-family-rtl)"],
+        mono: ["SFMono-Regular", "ui-monospace", "Menlo", "Consolas", "monospace"],
       },
       fontSize: {
-        "display-2xl": ["var(--text-2xl-size)", { lineHeight: "var(--text-2xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "700" }],
-        "display-xl": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
-        "display-lg": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
-        "heading-lg": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
-        "heading-md": ["var(--text-lg-size)", { lineHeight: "var(--text-lg-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "500" }],
-        "heading-sm": ["var(--text-base-size)", { lineHeight: "var(--text-base-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "500" }],
-        "body-lg": ["var(--text-lg-size)", { lineHeight: "var(--text-lg-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "500" }],
-        "body-md": ["var(--text-base-size)", { lineHeight: "var(--text-base-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "400" }],
-        "body-sm": ["var(--text-xs-size)", { lineHeight: "var(--text-xs-line)", letterSpacing: "var(--letter-spacing-normal)", fontWeight: "400" }],
+        "display-hero": ["var(--text-hero-size)", { lineHeight: "var(--text-hero-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "500" }],
+        "display-lg": ["var(--text-display-size)", { lineHeight: "var(--text-display-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
+        "display-2xl": ["var(--text-2xl-size)", { lineHeight: "var(--text-2xl-line)", letterSpacing: "var(--letter-spacing-tight)", fontWeight: "600" }],
+        metric: ["var(--text-metric-size)", { lineHeight: "var(--text-metric-line)", fontWeight: "600" }],
+        "metric-lead": ["var(--text-metric-lead-size)", { lineHeight: "var(--text-metric-lead-line)", fontWeight: "600" }],
+        "metric-support": ["var(--text-metric-support-size)", { lineHeight: "var(--text-metric-support-line)", fontWeight: "600" }],
+        "display-xl": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", fontWeight: "600" }],
+        "heading-lg": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", fontWeight: "600" }],
+        "heading-md": ["var(--text-lg-size)", { lineHeight: "var(--text-lg-line)", fontWeight: "600" }],
+        "heading-sm": ["var(--text-base-size)", { lineHeight: "var(--text-base-line)", fontWeight: "600" }],
+        "page-title": ["var(--text-2xl-size)", { lineHeight: "var(--text-2xl-line)", fontWeight: "600" }],
+        "object-title": ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)", fontWeight: "600" }],
+        "section-title": ["var(--text-section-size)", { lineHeight: "var(--text-section-line)", fontWeight: "600" }],
+        "doc-body": ["var(--text-doc-size)", { lineHeight: "var(--text-doc-line)", fontWeight: "400" }],
+        "body-lg": ["var(--text-doc-size)", { lineHeight: "var(--text-doc-line)", fontWeight: "400" }],
+        "body-md": ["var(--text-base-size)", { lineHeight: "var(--text-base-line)", fontWeight: "400" }],
+        "body-sm": ["var(--text-sm-size)", { lineHeight: "var(--text-sm-line)", fontWeight: "400" }],
+        controls: ["var(--text-sm-size)", { lineHeight: "var(--text-sm-line)", fontWeight: "500" }],
+        metadata: ["var(--text-xs-size)", { lineHeight: "var(--text-xs-line)", fontWeight: "400" }],
+        xs: ["var(--text-xs-size)", { lineHeight: "var(--text-xs-line)" }],
+        sm: ["var(--text-sm-size)", { lineHeight: "var(--text-sm-line)" }],
+        base: ["var(--text-base-size)", { lineHeight: "var(--text-base-line)" }],
+        lg: ["var(--text-lg-size)", { lineHeight: "var(--text-lg-line)" }],
+        xl: ["var(--text-xl-size)", { lineHeight: "var(--text-xl-line)" }],
+        "2xl": ["var(--text-2xl-size)", { lineHeight: "var(--text-2xl-line)" }],
       },
-
-      /* ─── 4px Base Grid Spacing ────────────────────────────── */
-      spacing: {
-        "0.5": "2px",
-        "1": "4px",
-        "2": "8px",
-        "3": "12px",
-        "4": "16px",
-        "5": "20px",
-        "6": "24px",
-        "8": "32px",
-        "10": "40px",
-        "12": "48px",
-        "16": "64px",
-        "20": "80px",
-        "24": "96px",
-      },
-
-      /* ─── Border Radius (Spec) ─────────────────────────────── */
       borderRadius: {
-        sm: "4px",
-        md: "8px",
-        lg: "10px",
-        xl: "12px",
-        full: "9999px",
+        xs: "var(--radius-xs)",
+        sm: "var(--radius-sm)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-md)",
+        xl: "var(--radius-md)",
+        full: "var(--radius-full)",
+        DEFAULT: "var(--radius-sm)",
       },
-
-      /* ─── Elevation Shadows (Spec) ─────────────────────────── */
       boxShadow: {
-        sm: "0 1px 2px rgba(0,0,0,0.05)",
-        md: "0 4px 6px rgba(0,0,0,0.1)",
-        lg: "0 10px 25px rgba(0,0,0,0.1)",
-        xl: "0 10px 25px rgba(0,0,0,0.1)",
-        "login-card": "0 20px 60px rgba(0,0,0,0.12)",
-        "focus-ring": "0 0 0 2px rgb(255 255 255), 0 0 0 4px rgba(15,148,136,0.95)",
-        "focus-ring-error": "0 0 0 3px rgba(220,38,38,0.10)",
-        "focus-ring-success": "0 0 0 3px rgba(22,163,74,0.10)",
-        "toast": "0 8px 24px rgba(0,0,0,0.12)",
-        /* Legacy aliases */
-        "elevation-1": "0 1px 2px rgba(0,0,0,0.05)",
-        "elevation-2": "0 4px 6px rgba(0,0,0,0.1)",
-        "elevation-3": "0 10px 25px rgba(0,0,0,0.1)",
-        "elevation-4": "0 24px 56px -6px rgba(0,0,0,0.12), 0 8px 20px -4px rgba(0,0,0,0.06)",
-        glass: "0 8px 32px rgba(0,0,0,0.06)",
+        dropdown: "0 4px 16px -4px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.08)",
+        modal: "0 16px 36px -12px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.08)",
+        popover: "0 8px 24px -6px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.06)",
+        toast: "0 12px 28px -8px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.06)",
+        sm: "0 1px 2px rgba(0, 0, 0, 0.04)",
+        md: "0 8px 24px -8px rgba(0, 0, 0, 0.20)",
+        lg: "0 16px 36px -12px rgba(0, 0, 0, 0.24)",
+        xl: "0 24px 48px -16px rgba(0, 0, 0, 0.28)",
       },
-
-      /* ─── Z-Index Scale ────────────────────────────────────── */
       zIndex: {
         dropdown: "10",
         sticky: "20",
@@ -164,77 +124,54 @@ const config: Config = {
         toast: "60",
         tooltip: "70",
       },
-
-      /* ─── Motion Tokens (Spec) ─────────────────────────────── */
       transitionDuration: {
-        fast: "150ms",
-        base: "250ms",
-        normal: "250ms",
-        slow: "350ms",
-        slower: "500ms",
+        fast: "120ms",
+        base: "160ms",
+        normal: "160ms",
+        slow: "220ms",
       },
       transitionTimingFunction: {
-        apple: "cubic-bezier(0.16, 1, 0.3, 1)",
-        spring: "cubic-bezier(0.34, 1.56, 0.64, 1)",
-        smooth: "cubic-bezier(0.16, 1, 0.3, 1)",
+        precise: "cubic-bezier(0.2,0,0,1)",
       },
-
-      /* ─── Layout ───────────────────────────────────────────── */
       maxWidth: {
         content: "72rem",
         narrow: "40rem",
         reading: "48rem",
       },
-
-      /* ─── Keyframes ────────────────────────────────────────── */
       keyframes: {
         "fade-in": {
-          from: { opacity: "0", transform: "translateY(8px)" },
+          from: { opacity: "0", transform: "translateY(3px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
-        "fade-out": {
-          from: { opacity: "1", transform: "translateY(0)" },
-          to: { opacity: "0", transform: "translateY(8px)" },
-        },
+        "fade-out": { from: { opacity: "1" }, to: { opacity: "0" } },
         "slide-down": {
-          from: { opacity: "0", transform: "translateY(-8px)" },
+          from: { opacity: "0", transform: "translateY(-4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "slide-up": {
-          from: { opacity: "0", transform: "translateY(12px)" },
+          from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "slide-in-start": {
-          from: { opacity: "0", transform: "translateX(calc(var(--direction-multiplier, 1) * -16px))" },
+          from: { opacity: "0", transform: "translateX(calc(var(--direction-multiplier) * -6px))" },
           to: { opacity: "1", transform: "translateX(0)" },
         },
         "scale-in": {
-          from: { opacity: "0", transform: "scale(0.95)" },
+          from: { opacity: "0", transform: "scale(.985)" },
           to: { opacity: "1", transform: "scale(1)" },
         },
-        shimmer: {
-          "0%": { backgroundPosition: "-200% 0" },
-          "100%": { backgroundPosition: "200% 0" },
-        },
-        "pulse-soft": {
-          "0%, 100%": { opacity: "0.45" },
-          "50%": { opacity: "0.95" },
-        },
-        "pulse-status": {
-          "0%, 100%": { opacity: "1", transform: "scale(1)" },
-          "50%": { opacity: "0.6", transform: "scale(1.15)" },
-        },
+        "pulse-soft": { "0%,100%": { opacity: ".45" }, "50%": { opacity: ".85" } },
+        "pulse-status": { "0%,100%": { opacity: "1" }, "50%": { opacity: ".48" } },
       },
       animation: {
-        "fade-in": "fade-in 300ms ease-in-out forwards",
-        "fade-out": "fade-out 200ms ease-in-out forwards",
-        "slide-down": "slide-down 200ms ease-in-out forwards",
-        "slide-up": "slide-up 250ms ease-in-out forwards",
-        "slide-in-start": "slide-in-start 300ms ease-in-out forwards",
-        "scale-in": "scale-in 200ms cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
-        shimmer: "shimmer 1.5s ease-in-out infinite",
+        "fade-in": "fade-in 160ms cubic-bezier(0.2,0,0,1) forwards",
+        "fade-out": "fade-out 120ms ease-out forwards",
+        "slide-down": "slide-down 160ms cubic-bezier(0.2,0,0,1) forwards",
+        "slide-up": "slide-up 160ms cubic-bezier(0.2,0,0,1) forwards",
+        "slide-in-start": "slide-in-start 160ms cubic-bezier(0.2,0,0,1) forwards",
+        "scale-in": "scale-in 140ms cubic-bezier(0.2,0,0,1) forwards",
         "pulse-soft": "pulse-soft 1.6s ease-in-out infinite",
-        "pulse-status": "pulse-status 2s ease-in-out infinite",
+        "pulse-status": "pulse-status 1.6s ease-in-out infinite",
       },
     },
   },

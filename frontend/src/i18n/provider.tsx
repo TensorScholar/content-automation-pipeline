@@ -13,7 +13,7 @@ import { Locale, MessageKey } from "./types";
 
 /* ═══════════════════════════════════════════════════════════════════
    Locale Reactivity Engine
-   Spec: All 6 side-effects must fire in < 150ms, zero page reload.
+   Runtime locale changes are synchronous and require zero page reload.
    ═══════════════════════════════════════════════════════════════════ */
 
 interface I18nContextValue {
@@ -27,21 +27,21 @@ const STORAGE_KEY = "smarlux_lang";
 const LEGACY_STORAGE_KEY = "cap.locale";
 const rtlLocales = new Set<Locale>(["fa", "ar"]);
 
-const LOCALE_CONFIG: Record<Locale, { dir: "rtl" | "ltr"; lang: string; fontFamily: string }> = {
-  fa: { dir: "rtl", lang: "fa", fontFamily: "Vazirmatn, sans-serif" },
-  ar: { dir: "rtl", lang: "ar", fontFamily: "Vazirmatn, sans-serif" },
-  en: { dir: "ltr", lang: "en", fontFamily: "'Plus Jakarta Sans', sans-serif" },
+const LOCALE_CONFIG: Record<Locale, { dir: "rtl" | "ltr"; lang: string }> = {
+  fa: { dir: "rtl", lang: "fa" },
+  ar: { dir: "rtl", lang: "ar" },
+  en: { dir: "ltr", lang: "en" },
 };
 
 /**
- * applyLocaleChange — fires all 6 spec-required side-effects synchronously.
+ * applyLocaleChange — applies the locale contract synchronously.
  *
  * 1. document.documentElement.dir = rtl|ltr
  * 2. document.documentElement.lang = fa|ar|en
- * 3. body font-family switches (Vazirmatn for fa/ar, Plus Jakarta Sans for en)
- * 4. Direction-sensitive icons: toggle .rtl-active on <html>
- * 5. Persist to localStorage['smarlux_lang']
- * 6. Trigger i18n re-render (handled by React state update)
+ * 3. Direction-sensitive icons: toggle .rtl-active on <html>
+ * 4. Persist to localStorage['smarlux_lang']
+ * 5. Trigger i18n re-render (handled by React state update)
+ * Typography is intentionally owned by the canonical CSS token system.
  */
 function applyLocaleChange(locale: Locale): void {
   if (typeof document === "undefined") return;
@@ -54,24 +54,21 @@ function applyLocaleChange(locale: Locale): void {
   // 2. lang attribute on <html>
   document.documentElement.setAttribute("lang", config.lang);
 
-  // 3. Font family on <body>
-  document.body.style.fontFamily = config.fontFamily;
-
-  // 4. RTL icon class toggle
+  // 3. RTL icon class toggle
   if (config.dir === "rtl") {
     document.documentElement.classList.add("rtl-active");
   } else {
     document.documentElement.classList.remove("rtl-active");
   }
 
-  // 5. Persist to localStorage
+  // 4. Persist to localStorage
   try {
     localStorage.setItem(STORAGE_KEY, locale);
   } catch {
     // localStorage may be unavailable in some contexts
   }
 
-  // 6. React state triggers re-render (caller's responsibility via setLocale)
+  // 5. React state triggers re-render (caller's responsibility via setLocale)
 }
 
 /** Read persisted locale from localStorage (with legacy fallback) */
@@ -157,13 +154,9 @@ export function __devVerifyLocaleSwitch(): void {
   applyLocaleChange("ar");
   checks.push({ name: "AR: dir=rtl", pass: document.documentElement.dir === "rtl" });
   checks.push({ name: "AR: lang=ar", pass: document.documentElement.lang === "ar" });
-  checks.push({ name: "AR: font=Vazirmatn", pass: document.body.style.fontFamily.includes("Vazirmatn") });
-
   applyLocaleChange("en");
   checks.push({ name: "EN: dir=ltr", pass: document.documentElement.dir === "ltr" });
   checks.push({ name: "EN: lang=en", pass: document.documentElement.lang === "en" });
-  checks.push({ name: "EN: font=Plus Jakarta", pass: document.body.style.fontFamily.includes("Plus Jakarta") });
-
   applyLocaleChange("fa");
   checks.push({ name: "FA: dir=rtl", pass: document.documentElement.dir === "rtl" });
   checks.push({ name: "FA: lang=fa", pass: document.documentElement.lang === "fa" });

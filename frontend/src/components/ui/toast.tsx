@@ -1,118 +1,147 @@
 "use client";
+
 import { createContext, useCallback, useContext, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
+import { useI18n } from "@/i18n/provider";
 
 export type ToastVariant = "success" | "error" | "warning" | "info";
 
 interface ToastItem {
-    id: number;
-    variant: ToastVariant;
-    message: string;
-    exiting?: boolean;
+  id: number;
+  variant: ToastVariant;
+  message: string;
+  exiting?: boolean;
 }
 
 interface ToastContextValue {
-    showToast: (variant: ToastVariant, message: string) => void;
+  showToast: (variant: ToastVariant, message: string) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
-const variantStyles: Record<ToastVariant, string> = {
-    success: "border-emerald-500/[0.15] bg-white text-emerald-700 dark:bg-[#22252a] dark:text-emerald-200",
-    error: "border-rose-500/[0.15] bg-white text-rose-700 dark:bg-[#22252a] dark:text-rose-200",
-    warning: "border-amber-500/[0.15] bg-white text-amber-800 dark:bg-[#22252a] dark:text-amber-200",
-    info: "border-sky-500/[0.15] bg-white text-sky-700 dark:bg-[#22252a] dark:text-sky-200",
-};
-
-const icons: Record<ToastVariant, string> = {
-    success: "✓", error: "✕", warning: "⚠", info: "ℹ",
-};
+function ToastIcon({ variant }: { variant: ToastVariant }) {
+  if (variant === "success") {
+    return (
+      <svg className="h-4 w-4 shrink-0 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+        <path d="m3.5 8.2 2.7 2.7 6.3-6.3" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (variant === "error") {
+    return (
+      <svg className="h-4 w-4 shrink-0 text-danger" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+        <path d="m4.3 4.3 7.4 7.4m0-7.4-7.4 7.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (variant === "warning") {
+    return (
+      <svg className="h-4 w-4 shrink-0 text-warning" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+        <path d="M8 2.4 13.4 12H2.6L8 2.4Z" strokeLinejoin="round" />
+        <path d="M8 5.8v3.1M8 11.2h.01" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="h-4 w-4 shrink-0 text-info" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <circle cx="8" cy="8" r="5.4" />
+      <path d="M8 7.1v3.3M8 5.2h.01" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 let nextId = 0;
 
 function ToastItem({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) => void }) {
-    const timerRef = useRef<number | null>(null);
+  const { t } = useI18n();
+  const timerRef = useRef<number | null>(null);
 
-    useEffect(() => {
-        timerRef.current = window.setTimeout(() => onDismiss(item.id), 4000);
-        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [item.id, onDismiss]);
+  useEffect(() => {
+    timerRef.current = window.setTimeout(() => onDismiss(item.id), 4000);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [item.id, onDismiss]);
 
-    return (
-        <div
-            role="alert"
-            className={clsx(
-                "flex items-center gap-3 rounded-[14px] border px-4 py-3 shadow-[0_18px_45px_-26px_rgb(0_0_0/0.55)]",
-                "transition-all duration-normal",
-                item.exiting ? "animate-fade-out" : "animate-slide-up",
-                variantStyles[item.variant],
-            )}
-        >
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-black/[0.04] text-[12px] font-bold dark:bg-white/[0.07]" aria-hidden>{icons[item.variant]}</span>
-            <p className="flex-1 text-body-md font-medium">{item.message}</p>
-            <button
-                type="button"
-                onClick={() => onDismiss(item.id)}
-                className="shrink-0 rounded-[8px] p-1.5 opacity-[0.55] transition-[background-color,opacity] hover:bg-black/[0.04] hover:opacity-100 focus-visible:outline-none dark:hover:bg-white/[0.06]"
-                aria-label="Dismiss"
-            >
-                ✕
-            </button>
-        </div>
-    );
+  return (
+    <div
+      role="alert"
+      className={clsx(
+        "flex w-full items-center gap-2.5 rounded-md border border-line bg-surface p-3 shadow-md",
+        "transition-all duration-normal",
+        item.exiting ? "animate-fade-out" : "animate-slide-up",
+      )}
+    >
+      <ToastIcon variant={item.variant} />
+      <p className="flex-1 text-sm font-medium text-ink">{item.message}</p>
+      <button
+        type="button"
+        onClick={() => onDismiss(item.id)}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-tertiary hover:bg-ink/[0.05] hover:text-ink focus-visible:outline-none"
+        aria-label={t("common.dismiss")}
+      >
+        <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+          <path d="m4 4 8 8m0-8-8 8" strokeLinecap="round" />
+        </svg>
+      </button>
+    </div>
+  );
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-    const [toasts, setToasts] = useState<ToastItem[]>([]);
-    const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-    const removalTimersRef = useRef<Map<number, number>>(new Map());
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const removalTimersRef = useRef<Map<number, number>>(new Map());
 
-    useEffect(() => {
-        setPortalRoot(document.getElementById("toast-root") ?? document.body);
-    }, []);
+  useEffect(() => {
+    setPortalRoot(document.getElementById("toast-root") ?? document.body);
+  }, []);
 
-    useEffect(() => {
-        const removalTimers = removalTimersRef.current;
-        return () => {
-            removalTimers.forEach((timer) => window.clearTimeout(timer));
-            removalTimers.clear();
-        };
-    }, []);
+  useEffect(() => {
+    const removalTimers = removalTimersRef.current;
+    return () => {
+      removalTimers.forEach((timer) => window.clearTimeout(timer));
+      removalTimers.clear();
+    };
+  }, []);
 
-    const showToast = useCallback((variant: ToastVariant, message: string) => {
-        const id = ++nextId;
-        setToasts(prev => [...prev, { id, variant, message }]);
-    }, []);
+  const showToast = useCallback((variant: ToastVariant, message: string) => {
+    const id = ++nextId;
+    setToasts((prev) => [...prev, { id, variant, message }]);
+  }, []);
 
-    const dismiss = useCallback((id: number) => {
-        setToasts(prev => prev.map(t => t.id === id ? { ...t, exiting: true } : t));
-        const existingTimer = removalTimersRef.current.get(id);
-        if (existingTimer) window.clearTimeout(existingTimer);
-        const timer = window.setTimeout(() => {
-            removalTimersRef.current.delete(id);
-            setToasts(prev => prev.filter(t => t.id !== id));
-        }, 200);
-        removalTimersRef.current.set(id, timer);
-    }, []);
+  const dismiss = useCallback((id: number) => {
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
+    const existingTimer = removalTimersRef.current.get(id);
+    if (existingTimer) window.clearTimeout(existingTimer);
+    const timer = window.setTimeout(() => {
+      removalTimersRef.current.delete(id);
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 200);
+    removalTimersRef.current.set(id, timer);
+  }, []);
 
-    return (
-        <ToastContext.Provider value={{ showToast }}>
-            {children}
-            {portalRoot && createPortal(
-                <div className="pointer-events-none fixed inset-x-4 bottom-5 z-toast flex flex-col items-center gap-2" aria-live="polite">
-                    <div className="pointer-events-auto flex w-full max-w-sm flex-col gap-2">
-                        {toasts.map(t => <ToastItem key={t.id} item={t} onDismiss={dismiss} />)}
-                    </div>
-                </div>,
-                portalRoot,
-            )}
-        </ToastContext.Provider>
-    );
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      {portalRoot &&
+        createPortal(
+          <div className="pointer-events-none fixed inset-x-4 bottom-5 z-toast flex flex-col items-center gap-2" aria-live="polite">
+            <div className="pointer-events-auto flex w-full max-w-[360px] flex-col gap-2">
+              {toasts.map((t) => (
+                <ToastItem key={t.id} item={t} onDismiss={dismiss} />
+              ))}
+            </div>
+          </div>,
+          portalRoot,
+        )}
+    </ToastContext.Provider>
+  );
 }
 
 export function useToast(): ToastContextValue {
-    const ctx = useContext(ToastContext);
-    if (!ctx) throw new Error("useToast must be used inside ToastProvider");
-    return ctx;
+  const ctx = useContext(ToastContext);
+  if (!ctx) throw new Error("useToast must be used inside ToastProvider");
+  return ctx;
 }

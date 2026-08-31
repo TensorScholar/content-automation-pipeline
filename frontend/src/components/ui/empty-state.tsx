@@ -1,35 +1,31 @@
 "use client";
+
 import clsx from "clsx";
 
 export interface EmptyStateProps {
-    illustration?: React.ReactNode;
-    title: string;
-    subtitle?: string;
-    action?: React.ReactNode;
-    className?: string;
+  illustration?: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  className?: string;
 }
 
 export function EmptyState({ illustration, title, subtitle, action, className }: EmptyStateProps) {
-    return (
-        <div className={clsx("flex flex-col items-center justify-center py-12 text-center animate-fade-in", className)} style={{ animationDelay: "100ms" }}>
-            {illustration && <div className="mb-5 rounded-xl border border-black/6 bg-black/[0.02] p-3 dark:border-white/10 dark:bg-white/[0.05]">{illustration}</div>}
-            <h3 className="text-[17px] font-semibold text-ink">{title}</h3>
-            {subtitle && <p className="mt-2 max-w-sm text-[13px] leading-5 text-ink-secondary">{subtitle}</p>}
-            {action && <div className="mt-6">{action}</div>}
-        </div>
-    );
+  return (
+    <div className={clsx("flex max-w-[360px] flex-col items-center justify-center py-10 text-center mx-auto", className)}>
+      {illustration ? <div className="mb-3 text-ink-tertiary">{illustration}</div> : null}
+      <h3 className="text-xl font-semibold text-ink">{title}</h3>
+      {subtitle ? <p className="mt-1 text-sm leading-[18px] text-ink-secondary">{subtitle}</p> : null}
+      {action ? <div className="mt-4">{action}</div> : null}
+    </div>
+  );
 }
 
-/** Default teal SVG illustration for empty states */
 export function EmptyIllustration({ className }: { className?: string }) {
-    return (
-        <svg className={clsx("h-40 w-40 text-brand/20", className)} viewBox="0 0 160 160" fill="none">
-            <circle cx="80" cy="80" r="72" stroke="currentColor" strokeWidth="2" strokeDasharray="8 4" />
-            <rect x="52" y="48" width="56" height="72" rx="8" stroke="currentColor" strokeWidth="2" />
-            <line x1="64" y1="64" x2="96" y2="64" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <line x1="64" y1="76" x2="88" y2="76" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <line x1="64" y1="88" x2="80" y2="88" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <circle cx="80" cy="108" r="4" fill="currentColor" opacity="0.4" />
-        </svg>
-    );
+  return (
+    <svg className={clsx("h-5 w-5 text-ink-tertiary", className)} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <rect x="3" y="2.5" width="14" height="15" rx="2" stroke="currentColor" />
+      <path d="M6.5 6.5h7M6.5 10h7M6.5 13.5h4.5" strokeLinecap="round" />
+    </svg>
+  );
 }

@@ -11,7 +11,14 @@
     "typecheck": "tsc --noEmit --incremental false",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "verify:ui": "node scripts/verify-ui-contract.mjs",
+    "release:check": "npm run verify:static && npm run typecheck && npm run lint && npm run build:tauri",
+    "verify:source": "node scripts/verify-source.mjs",
+    "verify:i18n": "node scripts/verify-i18n.mjs",
+    "verify:syntax": "node scripts/verify-syntax.mjs",
+    "verify:static": "npm run verify:syntax && npm run verify:ui && npm run verify:source && npm run verify:i18n && npm run verify:contrast",
+    "verify:contrast": "node scripts/verify-contrast.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
