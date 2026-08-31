@@ -15,9 +15,19 @@ function walk(dir) {
 }
 walk(path.join(root, "src"));
 const allSource = sourceFiles.map((p) => fs.readFileSync(p, "utf8")).join("\n");
-const studio = read("src/components/panels/content-studio-panel.tsx");
-const tasks = read("src/components/panels/tasks-panel.tsx");
-const projects = read("src/components/panels/projects-panel.tsx");
+function readPanelSource(panel) {
+  const panelFiles = sourceFiles.filter((p) => {
+    if (panel === "content-studio") return p.includes("src/components/panels/studio") || p.includes("src/components/panels/content-studio");
+    return p.includes(`src/components/panels/${panel}`);
+  });
+  const direct = path.join(root, `src/components/panels/${panel}-panel.tsx`);
+  const files = [...panelFiles];
+  if (fs.existsSync(direct) && !files.includes(direct)) files.push(direct);
+  return files.map((p) => fs.readFileSync(p, "utf8")).join("\n");
+}
+const studio = readPanelSource("content-studio");
+const tasks = readPanelSource("tasks");
+const projects = readPanelSource("projects");
 const messages = read("src/i18n/messages.ts");
 const languageToggle = read("src/components/language-toggle.tsx");
 
