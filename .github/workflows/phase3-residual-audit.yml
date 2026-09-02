@@ -13,9 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Audit residual distribution surface
+      - name: Audit final dependency edges
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== generic distribution consumers ==='
-          git grep -n -E 'distributed|distribution_channels|auto_distribute|ContentGenerationRequest|generate_content_workflow|mark_distributed|update_(article_)?distribution' -- api core frontend knowledge orchestration services tests || true
+          for term in \
+            _publishing_service \
+            ArticleResponse \
+            'from api.schemas' \
+            'import api.schemas' \
+            'Distribution management' \
+            'ContentGenerationRequest'
+          do
+            echo "=== ${term} ==="
+            git grep -n -F "${term}" -- ':!.github/workflows/phase3-residual-audit.yml' || true
+          done
