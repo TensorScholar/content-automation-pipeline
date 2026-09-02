@@ -191,7 +191,7 @@ class ContentAgent:
         **kwargs: Any,  # Extended parameters (word_count, tone, seo_settings, etc.)
     ) -> GeneratedArticle:
         """
-        Execute complete content creation workflow from topic to published article.
+        Execute complete content creation workflow from topic to a validated generated article.
         Args:
             project_id: Target project identifier
             topic: High-level content topic/theme
