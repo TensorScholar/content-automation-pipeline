@@ -42,8 +42,8 @@ jobs:
           match = re.search(r'\[\[package\]\]\nname = "transformers"\nversion = "([^"]+)"', lock)
           if match is None:
               raise SystemExit('transformers is missing from poetry.lock')
-          if match.group(1) != '5.10.2':
-              raise SystemExit(f'expected transformers 5.10.2, got {match.group(1)}')
+          if match.group(1) != '5.10.4':
+              raise SystemExit(f'expected transformers 5.10.4, got {match.group(1)}')
           PY
 
       - name: Commit generated lockfile
