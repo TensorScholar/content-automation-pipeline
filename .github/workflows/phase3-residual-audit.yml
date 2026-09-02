@@ -22,6 +22,10 @@ jobs:
             update_article_distribution \
             mark_distributed \
             is_distributed \
+            generate_content_workflow \
+            auto_distribute \
+            ContentGenerationRequest \
+            _distribute_to_wordpress \
             DistributionChannel \
             'DistributionChannel.' \
             distributed_at \
