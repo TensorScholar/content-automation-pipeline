@@ -1,0 +1,33 @@
+name: Phase 3 Content Agent Wording Cleanup
+
+on:
+  push:
+    branches:
+      - refactor/content-agent-generation-boundary
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Align lifecycle wording
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c 'from pathlib import Path; p=Path("orchestration/content_agent.py"); s=p.read_text(); old="Execute complete content creation workflow from topic to published article."; new="Execute complete content creation workflow from topic to a validated generated article."; assert s.count(old)==1; p.write_text(s.replace(old,new,1))'
+          python -m compileall -q orchestration/content_agent.py
+          git diff --check
+      - name: Commit cleanup without temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/phase3-docstring-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "docs: align content agent lifecycle wording"
+          git push origin HEAD:refactor/content-agent-generation-boundary
