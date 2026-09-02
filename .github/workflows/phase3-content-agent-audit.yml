@@ -17,13 +17,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== enable_auto_distribution ==='
-          git grep -n 'enable_auto_distribution' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
-          echo '=== WorkflowState.DISTRIBUTION ==='
-          git grep -n 'WorkflowState.DISTRIBUTION' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
-          echo '=== _distribute_article ==='
-          git grep -n '_distribute_article' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
-          echo '=== ContentAgentConfig( ==='
-          git grep -n 'ContentAgentConfig(' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
-          echo '=== distribution wording in content_agent ==='
-          git grep -n -i 'distribution' -- orchestration/content_agent.py || true
+          for term in \
+            enable_auto_distribution \
+            require_manual_approval \
+            max_generation_retries \
+            enable_pattern_inference \
+            default_priority \
+            'WorkflowState.DISTRIBUTION' \
+            _distribute_article \
+            'ContentAgentConfig(' \
+            max_retries \
+            timeout_seconds \
+            enable_caching
+          do
+            echo "=== ${term} ==="
+            git grep -n -F "${term}" -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
+          done
