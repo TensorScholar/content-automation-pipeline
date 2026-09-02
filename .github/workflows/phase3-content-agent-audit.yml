@@ -1,0 +1,29 @@
+name: Phase 3 Content Agent Audit
+
+on:
+  push:
+    branches:
+      - refactor/content-agent-generation-boundary
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository-wide reference audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== enable_auto_distribution ==='
+          git grep -n 'enable_auto_distribution' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
+          echo '=== WorkflowState.DISTRIBUTION ==='
+          git grep -n 'WorkflowState.DISTRIBUTION' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
+          echo '=== _distribute_article ==='
+          git grep -n '_distribute_article' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
+          echo '=== ContentAgentConfig( ==='
+          git grep -n 'ContentAgentConfig(' -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
+          echo '=== distribution wording in content_agent ==='
+          git grep -n -i 'distribution' -- orchestration/content_agent.py || true
