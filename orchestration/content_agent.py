@@ -6,7 +6,6 @@ Coordinates end-to-end content automation pipeline:
 3. Strategic planning (outline synthesis)
 4. Article generation (parallel section creation)
 5. Quality validation (multi-metric scoring)
-6. Distribution (multi-channel publishing)
 
 Architecture:
     State machine with event sourcing for reproducibility and audit trails.
@@ -28,10 +27,9 @@ from typing import Any, Dict, List, Optional, cast
 from uuid import UUID
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from config.settings import settings
-from core.enums import DistributionChannel
 from core.exceptions import (
     InsufficientContextError,
     ProjectNotFoundError,
@@ -66,7 +64,6 @@ class WorkflowState(str, Enum):
     CONTENT_PLANNING = "content_planning"
     CONTENT_GENERATION = "content_generation"
     QUALITY_VALIDATION = "quality_validation"
-    DISTRIBUTION = "distribution"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -121,10 +118,10 @@ class WorkflowEvent(BaseModel):
 
 
 class ContentAgentConfig(BaseModel):
-    """Configuration for content agent behavior."""
+    """Configuration for content-generation behavior."""
 
-    enable_auto_distribution: bool = False
-    require_manual_approval: bool = False
+    model_config = ConfigDict(extra="forbid")
+
     max_generation_retries: int = 2
     enable_pattern_inference: bool = True
     default_priority: str = "high"
@@ -139,7 +136,6 @@ class ContentAgent:
         3. Strategic Planning: Outline and structure synthesis
         4. Generation: Parallel section creation with quality checks
         5. Validation: Quality scoring and fact verification
-        6. Distribution: Multi-channel publishing (optional)
 
     Design Principles:
         - Event sourcing: Full execution trail for debugging
@@ -182,11 +178,7 @@ class ContentAgent:
         self.current_workflow: Optional[Dict] = None
         self.workflow_events: List[WorkflowEvent] = []
 
-        logger.info(
-            "ContentAgent initialized | "
-            f"auto_distribution={self.config.enable_auto_distribution} | "
-            f"manual_approval={self.config.require_manual_approval}"
-        )
+        logger.info("ContentAgent initialized")
 
     async def create_content(
         self,
@@ -199,7 +191,7 @@ class ContentAgent:
         **kwargs: Any,  # Extended parameters (word_count, tone, seo_settings, etc.)
     ) -> GeneratedArticle:
         """
-        Execute complete content creation workflow from topic to published article.
+        Execute complete content creation workflow from topic to a validated generated article.
         Args:
             project_id: Target project identifier
             topic: High-level content topic/theme
@@ -393,16 +385,6 @@ class ContentAgent:
                 return article
 
             await self.content_generator.finalize_article(article, content_plan)
-
-            # Stage 6: Distribution (if enabled)
-            if self.config.enable_auto_distribution:
-                await self._transition_state(WorkflowState.DISTRIBUTION)
-                channels, results = await self._distribute_article(
-                    article=article, project=project_context["project"]
-                )
-                if channels:
-                    article.distributed_at = datetime.now(timezone.utc)
-                    article.distribution_channels = channels
 
             # Workflow completion
             await self._transition_state(WorkflowState.COMPLETED)
@@ -898,37 +880,6 @@ class ContentAgent:
         )
 
         return article
-
-    async def _distribute_article(
-        self, article: GeneratedArticle, project: Project
-    ) -> tuple[list[DistributionChannel], list[dict[str, Any]]]:
-        """
-        Distributes the article to all configured channels for the project.
-        """
-        if not self.config.enable_auto_distribution:
-            return [], []
-
-        channels: list[DistributionChannel] = []
-        results: list[dict[str, Any]] = []
-
-        # 1. WordPress Distribution
-        # Phase 3A: ContentAgent does not own the publishing audit/idempotency
-        # repository, so it must not call the WordPress side-effect directly.
-        # API/service publishing paths route through PublishingService instead.
-        if project.wordpress_url:
-            logger.warning(
-                "Skipping ContentAgent WordPress auto-distribution because safe publishing "
-                f"requires PublishingService audit and idempotency controls | article_id={article.id}"
-            )
-            results.append(
-                {
-                    "channel": "wordpress",
-                    "status": "skipped",
-                    "reason": "safe_publishing_service_required",
-                }
-            )
-
-        return channels, results
 
     async def _transition_state(self, new_state: WorkflowState) -> None:
         """Transition workflow to new state with event recording."""

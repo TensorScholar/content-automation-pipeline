@@ -59,7 +59,7 @@ from optimization.cache_manager import CacheManager
 from optimization.model_router import ModelRouter
 from optimization.prompt_compressor import PromptCompressor
 from optimization.token_budget_manager import BudgetConfig, TokenBudgetManager
-from orchestration.content_agent import ContentAgent, ContentAgentConfig
+from orchestration.content_agent import ContentAgent
 from orchestration.task_persistence import TaskResultRepository
 from services.content_memory_service import ContentMemoryService
 from services.content_service import ContentService
@@ -348,12 +348,6 @@ def get_content_generator() -> ContentGenerator:
 
 def get_content_agent() -> ContentAgent:
     """Create ContentAgent instance."""
-    settings = get_settings_cached()
-    config = ContentAgentConfig(
-        max_retries=3,
-        timeout_seconds=300,
-        enable_caching=True,
-    )
     return ContentAgent(
         database_manager=get_database(),
         semantic_analyzer=get_semantic_analyzer(),
@@ -364,7 +358,6 @@ def get_content_agent() -> ContentAgent:
         website_analyzer=get_website_analyzer(),
         redis_client=get_redis(),
         metrics_collector=get_metrics(),
-        config=config,
     )
 
 
