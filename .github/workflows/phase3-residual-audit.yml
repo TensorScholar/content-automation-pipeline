@@ -19,7 +19,11 @@ jobs:
           set -euo pipefail
           for term in \
             update_distribution_status \
+            update_article_distribution \
+            mark_distributed \
+            is_distributed \
             DistributionChannel \
+            'DistributionChannel.' \
             distributed_at \
             distribution_channels \
             distribute_to_ \
