@@ -1,4 +1,4 @@
-name: Phase 3 Content Agent Audit
+name: Phase 3 Content Agent Boundary Cleanup
 
 on:
   push:
@@ -6,30 +6,262 @@ on:
       - refactor/content-agent-generation-boundary
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  audit:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Repository-wide reference audit
+      - name: Apply deterministic boundary cleanup
         shell: bash
         run: |
           set -euo pipefail
-          for term in \
-            enable_auto_distribution \
-            require_manual_approval \
-            max_generation_retries \
-            enable_pattern_inference \
-            default_priority \
-            'WorkflowState.DISTRIBUTION' \
-            _distribute_article \
-            'ContentAgentConfig(' \
-            max_retries \
-            timeout_seconds \
-            enable_caching
-          do
-            echo "=== ${term} ==="
-            git grep -n -F "${term}" -- ':!.github/workflows/phase3-content-agent-audit.yml' || true
-          done
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          agent_path = Path("orchestration/content_agent.py")
+          agent = agent_path.read_text()
+          agent = replace_once(
+              agent,
+              "5. Quality validation (multi-metric scoring)\n6. Distribution (multi-channel publishing)\n",
+              "5. Quality validation (multi-metric scoring)\n",
+              "module pipeline stages",
+          )
+          agent = replace_once(
+              agent,
+              "from pydantic import BaseModel, Field\n",
+              "from pydantic import BaseModel, ConfigDict, Field\n",
+              "pydantic import",
+          )
+          agent = replace_once(
+              agent,
+              "from core.enums import DistributionChannel\n",
+              "",
+              "distribution enum import",
+          )
+          agent = replace_once(
+              agent,
+              '    DISTRIBUTION = "distribution"\n',
+              "",
+              "distribution workflow state",
+          )
+          agent = replace_once(
+              agent,
+              '''class ContentAgentConfig(BaseModel):
+    """Configuration for content agent behavior."""
+
+    enable_auto_distribution: bool = False
+    require_manual_approval: bool = False
+    max_generation_retries: int = 2
+    enable_pattern_inference: bool = True
+    default_priority: str = "high"
+''',
+              '''class ContentAgentConfig(BaseModel):
+    """Configuration for content-generation behavior."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_generation_retries: int = 2
+    enable_pattern_inference: bool = True
+    default_priority: str = "high"
+''',
+              "content agent config",
+          )
+          agent = replace_once(
+              agent,
+              "        5. Validation: Quality scoring and fact verification\n        6. Distribution: Multi-channel publishing (optional)\n",
+              "        5. Validation: Quality scoring and fact verification\n",
+              "class pipeline stages",
+          )
+          agent = replace_once(
+              agent,
+              '''        logger.info(
+            "ContentAgent initialized | "
+            f"auto_distribution={self.config.enable_auto_distribution} | "
+            f"manual_approval={self.config.require_manual_approval}"
+        )
+''',
+              '        logger.info("ContentAgent initialized")\n',
+              "initialization log",
+          )
+          agent = replace_once(
+              agent,
+              '''            # Stage 6: Distribution (if enabled)
+            if self.config.enable_auto_distribution:
+                await self._transition_state(WorkflowState.DISTRIBUTION)
+                channels, results = await self._distribute_article(
+                    article=article, project=project_context["project"]
+                )
+                if channels:
+                    article.distributed_at = datetime.now(timezone.utc)
+                    article.distribution_channels = channels
+
+''',
+              "",
+              "distribution execution stage",
+          )
+          agent = replace_once(
+              agent,
+              '''    async def _distribute_article(
+        self, article: GeneratedArticle, project: Project
+    ) -> tuple[list[DistributionChannel], list[dict[str, Any]]]:
+        """
+        Distributes the article to all configured channels for the project.
+        """
+        if not self.config.enable_auto_distribution:
+            return [], []
+
+        channels: list[DistributionChannel] = []
+        results: list[dict[str, Any]] = []
+
+        # 1. WordPress Distribution
+        # Phase 3A: ContentAgent does not own the publishing audit/idempotency
+        # repository, so it must not call the WordPress side-effect directly.
+        # API/service publishing paths route through PublishingService instead.
+        if project.wordpress_url:
+            logger.warning(
+                "Skipping ContentAgent WordPress auto-distribution because safe publishing "
+                f"requires PublishingService audit and idempotency controls | article_id={article.id}"
+            )
+            results.append(
+                {
+                    "channel": "wordpress",
+                    "status": "skipped",
+                    "reason": "safe_publishing_service_required",
+                }
+            )
+
+        return channels, results
+
+''',
+              "",
+              "distribution helper",
+          )
+          agent_path.write_text(agent)
+
+          deps_path = Path("api/dependencies.py")
+          deps = deps_path.read_text()
+          deps = replace_once(
+              deps,
+              "from orchestration.content_agent import ContentAgent, ContentAgentConfig\n",
+              "from orchestration.content_agent import ContentAgent\n",
+              "dependency import",
+          )
+          deps = replace_once(
+              deps,
+              '''def get_content_agent() -> ContentAgent:
+    """Create ContentAgent instance."""
+    settings = get_settings_cached()
+    config = ContentAgentConfig(
+        max_retries=3,
+        timeout_seconds=300,
+        enable_caching=True,
+    )
+    return ContentAgent(
+''',
+              '''def get_content_agent() -> ContentAgent:
+    """Create ContentAgent instance."""
+    return ContentAgent(
+''',
+              "dependency factory prelude",
+          )
+          deps = replace_once(
+              deps,
+              "        metrics_collector=get_metrics(),\n        config=config,\n    )\n",
+              "        metrics_collector=get_metrics(),\n    )\n",
+              "dependency factory config argument",
+          )
+          deps_path.write_text(deps)
+
+          release_test_path = Path("tests/test_content_quality_release_flow.py")
+          release_test = release_test_path.read_text()
+          release_test = replace_once(
+              release_test,
+              "        enable_auto_distribution=False,\n",
+              "",
+              "release-flow test config",
+          )
+          release_test_path.write_text(release_test)
+
+          Path("tests/test_content_agent_boundary.py").write_text(
+              '''import pytest
+from pydantic import ValidationError
+
+from orchestration.content_agent import ContentAgent, ContentAgentConfig, WorkflowState
+
+
+def test_content_agent_configuration_is_generation_only_and_fail_fast():
+    assert set(ContentAgentConfig.model_fields) == {
+        "max_generation_retries",
+        "enable_pattern_inference",
+        "default_priority",
+    }
+
+    with pytest.raises(ValidationError):
+        ContentAgentConfig(timeout_seconds=300)
+
+
+def test_content_agent_does_not_own_publication_or_distribution_state():
+    assert "DISTRIBUTION" not in WorkflowState.__members__
+    assert not hasattr(ContentAgent, "_distribute_article")
+'''
+          )
+          PY
+
+          rm -f .phase3-audit-trigger
+          python -m compileall -q \
+            orchestration/content_agent.py \
+            api/dependencies.py \
+            tests/test_content_quality_release_flow.py \
+            tests/test_content_agent_boundary.py
+
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          agent = Path("orchestration/content_agent.py").read_text()
+          deps = Path("api/dependencies.py").read_text()
+          ast.parse(agent)
+          ast.parse(deps)
+
+          forbidden_agent = (
+              "enable_auto_distribution",
+              "require_manual_approval",
+              "WorkflowState.DISTRIBUTION",
+              "_distribute_article",
+              "DistributionChannel",
+              "multi-channel publishing",
+          )
+          for term in forbidden_agent:
+              if term in agent:
+                  raise SystemExit(f"forbidden ContentAgent term remains: {term}")
+
+          for term in ("max_retries=3", "timeout_seconds=300", "enable_caching=True"):
+              if term in deps:
+                  raise SystemExit(f"invalid ContentAgentConfig knob remains in factory: {term}")
+
+          if 'model_config = ConfigDict(extra="forbid")' not in agent:
+              raise SystemExit("ContentAgentConfig is not fail-fast on unknown fields")
+          PY
+
+          git diff --check
+          git status --short
+
+      - name: Commit production cleanup and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/phase3-content-agent-audit.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "refactor: keep content agent generation-only"
+          git push origin HEAD:refactor/content-agent-generation-boundary
