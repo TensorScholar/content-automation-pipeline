@@ -55,7 +55,6 @@ def _workflow_agent(first_article, regenerated_article) -> tuple[ContentAgent, A
     agent.config = SimpleNamespace(
         default_priority="high",
         max_generation_retries=2,
-        enable_auto_distribution=False,
     )
     agent.content_generator = SimpleNamespace(finalize_article=finalized)
     agent.metrics = SimpleNamespace(record_workflow_completion=lambda **kwargs: None)
