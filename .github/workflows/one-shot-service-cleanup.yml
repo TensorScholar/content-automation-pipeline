@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Remove stale generic distribution semantics
+      - name: Align content service publication boundary
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -39,6 +39,7 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           python -m pip install --quiet ruff==0.5.7
+          ruff check --select F401 --fix services/content_service.py
           ruff check --select F401 services/content_service.py
           python -m compileall -q services/content_service.py
           git diff --check
