@@ -1,0 +1,31 @@
+name: Phase 3 Residual Distribution Audit
+
+on:
+  push:
+    branches:
+      - audit/phase3-residual-distribution-surface
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit residual distribution surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          for term in \
+            update_distribution_status \
+            DistributionChannel \
+            distributed_at \
+            distribution_channels \
+            distribute_to_ \
+            'multi-channel publishing' \
+            'multi-channel distribution'
+          do
+            echo "=== ${term} ==="
+            git grep -n -F "${term}" -- ':!.github/workflows/phase3-residual-audit.yml' || true
+          done
