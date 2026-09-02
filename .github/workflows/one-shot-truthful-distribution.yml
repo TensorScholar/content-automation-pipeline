@@ -43,7 +43,6 @@ jobs:
                   raise SystemExit(f'{label}: expected one removal, got {count}')
               return updated
 
-          # 1. WordPress adapter: remove methods that claimed external success without side effects.
           path = 'execution/distributer.py'
           text = (ROOT / path).read_text(encoding='utf-8')
           text = text.replace(
@@ -63,7 +62,6 @@ jobs:
           )
           write(path, text)
 
-          # 2. Content service: remove the generic distribution orchestration and its row->domain shim.
           path = 'services/content_service.py'
           text = (ROOT / path).read_text(encoding='utf-8')
           if text.count('_article_dict_to_generated_article') != 2:
@@ -80,7 +78,6 @@ jobs:
           )
           write(path, text)
 
-          # 3. API: remove the generic response type and the misleading multi-channel endpoints.
           path = 'api/routes/content.py'
           text = (ROOT / path).read_text(encoding='utf-8')
           text = remove_once(
@@ -95,7 +92,6 @@ jobs:
           )
           write(path, text)
 
-          # 4. Repository: remove the query that only served the deleted generic status endpoint.
           path = 'knowledge/article_repository.py'
           text = (ROOT / path).read_text(encoding='utf-8')
           text = remove_once(
@@ -105,7 +101,6 @@ jobs:
           )
           write(path, text)
 
-          # 5. README: stop advertising the adapter as multi-channel publishing.
           path = 'README.md'
           text = (ROOT / path).read_text(encoding='utf-8')
           old = '└── distributer.py        # Multi-channel publishing'
@@ -114,7 +109,6 @@ jobs:
           text = text.replace(old, '└── distributer.py        # WordPress publishing adapter', 1)
           write(path, text)
 
-          # 6. Regression contract: false external side effects may not reappear silently.
           test_path = ROOT / 'tests/test_distribution_surface_truth.py'
           test_path.write_text(
               '''from pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\n\n\ndef _read(relative: str) -> str:\n    return (ROOT / relative).read_text(encoding="utf-8")\n\n\ndef test_only_wordpress_is_exposed_as_direct_publication_surface():\n    routes = _read("api/routes/content.py")\n\n    assert '"/{article_id}/publish/wordpress"' in routes\n    assert '"/{article_id}/publish/wordpress/validate"' in routes\n    assert '"/{article_id}/publish/status"' in routes\n    assert '"/{article_id}/distribute"' not in routes\n    assert '"/{article_id}/distribution"' not in routes\n    assert "DistributionStatusResponse" not in routes\n\n\ndef test_fake_multi_channel_success_implementations_are_absent():\n    distributor = _read("execution/distributer.py")\n    service = _read("services/content_service.py")\n    repository = _read("knowledge/article_repository.py")\n\n    assert "async def distribute_to_wordpress" in distributor\n    assert "distribute_to_rss" not in distributor\n    assert "distribute_to_social_media" not in distributor\n    assert "async def distribute_article" not in service\n    assert "async def get_distribution_status" not in service\n    assert "async def get_distribution_status" not in repository\n    assert "smtplib" not in service\n\n\ndef test_readme_describes_the_real_direct_publisher():\n    readme = _read("README.md")\n\n    assert "distributer.py        # WordPress publishing adapter" in readme\n    assert "distributer.py        # Multi-channel publishing" not in readme\n''',
@@ -124,7 +118,7 @@ jobs:
 
       - name: Remove imports made obsolete by deletion
         run: |
-          python -m pip install --quiet ruff==0.5.7 pytest
+          python -m pip install --quiet ruff==0.5.7
           ruff check --select F401 --fix \
             api/routes/content.py \
             services/content_service.py \
@@ -140,7 +134,21 @@ jobs:
             execution/distributer.py \
             knowledge/article_repository.py \
             tests/test_distribution_surface_truth.py
-          pytest tests/test_distribution_surface_truth.py -q
+          python - <<'PY'
+          import runpy
+
+          namespace = runpy.run_path('tests/test_distribution_surface_truth.py')
+          tests = [
+              value
+              for name, value in namespace.items()
+              if name.startswith('test_') and callable(value)
+          ]
+          if len(tests) != 3:
+              raise SystemExit(f'expected 3 focused tests, found {len(tests)}')
+          for test in tests:
+              test()
+          print('TRUTHFUL_DISTRIBUTION_SURFACE_TESTS_PASS')
+          PY
           ruff check \
             api/routes/content.py \
             services/content_service.py \
