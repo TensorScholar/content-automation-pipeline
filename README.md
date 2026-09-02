@@ -228,7 +228,7 @@ execution/             # Content generation workflow
 ├── content_generator.py   # Orchestrates article creation
 ├── content_planner.py     # Strategic planning
 ├── keyword_researcher.py  # SEO keyword analysis
-└── distributer.py        # Multi-channel publishing
+└── distributer.py        # WordPress publishing adapter
 
 infrastructure/        # External integrations
 ├── llm_client.py     # Unified LLM provider interface

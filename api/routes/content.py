@@ -126,16 +126,6 @@ class ContentHistoryResponse(BaseModel):
     total_revisions: int
 
 
-class DistributionStatusResponse(BaseModel):
-    """Query result: Distribution status."""
-
-    article_id: str
-    distributed: bool
-    channels: List[str]
-    distributed_at: Optional[datetime]
-    delivery_confirmations: dict
-
-
 class ContentAnalyticsResponse(BaseModel):
     """Query result: Content performance analytics."""
 
@@ -1312,52 +1302,6 @@ async def trigger_comprehensive_analysis(
     Runs asynchronously; results available via separate endpoint.
     """
     return await content_service.trigger_comprehensive_analysis(article_id)
-
-
-# ============================================================================
-# DISTRIBUTION MANAGEMENT
-# ============================================================================
-@router.post(
-    "/{article_id}/distribute",
-    response_model=DistributionStatusResponse,
-    summary="Distribute article",
-)
-async def distribute_article(
-    article_id: UUID,
-    channels: List[str] = Query(..., description="Distribution channels"),
-    content_service: ContentService = Depends(get_content_service),
-    user: User = Depends(get_current_active_user),
-):
-    """
-    Distribute article to specified channels.
-
-    Supported channels:
-    - telegram: Send to configured Telegram channel
-    - wordpress: Publish to WordPress site (requires project configuration)
-    - email: Send via email distribution list (requires SMTP setup)
-    - social: Post to connected social media accounts
-    - rss: Add to RSS feed
-    """
-    result = await content_service.distribute_article(article_id, channels)
-    return DistributionStatusResponse(**result)
-
-
-@router.get(
-    "/{article_id}/distribution",
-    response_model=DistributionStatusResponse,
-    summary="Get distribution status",
-)
-async def get_distribution_status(
-    article_id: UUID,
-    content_service: ContentService = Depends(get_content_service),
-    user: User = Depends(get_current_active_user),
-):
-    """
-    Query article distribution status.
-    Returns delivery confirmations and channel-specific metadata.
-    """
-    result = await content_service.get_distribution_status(article_id)
-    return DistributionStatusResponse(**result)
 
 
 # ============================================================================
