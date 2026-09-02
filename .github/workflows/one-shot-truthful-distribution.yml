@@ -1,0 +1,164 @@
+name: One-shot truthful distribution refactor
+
+on:
+  push:
+    branches:
+      - refactor/truthful-distribution-surface
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/truthful-distribution-surface
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply bounded architecture simplification
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          ROOT = Path('.')
+
+          def write(path: str, text: str) -> None:
+              (ROOT / path).write_text(text, encoding='utf-8')
+
+          def remove_once(text: str, pattern: str, label: str) -> str:
+              updated, count = re.subn(pattern, '', text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one removal, got {count}')
+              return updated
+
+          # 1. WordPress adapter: remove methods that claimed external success without side effects.
+          path = 'execution/distributer.py'
+          text = (ROOT / path).read_text(encoding='utf-8')
+          text = text.replace(
+              '"""\nContent Distribution Module\n===========================\n\nHandles distribution of generated content to various channels like Telegram, WordPress, etc.\n"""',
+              '"""\nWordPress Publishing Adapter\n============================\n\nHandles the repository\'s single supported direct publishing integration: WordPress.\n"""',
+              1,
+          )
+          text = text.replace(
+              '    """\n    Handles distribution of generated content to various channels.\n\n    Currently supports:\n    - WordPress (with Gutenberg blocks and schema.org)\n    - RSS feeds (planned)\n    - Social media (planned)\n    """',
+              '    """Publish generated content to WordPress with bounded retry and verification."""',
+              1,
+          )
+          text = remove_once(
+              text,
+              r'\n    async def distribute_to_rss\(.*?(?=\n    async def validate_wordpress_connection\()',
+              'fake RSS/social distributor methods',
+          )
+          write(path, text)
+
+          # 2. Content service: remove the generic distribution orchestration and its row->domain shim.
+          path = 'services/content_service.py'
+          text = (ROOT / path).read_text(encoding='utf-8')
+          if text.count('_article_dict_to_generated_article') != 2:
+              raise SystemExit('unexpected _article_dict_to_generated_article call-site count')
+          text = remove_once(
+              text,
+              r'\n    def _article_dict_to_generated_article\(.*?(?=\n    async def batch_generate_content\()',
+              'legacy article reconstruction helper',
+          )
+          text = remove_once(
+              text,
+              r'\n    async def distribute_article\(.*?(?=\n    async def get_article_history\()',
+              'generic distribution service surface',
+          )
+          write(path, text)
+
+          # 3. API: remove the generic response type and the misleading multi-channel endpoints.
+          path = 'api/routes/content.py'
+          text = (ROOT / path).read_text(encoding='utf-8')
+          text = remove_once(
+              text,
+              r'\nclass DistributionStatusResponse\(BaseModel\):.*?(?=\nclass ContentAnalyticsResponse\(BaseModel\):)',
+              'generic distribution response schema',
+          )
+          text = remove_once(
+              text,
+              r'\n# ============================================================================\n# DISTRIBUTION MANAGEMENT\n# ============================================================================.*?(?=\n# ============================================================================\n# CONTENT HISTORY & VERSIONING)',
+              'generic distribution API routes',
+          )
+          write(path, text)
+
+          # 4. Repository: remove the query that only served the deleted generic status endpoint.
+          path = 'knowledge/article_repository.py'
+          text = (ROOT / path).read_text(encoding='utf-8')
+          text = remove_once(
+              text,
+              r'\n    async def get_distribution_status\(.*?(?=\n    async def get_article_history\()',
+              'legacy generic distribution status query',
+          )
+          write(path, text)
+
+          # 5. README: stop advertising the adapter as multi-channel publishing.
+          path = 'README.md'
+          text = (ROOT / path).read_text(encoding='utf-8')
+          old = '└── distributer.py        # Multi-channel publishing'
+          if old not in text:
+              raise SystemExit('README distribution architecture label not found')
+          text = text.replace(old, '└── distributer.py        # WordPress publishing adapter', 1)
+          write(path, text)
+
+          # 6. Regression contract: false external side effects may not reappear silently.
+          test_path = ROOT / 'tests/test_distribution_surface_truth.py'
+          test_path.write_text(
+              '''from pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\n\n\ndef _read(relative: str) -> str:\n    return (ROOT / relative).read_text(encoding="utf-8")\n\n\ndef test_only_wordpress_is_exposed_as_direct_publication_surface():\n    routes = _read("api/routes/content.py")\n\n    assert '"/{article_id}/publish/wordpress"' in routes\n    assert '"/{article_id}/publish/wordpress/validate"' in routes\n    assert '"/{article_id}/publish/status"' in routes\n    assert '"/{article_id}/distribute"' not in routes\n    assert '"/{article_id}/distribution"' not in routes\n    assert "DistributionStatusResponse" not in routes\n\n\ndef test_fake_multi_channel_success_implementations_are_absent():\n    distributor = _read("execution/distributer.py")\n    service = _read("services/content_service.py")\n    repository = _read("knowledge/article_repository.py")\n\n    assert "async def distribute_to_wordpress" in distributor\n    assert "distribute_to_rss" not in distributor\n    assert "distribute_to_social_media" not in distributor\n    assert "async def distribute_article" not in service\n    assert "async def get_distribution_status" not in service\n    assert "async def get_distribution_status" not in repository\n    assert "smtplib" not in service\n\n\ndef test_readme_describes_the_real_direct_publisher():\n    readme = _read("README.md")\n\n    assert "distributer.py        # WordPress publishing adapter" in readme\n    assert "distributer.py        # Multi-channel publishing" not in readme\n''',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Remove imports made obsolete by deletion
+        run: |
+          python -m pip install --quiet ruff==0.5.7 pytest
+          ruff check --select F401 --fix \
+            api/routes/content.py \
+            services/content_service.py \
+            execution/distributer.py \
+            knowledge/article_repository.py \
+            tests/test_distribution_surface_truth.py
+
+      - name: Validate focused change
+        run: |
+          python -m compileall -q \
+            api/routes/content.py \
+            services/content_service.py \
+            execution/distributer.py \
+            knowledge/article_repository.py \
+            tests/test_distribution_surface_truth.py
+          pytest tests/test_distribution_surface_truth.py -q
+          ruff check \
+            api/routes/content.py \
+            services/content_service.py \
+            execution/distributer.py \
+            knowledge/article_repository.py \
+            tests/test_distribution_surface_truth.py
+          git diff --check
+
+      - name: Commit bounded refactor
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            README.md \
+            api/routes/content.py \
+            services/content_service.py \
+            execution/distributer.py \
+            knowledge/article_repository.py \
+            tests/test_distribution_surface_truth.py
+          git commit -m 'refactor: remove false multi-channel distribution surface'
+          git push origin HEAD:refactor/truthful-distribution-surface
