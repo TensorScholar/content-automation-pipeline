@@ -17,23 +17,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for term in \
-            update_distribution_status \
-            update_article_distribution \
-            mark_distributed \
-            is_distributed \
-            generate_content_workflow \
-            auto_distribute \
-            ContentGenerationRequest \
-            _distribute_to_wordpress \
-            DistributionChannel \
-            'DistributionChannel.' \
-            distributed_at \
-            distribution_channels \
-            distribute_to_ \
-            'multi-channel publishing' \
-            'multi-channel distribution'
-          do
-            echo "=== ${term} ==="
-            git grep -n -F "${term}" -- ':!.github/workflows/phase3-residual-audit.yml' || true
-          done
+          echo '=== generic distribution consumers ==='
+          git grep -n -E 'distributed|distribution_channels|auto_distribute|ContentGenerationRequest|generate_content_workflow|mark_distributed|update_(article_)?distribution' -- api core frontend knowledge orchestration services tests || true
