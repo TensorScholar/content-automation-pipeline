@@ -1,8 +1,8 @@
 """
-Content Distribution Module
-===========================
+WordPress Publishing Adapter
+============================
 
-Handles distribution of generated content to various channels like Telegram, WordPress, etc.
+Handles the repository's single supported direct publishing integration: WordPress.
 """
 
 import asyncio
@@ -44,14 +44,7 @@ class WordPressPublishError(DistributionError):
 
 
 class Distributor:
-    """
-    Handles distribution of generated content to various channels.
-
-    Currently supports:
-    - WordPress (with Gutenberg blocks and schema.org)
-    - RSS feeds (planned)
-    - Social media (planned)
-    """
+    """Publish generated content to WordPress with bounded retry and verification."""
 
     def __init__(self, max_retries: int = 5, initial_retry_delay: float = 2.0):
         """Initialize the distributor with configurable retry parameters.
@@ -253,58 +246,6 @@ class Distributor:
 
         logger.debug(f"Generated schema.org markup: {schema['@type']}")
         return json_ld
-
-    async def distribute_to_rss(self, article: GeneratedArticle, feed_url: str) -> Dict[str, Any]:
-        """
-        Distribute article to RSS feed.
-
-        Args:
-            article: The generated article to distribute
-            feed_url: RSS feed URL
-
-        Returns:
-            Distribution result metadata
-        """
-        logger.info(f"Distributing article {article.id} to RSS feed {feed_url}")
-
-        # For now, just log the distribution
-        result = {
-            "feed_url": feed_url,
-            "article_id": str(article.id),
-            "title": article.title,
-            "distributed_at": article.created_at.isoformat(),
-            "status": "success",
-        }
-
-        logger.info(f"Article distributed to RSS successfully: {result}")
-        return result
-
-    async def distribute_to_social_media(
-        self, article: GeneratedArticle, platforms: list[str]
-    ) -> Dict[str, Any]:
-        """
-        Distribute article to social media platforms.
-
-        Args:
-            article: The generated article to distribute
-            platforms: List of social media platforms
-
-        Returns:
-            Distribution result metadata
-        """
-        logger.info(f"Distributing article {article.id} to social media platforms: {platforms}")
-
-        # For now, just log the distribution
-        result = {
-            "platforms": platforms,
-            "article_id": str(article.id),
-            "title": article.title,
-            "distributed_at": article.created_at.isoformat(),
-            "status": "success",
-        }
-
-        logger.info(f"Article distributed to social media successfully: {result}")
-        return result
 
     async def validate_wordpress_connection(
         self,

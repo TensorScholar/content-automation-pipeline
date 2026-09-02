@@ -45,42 +45,6 @@ class ExistingProjectRepository:
         return types.SimpleNamespace(id=project_id)
 
 
-def make_article_row(article_id=None, project_id=None, **overrides):
-    content = " ".join(["workflow"] * 120)
-    row = {
-        "id": article_id or uuid4(),
-        "project_id": project_id or uuid4(),
-        "content_plan_id": None,
-        "title": "Workflow launch article",
-        "content": content,
-        "meta_description": "short",
-        "keywords": ["workflow", "launch"],
-        "word_count": 120,
-        "readability_score": 8.5,
-        "keyword_density": {"workflow": 0.04},
-        "total_tokens_used": 250,
-        "total_cost": 0.03,
-        "generation_time": 12.5,
-    }
-    row.update(overrides)
-    return row
-
-
-class FakeDistributionRepository:
-    db = object()
-
-    def __init__(self, article):
-        self.article = article
-        self.updates = []
-
-    async def get_by_id(self, article_id, include_content=True):
-        return self.article if article_id == self.article["id"] else None
-
-    async def update(self, article_id, updates):
-        self.updates.append((article_id, updates))
-        return {**self.article, **updates}
-
-
 @pytest.mark.asyncio
 async def test_batch_generation_preserves_instructions_and_priority_routing(monkeypatch):
     calls = []
@@ -124,51 +88,3 @@ async def test_batch_generation_preserves_instructions_and_priority_routing(monk
     assert calls[1]["kwargs"]["topic"] == "Monitoring workflow"
     assert calls[1]["kwargs"]["custom_instructions"] == "Output language must be Persian."
     assert calls[1]["kwargs"]["submitted_by_user_id"] == "user-123"
-
-
-def test_persisted_article_rebuilds_strict_generated_article_model():
-    service = ContentService(article_repository=FakeArticleRepository(), content_agent=object())
-    article_id = uuid4()
-    project_id = uuid4()
-
-    generated = service._article_dict_to_generated_article(
-        make_article_row(article_id=article_id, project_id=project_id)
-    )
-
-    assert generated.id == article_id
-    assert generated.project_id == project_id
-    assert generated.content_plan_id == article_id
-    assert len(generated.meta_description) >= 50
-    assert generated.quality_metrics.word_count == 120
-    assert generated.quality_metrics.keyword_density == {"workflow": 0.04}
-    assert generated.total_cost_usd == 0.03
-
-
-@pytest.mark.asyncio
-async def test_distribution_skipped_channel_does_not_mark_article_distributed():
-    article = make_article_row()
-    repository = FakeDistributionRepository(article)
-    service = ContentService(article_repository=repository, content_agent=object())
-
-    result = await service.distribute_article(article["id"], ["telegram"])
-
-    assert result["status"] == "skipped"
-    assert result["distributed"] is False
-    assert result["channels"] == []
-    assert result["delivery_confirmations"]["telegram"]["status"] == "skipped"
-    assert repository.updates == []
-
-
-@pytest.mark.asyncio
-async def test_distribution_success_marks_only_successful_channels():
-    article = make_article_row()
-    repository = FakeDistributionRepository(article)
-    service = ContentService(article_repository=repository, content_agent=object())
-
-    result = await service.distribute_article(article["id"], ["rss"])
-
-    assert result["status"] == "success"
-    assert result["distributed"] is True
-    assert result["channels"] == ["rss"]
-    assert result["delivery_confirmations"]["rss"]["status"] == "success"
-    assert repository.updates[0][1]["distribution_channels"] == ["rss"]

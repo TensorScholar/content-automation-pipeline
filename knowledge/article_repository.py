@@ -446,25 +446,6 @@ class ArticleRepository:
         article = await self.db.fetch_one(query)
         return dict(article) if article else None
 
-    async def get_distribution_status(self, article_id: UUID) -> Optional[Dict[str, Any]]:
-        """
-        Get distribution status for article.
-
-        Args:
-            article_id: Article identifier
-
-        Returns:
-            Distribution status dict or None if not found
-        """
-        query = select(
-            generated_articles_table.c.id,
-            generated_articles_table.c.distributed_at,
-            generated_articles_table.c.distribution_channels,
-        ).where(generated_articles_table.c.id == article_id)
-
-        article = await self.db.fetch_one(query)
-        return dict(article) if article else None
-
     async def get_article_history(self, article_id: UUID) -> Optional[Dict[str, Any]]:
         """
         Get revision history for article.
