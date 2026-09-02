@@ -4,7 +4,7 @@ Encapsulates business operations for content management:
 - Content generation and batch processing
 - Quality analysis and validation
 - Content revision workflows
-- Distribution management
+- WordPress publication coordination
 - Analytics and reporting
 
 Architecture:
@@ -30,9 +30,7 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 from loguru import logger
 
-from core.enums import DistributionChannel
-from core.models import ContentGenerationRequest, GeneratedArticle, QualityMetrics
-from execution.distributer import Distributor
+from core.models import ContentGenerationRequest, GeneratedArticle
 from knowledge.article_repository import ArticleRepository
 from knowledge.project_repository import ProjectRepository
 from orchestration.content_agent import ContentAgent
