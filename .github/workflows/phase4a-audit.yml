@@ -26,19 +26,31 @@ jobs:
       - name: Apply guarded Phase 4A patch
         run: python .phase4a_impl.py
 
-      - name: Align migration graph contract
+      - name: Align migration graph and generated-file contracts
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          path = Path("scripts/maintenance/validate_migration_graph.py")
-          content = path.read_text(encoding="utf-8")
+
+          graph = Path("scripts/maintenance/validate_migration_graph.py")
+          content = graph.read_text(encoding="utf-8")
           old = 'EXPECTED_HEAD = "20260801_001"'
           new = 'EXPECTED_HEAD = "20260903_001"'
           if content.count(old) != 1:
               raise SystemExit(f"expected one migration-head pin, found {content.count(old)}")
-          path.write_text(content.replace(old, new, 1), encoding="utf-8")
+          graph.write_text(content.replace(old, new, 1), encoding="utf-8")
+
+          for name in (
+              "alembic/versions/20260903_revision_backbone.py",
+              "tests/test_revision_backbone_truth.py",
+              "tests/integration/test_revision_backbone_migration_postgres.py",
+          ):
+              path = Path(name)
+              generated = path.read_text(encoding="utf-8")
+              if generated.startswith("\\\n"):
+                  generated = generated[2:]
+              path.write_text(generated, encoding="utf-8")
           PY
 
       - name: Validate syntax migration graph and formatting
@@ -55,6 +67,14 @@ jobs:
             tests/integration/test_revision_backbone_migration_postgres.py
           python scripts/maintenance/validate_migration_graph.py
           python -m pip install --quiet ruff==0.5.7
+          ruff check --fix --select I \
+            alembic/versions/20260903_revision_backbone.py \
+            tests/test_revision_backbone_truth.py \
+            tests/integration/test_revision_backbone_migration_postgres.py
+          ruff format \
+            alembic/versions/20260903_revision_backbone.py \
+            tests/test_revision_backbone_truth.py \
+            tests/integration/test_revision_backbone_migration_postgres.py
           ruff check \
             infrastructure/schema.py \
             knowledge/article_repository.py \
