@@ -157,29 +157,19 @@ class ArticleRepository:
         word_count: int,
         revision_note: Optional[str],
     ) -> Optional[Dict[str, Any]]:
-        """Atomically snapshot the current article and apply a manual edit."""
+        """Atomically apply a manual edit; DB triggers append the new immutable revision."""
+        del revision_note  # Revision identity is payload-derived; edit events are tracked separately.
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         async with self.db.transaction() as session:
             current_result = await session.execute(
-                select(generated_articles_table)
+                select(generated_articles_table.c.id)
                 .where(generated_articles_table.c.id == article_id)
                 .with_for_update()
             )
-            current = current_result.mappings().one_or_none()
+            current = current_result.scalar_one_or_none()
             if current is None:
                 return None
 
-            await session.execute(
-                insert(article_revisions_table).values(
-                    id=uuid4(),
-                    article_id=article_id,
-                    title=current["title"],
-                    content=current["content"],
-                    revision_note=revision_note,
-                    word_count=current["word_count"],
-                    created_at=now,
-                )
-            )
             updated_result = await session.execute(
                 update(generated_articles_table)
                 .where(generated_articles_table.c.id == article_id)
@@ -447,60 +437,92 @@ class ArticleRepository:
         return dict(article) if article else None
 
     async def get_article_history(self, article_id: UUID) -> Optional[Dict[str, Any]]:
-        """
-        Get revision history for article.
-
-        Args:
-            article_id: Article identifier
-
-        Returns:
-            History data dict or None if not found
-        """
-        # Query current version
-        current_query = select(
-            generated_articles_table.c.id,
-            generated_articles_table.c.title,
-            generated_articles_table.c.content,
-            generated_articles_table.c.created_at,
-            generated_articles_table.c.word_count,
-        ).where(generated_articles_table.c.id == article_id)
-
+        """Return the mutable article projection plus immutable prior revisions."""
+        current_revision = article_revisions_table.alias("current_revision")
+        current_query = (
+            select(
+                generated_articles_table.c.id,
+                generated_articles_table.c.current_revision_id,
+                generated_articles_table.c.title,
+                generated_articles_table.c.content,
+                generated_articles_table.c.meta_description,
+                generated_articles_table.c.keywords,
+                generated_articles_table.c.created_at,
+                generated_articles_table.c.word_count,
+                current_revision.c.revision_number.label("revision_number"),
+                current_revision.c.revision_source.label("revision_source"),
+                current_revision.c.snapshot_completeness.label("snapshot_completeness"),
+                current_revision.c.generation_task_id.label("revision_generation_task_id"),
+            )
+            .select_from(
+                generated_articles_table.outerjoin(
+                    current_revision,
+                    generated_articles_table.c.current_revision_id == current_revision.c.id,
+                )
+            )
+            .where(generated_articles_table.c.id == article_id)
+        )
         current = await self.db.fetch_one(current_query)
         if not current:
             return None
 
-        # Query revision history
-        revisions_query = (
-            select(
-                article_revisions_table.c.id,
-                article_revisions_table.c.title,
-                article_revisions_table.c.content,
-                article_revisions_table.c.created_at,
-                article_revisions_table.c.revision_note,
-                article_revisions_table.c.word_count,
+        revisions_query = select(
+            article_revisions_table.c.id,
+            article_revisions_table.c.revision_number,
+            article_revisions_table.c.title,
+            article_revisions_table.c.content,
+            article_revisions_table.c.meta_description,
+            article_revisions_table.c.keywords,
+            article_revisions_table.c.created_at,
+            article_revisions_table.c.revision_note,
+            article_revisions_table.c.word_count,
+            article_revisions_table.c.revision_source,
+            article_revisions_table.c.snapshot_completeness,
+            article_revisions_table.c.generation_task_id,
+        ).where(article_revisions_table.c.article_id == article_id)
+        if current["current_revision_id"] is not None:
+            revisions_query = revisions_query.where(
+                article_revisions_table.c.id != current["current_revision_id"]
             )
-            .where(article_revisions_table.c.article_id == article_id)
-            .order_by(article_revisions_table.c.created_at.desc())
+        revisions_query = revisions_query.order_by(
+            article_revisions_table.c.revision_number.desc(),
+            article_revisions_table.c.created_at.desc(),
         )
-
         revisions = await self.db.fetch_all(revisions_query)
 
         return {
             "current_version": {
                 "id": str(current["id"]),
+                "revision_id": (
+                    str(current["current_revision_id"])
+                    if current["current_revision_id"]
+                    else None
+                ),
+                "revision_number": current["revision_number"],
                 "title": current["title"],
                 "content": current["content"],
+                "meta_description": current["meta_description"],
+                "keywords": current["keywords"],
                 "created_at": current["created_at"],
                 "word_count": current["word_count"],
+                "revision_source": current["revision_source"],
+                "snapshot_completeness": current["snapshot_completeness"],
+                "generation_task_id": current["revision_generation_task_id"],
             },
             "revisions": [
                 {
                     "id": str(rev["id"]),
+                    "revision_number": rev["revision_number"],
                     "title": rev["title"],
                     "content": rev["content"],
+                    "meta_description": rev["meta_description"],
+                    "keywords": rev["keywords"],
                     "revision_note": rev["revision_note"],
                     "created_at": rev["created_at"],
                     "word_count": rev["word_count"],
+                    "revision_source": rev["revision_source"],
+                    "snapshot_completeness": rev["snapshot_completeness"],
+                    "generation_task_id": rev["generation_task_id"],
                 }
                 for rev in revisions
             ],
@@ -546,31 +568,6 @@ class ArticleRepository:
 
         articles = await self.db.fetch_all(articles_query)
         return [dict(article) for article in articles]
-
-    async def create_revision(self, revision_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create article revision.
-
-        Args:
-            revision_data: Revision data dictionary
-
-        Returns:
-            Created revision data
-        """
-        query = article_revisions_table.insert().values(revision_data)
-        result = await self.db.execute(query)
-
-        # Fetch the created revision
-        created_id = result.get("id") or revision_data.get("id")
-
-        revision_query = select(article_revisions_table).where(
-            article_revisions_table.c.id == created_id
-        )
-        revision = await self.db.fetch_one(revision_query)
-
-        if revision is None:
-            raise RuntimeError(f"Article revision {created_id} was not persisted")
-        return dict(revision)
 
     async def save_content_plan(self, plan: ContentPlan) -> None:
         """
