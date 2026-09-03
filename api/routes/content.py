@@ -5,7 +5,6 @@ Comprehensive content lifecycle management:
 - Single and batch generation
 - Quality metrics and analysis
 - Content revision and iteration
-- Distribution management
 - Performance analytics
 
 Design Pattern: Command Query Responsibility Segregation (CQRS)

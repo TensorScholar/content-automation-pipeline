@@ -547,35 +547,6 @@ class ArticleRepository:
         articles = await self.db.fetch_all(articles_query)
         return [dict(article) for article in articles]
 
-    async def update_distribution_status(
-        self, article_id: UUID, distributed_at: datetime, channels: List[str]
-    ) -> bool:
-        """
-        Update article distribution status.
-
-        Args:
-            article_id: Article identifier
-            distributed_at: Distribution timestamp
-            channels: List of distribution channels
-
-        Returns:
-            True if updated successfully
-        """
-        updates = {
-            "distributed_at": self._to_db_naive_utc(distributed_at),
-            "distribution_channels": channels,
-            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
-        }
-
-        query = (
-            generated_articles_table.update()
-            .where(generated_articles_table.c.id == article_id)
-            .values(updates)
-        )
-        result = await self.db.execute(query)
-
-        return result != "UPDATE 0"
-
     async def create_revision(self, revision_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create article revision.
@@ -689,27 +660,6 @@ class ArticleRepository:
                 await session.commit()
         except Exception as e:
             logger.error(f"Failed to save generated article: {e}")
-            raise
-
-    async def update_article_distribution(
-        self, article_id: UUID, distributed_at: datetime, channels: list[str]
-    ) -> None:
-        """Update article distribution status using SQLAlchemy Core."""
-        try:
-            async with self.db.session() as session:
-                query = (
-                    update(generated_articles_table)
-                    .where(generated_articles_table.c.id == article_id)
-                    .values(
-                        distributed_at=self._to_db_naive_utc(distributed_at),
-                        distribution_channels=channels,
-                        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
-                    )
-                )
-                await session.execute(query)
-                await session.commit()
-        except Exception as e:
-            logger.error(f"Failed to update article distribution: {e}")
             raise
 
     # =========================================================================

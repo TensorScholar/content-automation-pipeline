@@ -130,22 +130,6 @@ class GenerateContentRequest(BaseModel):
     )
 
 
-class ArticleResponse(BaseModel):
-    """Query result: Generated article metadata."""
-
-    article_id: str
-    project_id: str
-    title: str
-    word_count: int
-    cost: float
-    generation_time: float
-    readability_score: float
-    distributed: bool
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class TaskStatusResponse(BaseModel):
     """Query result: Async task execution status."""
 

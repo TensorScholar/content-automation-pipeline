@@ -1140,7 +1140,6 @@ def generate_content_task(
                             "title": article.title,
                             "word_count": article.quality_metrics.word_count,
                             "cost": article.total_cost_usd,
-                            "distributed": len(article.distribution_channels) > 0,
                             "generated_at": article.created_at.isoformat(),
                             "model_used": getattr(article, "model_used", None),
                         }
@@ -1249,10 +1248,6 @@ def generate_content_task(
             "total_tokens_used": article.total_tokens_used,
             "total_cost": article.total_cost_usd,
             "generation_time": article.generation_time_seconds,
-            "distributed": article.distributed_at is not None,
-            "distributed_at": (
-                article.distributed_at.isoformat() if article.distributed_at else None
-            ),
             "created_at": article.created_at.isoformat(),
             "execution_time": execution_time,
         }

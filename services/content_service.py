@@ -30,7 +30,6 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 from loguru import logger
 
-from core.models import ContentGenerationRequest, GeneratedArticle
 from knowledge.article_repository import ArticleRepository
 from knowledge.project_repository import ProjectRepository
 from orchestration.content_agent import ContentAgent
@@ -79,58 +78,6 @@ class ContentService:
         self.projects = ProjectRepository(article_repository.db)
         self.semantic_analyzer = semantic_analyzer
         logger.debug("ContentService initialized")
-
-    async def generate_content_workflow(self, request: ContentGenerationRequest) -> Dict[str, Any]:
-        """Orchestrate end-to-end generation with optional auto-distribution."""
-        article = await self.content_agent.create_content(
-            project_id=request.project_id,
-            topic=request.topic,
-            priority=getattr(request, "priority", "high"),
-            custom_instructions=getattr(request, "custom_instructions", None),
-        )
-
-        distribution_result: Dict[str, Any] | None = None
-        if request.auto_distribute:
-            distribution_result = await self._distribute_to_wordpress(article, request.project_id)
-
-        return {
-            "article_id": str(article.id),
-            "project_id": str(article.project_id),
-            "status": "distributed" if distribution_result else "completed",
-            "distribution": distribution_result,
-        }
-
-    async def _distribute_to_wordpress(
-        self, article: GeneratedArticle, project_id: UUID
-    ) -> Dict[str, Any]:
-        """Safely upload generated article to WordPress as a draft."""
-        try:
-            publishing_service = self._publishing_service()
-            result = await publishing_service.publish_to_wordpress(
-                article_id=article.id,
-                project_id=project_id,
-                user_id=None,
-                publish_status="draft",
-            )
-            logger.info(
-                "Safe WordPress draft distribution completed | article_id=%s | status=%s",
-                article.id,
-                result.get("status"),
-            )
-            return result
-        except HTTPException as e:
-            logger.error(f"WordPress distribution failed for article {article.id}: {e}")
-            return {"status": "error", "reason": e.detail}
-
-    def _publishing_service(self):
-        from knowledge.publishing_repository import PublishingRepository
-        from services.publishing_service import PublishingService
-
-        return PublishingService(
-            content_service=self,
-            project_repository=self.projects,
-            publishing_repository=PublishingRepository(self.articles.db),
-        )
 
     @staticmethod
     def _coerce_keywords(value: Any) -> list[str]:
