@@ -1,51 +1,82 @@
-name: Phase 4A Revision Backbone Audit
+name: Phase 4A Revision Backbone Implementation
 
 on:
   push:
     branches:
       - feat/phase4a-revision-backbone
     paths:
-      - .phase4a-audit-trigger
+      - .phase4a-implement-trigger
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  audit:
+  implement:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Audit revision identity and lineage surface
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply guarded Phase 4A patch
+        run: python .phase4a_impl.py
+
+      - name: Validate syntax migration graph and formatting
         shell: bash
         run: |
           set -euo pipefail
-          for term in \
-            article_revisions_table \
-            'article_revisions' \
-            create_revision \
-            update_content_with_revision \
-            get_article_history \
-            request_article_revision \
-            save_generated_article \
-            'articles.create(' \
-            'article_repo.create(' \
-            'article_repository.create(' \
-            'articles.update(' \
-            'article_repo.update(' \
-            'article_repository.update(' \
-            'insert(generated_articles_table)' \
-            'generated_articles_table.insert()' \
-            generation_task_id \
-            review_status \
-            publishing_attempts_table \
-            publish_idempotency_key
-          do
-            echo "=== ${term} ==="
-            git grep -n -F "${term}" -- ':!.github/workflows/phase4a-audit.yml' || true
-          done
+          python -m compileall \
+            infrastructure/schema.py \
+            knowledge/article_repository.py \
+            services/content_service.py \
+            alembic/versions/20260903_revision_backbone.py \
+            tests/test_revision_backbone_truth.py \
+            tests/integration/test_revision_backbone_migration_postgres.py
+          python scripts/maintenance/validate_migration_graph.py
+          python -m pip install --quiet ruff==0.5.7
+          ruff check \
+            infrastructure/schema.py \
+            knowledge/article_repository.py \
+            services/content_service.py \
+            alembic/versions/20260903_revision_backbone.py \
+            tests/test_revision_backbone_truth.py \
+            tests/integration/test_revision_backbone_migration_postgres.py
+          ruff format --check \
+            alembic/versions/20260903_revision_backbone.py \
+            tests/test_revision_backbone_truth.py \
+            tests/integration/test_revision_backbone_migration_postgres.py
+          git diff --check
 
-          echo '=== generated_articles direct values writes ==='
-          git grep -n -E 'generated_articles_table\.(insert|update)|insert\(generated_articles_table\)|update\(generated_articles_table\)' -- '*.py' ':!.github/workflows/phase4a-audit.yml' || true
+      - name: Remove implementation-only artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .phase4a_impl.py \
+            .phase4a-implement-trigger \
+            .phase4a-audit-trigger \
+            .github/workflows/phase4a-audit.yml
+          git diff --check
 
-          echo '=== migration heads ==='
-          grep -R '^revision =\|^down_revision =' alembic/versions/*.py | tail -40
+      - name: Commit production patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "TensorScholar Engineering Bot"
+          git config user.email "132380678+TensorScholar@users.noreply.github.com"
+          git add -A
+          echo "=== final diff stat ==="
+          git diff --cached --stat
+          echo "=== final changed files ==="
+          git diff --cached --name-only
+          if git diff --cached --quiet; then
+            echo "No production changes staged" >&2
+            exit 1
+          fi
+          git commit -m "feat: establish immutable article revision backbone"
+          git push origin HEAD:feat/phase4a-revision-backbone
