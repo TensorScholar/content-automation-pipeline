@@ -41,7 +41,6 @@ from pydantic import (
 from core.enums import (
     ContentStructureType,
     DecisionLayer,
-    DistributionChannel,
     GenerationStatus,
     KeywordIntent,
     RuleType,
@@ -563,10 +562,6 @@ class GeneratedArticle(BaseModelConfig):
     model_used: str = Field(default="gpt-4-turbo-preview")
     status: GenerationStatus = Field(default=GenerationStatus.COMPLETED)
 
-    # Distribution tracking
-    distributed_at: Optional[datetime] = Field(default=None)
-    distribution_channels: list[DistributionChannel] = Field(default_factory=list)
-
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -593,25 +588,11 @@ class GeneratedArticle(BaseModelConfig):
 
     @computed_field
     @property
-    def is_distributed(self) -> bool:
-        """Check if article has been distributed."""
-        return self.distributed_at is not None
-
-    @computed_field
-    @property
     def generation_speed_words_per_second(self) -> float:
         """Calculate generation throughput."""
         if self.generation_time_seconds == 0:
             return 0.0
         return self.quality_metrics.word_count / self.generation_time_seconds
-
-    def mark_distributed(self, channel: DistributionChannel) -> None:
-        """Record successful distribution to a channel."""
-        if channel not in self.distribution_channels:
-            self.distribution_channels.append(channel)
-        if self.distributed_at is None:
-            self.distributed_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
 
 
 # =============================================================================
@@ -1119,41 +1100,6 @@ class User(BaseModelConfig):
 # =============================================================================
 
 
-class ContentGenerationRequest(BaseModelConfig):
-    """
-    Request model for content generation endpoint.
-
-    User-facing API contract for initiating content generation.
-    """
-
-    project_id: UUID
-    topic: str = Field(..., min_length=1, max_length=500)
-
-    # Language setting (en = English, fa = Persian/Farsi)
-    language: str = Field(
-        default="en",
-        pattern="^(en|fa)$",
-        description="Content language: 'en' for English, 'fa' for Persian"
-    )
-
-    # Optional overrides
-    target_word_count: Optional[int] = Field(default=None, gt=0, le=5000)
-    primary_keywords: Optional[list[str]] = Field(default=None)
-    content_structure: Optional[ContentStructureType] = Field(default=None)
-
-    # Distribution
-    auto_distribute: bool = Field(default=False)
-    distribution_channels: list[DistributionChannel] = Field(default_factory=list)
-
-    @field_validator("topic")
-    @classmethod
-    def validate_topic(cls, v: str) -> str:
-        """Ensure topic is meaningful."""
-        if len(v.strip()) < 3:
-            raise ValueError("Topic must be at least 3 characters")
-        return v.strip()
-
-
 class ContentGenerationResponse(BaseModelConfig):
     """
     Response model for content generation endpoint.
@@ -1220,7 +1166,6 @@ __all__ = [
     "UserInDB",
     "User",
     # API
-    "ContentGenerationRequest",
     "ContentGenerationResponse",
     "ArticleRetrievalResponse",
 ]

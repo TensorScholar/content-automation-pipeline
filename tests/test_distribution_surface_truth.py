@@ -37,3 +37,44 @@ def test_readme_describes_the_real_direct_publisher():
 
     assert "distributer.py        # WordPress publishing adapter" in readme
     assert "distributer.py        # Multi-channel publishing" not in readme
+
+
+def test_generation_domain_has_no_generic_distribution_contract():
+    enums = _read("core/enums.py")
+    models = _read("core/models.py")
+    service = _read("services/content_service.py")
+    repository = _read("knowledge/article_repository.py")
+    tasks = _read("orchestration/tasks.py")
+    api_schemas = _read("api/schemas.py")
+    api_main = _read("api/main.py")
+
+    assert "class DistributionChannel" not in enums
+    assert "ContentGenerationRequest" not in models
+    assert "auto_distribute" not in models
+    assert "distribution_channels" not in models
+    assert "def is_distributed" not in models
+    assert "def mark_distributed" not in models
+
+    assert "generate_content_workflow" not in service
+    assert "_distribute_to_wordpress" not in service
+    assert "update_distribution_status" not in repository
+    assert "update_article_distribution" not in repository
+
+    assert '"distributed": len(article.distribution_channels)' not in tasks
+    assert '"distributed": article.distributed_at is not None' not in tasks
+    assert '"distributed_at": (' not in tasks
+
+    assert "class ArticleResponse" not in api_schemas
+    assert "ArticleResponse," not in api_main
+
+
+def test_wordpress_publication_and_compatibility_mirror_remain_explicit():
+    publishing_service = _read("services/publishing_service.py")
+    publishing_repository = _read("knowledge/publishing_repository.py")
+    schema = _read("infrastructure/schema.py")
+
+    assert "publish_to_wordpress" in publishing_service
+    assert "distribute_to_wordpress" in publishing_service
+    assert 'distribution_channels=["wordpress"]' in publishing_repository
+    assert 'Column("distributed_at", DateTime)' in schema
+    assert 'Column("distribution_channels", JSON)' in schema

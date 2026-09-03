@@ -300,30 +300,6 @@ class GenerationStatus(str, Enum):
         return target in valid_transitions.get(self, set())
 
 
-class DistributionChannel(str, Enum):
-    """
-    Content distribution channel taxonomy.
-
-    Extensible for multi-channel publishing strategies.
-    """
-
-    WORDPRESS = "wordpress"
-    MEDIUM = "medium"
-    EMAIL = "email"
-    WEBHOOK = "webhook"
-    FILE_SYSTEM = "file_system"
-
-    @property
-    def requires_authentication(self) -> bool:
-        """Check if channel needs API credentials."""
-        return self in {self.WORDPRESS, self.MEDIUM, self.EMAIL}
-
-    @property
-    def supports_html(self) -> bool:
-        """Check if channel accepts HTML formatting."""
-        return self in {self.WORDPRESS, self.MEDIUM, self.EMAIL}
-
-
 class ErrorSeverity(IntEnum):
     """
     Error classification by impact severity.
@@ -481,7 +457,6 @@ __all__ = [
     "CompressionLevel",
     # Infrastructure
     "CacheStrategy",
-    "DistributionChannel",
     "ErrorSeverity",
     "LanguageCode",
     # Utilities

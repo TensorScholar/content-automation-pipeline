@@ -45,7 +45,6 @@ from api.routes import auth, content, projects, search_console, system
 
 # Import schemas from separate module
 from api.schemas import (
-    ArticleResponse,
     CreateProjectRequest,
     ErrorResponse,
     GenerateContentRequest,
