@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError
 
 BASE_DATABASE_URL = os.getenv("TEST_DATABASE_URL") or (
     os.getenv("DATABASE_URL") if os.getenv("CI") == "true" else None
@@ -161,6 +162,10 @@ def test_revision_backbone_backfills_and_captures_mixed_version_writes():
         # appends the immutable complete revision and advances the pointer.
         with target_engine.begin() as connection:
             connection.execute(
+                text("SELECT set_config('app.revision_note', :note, true)"),
+                {"note": "Manual edit provenance note"},
+            )
+            connection.execute(
                 text(
                     """
                     UPDATE generated_articles
@@ -177,7 +182,7 @@ def test_revision_backbone_backfills_and_captures_mixed_version_writes():
                     text(
                         """
                     SELECT article.current_revision_id, revision.revision_number,
-                           revision.content, revision.revision_source,
+                           revision.content, revision.revision_note, revision.revision_source,
                            revision.snapshot_completeness
                     FROM generated_articles AS article
                     JOIN article_revisions AS revision
@@ -192,6 +197,7 @@ def test_revision_backbone_backfills_and_captures_mixed_version_writes():
             )
         assert current["revision_number"] == 3
         assert current["content"] == "New binary payload"
+        assert current["revision_note"] == "Manual edit provenance note"
         assert current["revision_source"] == "article_payload_update"
         assert current["snapshot_completeness"] == "complete"
 
@@ -284,6 +290,33 @@ def test_revision_backbone_backfills_and_captures_mixed_version_writes():
                 {"id": second_article_id},
             ).one()
         assert second == (1, "article_initial", "complete")
+
+        # A current pointer may never cross article ownership boundaries.
+        with target_engine.connect() as connection:
+            foreign_revision_id = connection.execute(
+                text("SELECT current_revision_id FROM generated_articles WHERE id = :id"),
+                {"id": second_article_id},
+            ).scalar_one()
+        with pytest.raises(DBAPIError):
+            with target_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        UPDATE generated_articles
+                        SET current_revision_id = :revision_id
+                        WHERE id = :article_id
+                        """
+                    ),
+                    {"revision_id": foreign_revision_id, "article_id": article_id},
+                )
+
+        # Immutable means append-only: a persisted revision cannot be rewritten.
+        with pytest.raises(DBAPIError):
+            with target_engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE article_revisions SET content = 'tampered' WHERE id = :id"),
+                    {"id": current_revision_id},
+                )
 
         # Concurrent payload updates serialize on the article row and must never
         # produce duplicate revision numbers.

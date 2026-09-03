@@ -240,6 +240,7 @@ def upgrade() -> None:
             DECLARE
                 captured_revision_id uuid;
                 captured_source text;
+                captured_note text;
                 captured_at timestamp;
             BEGIN
                 IF TG_OP = 'UPDATE' AND NOT (
@@ -260,6 +261,7 @@ def upgrade() -> None:
                     captured_at := COALESCE(NEW.created_at, NOW());
                 ELSE
                     captured_source := 'article_payload_update';
+                    captured_note := NULLIF(current_setting('app.revision_note', true), '');
                     captured_at := COALESCE(NEW.updated_at, NOW());
                 END IF;
 
@@ -285,7 +287,7 @@ def upgrade() -> None:
                     NEW.content,
                     NEW.meta_description,
                     NEW.keywords,
-                    NULL,
+                    captured_note,
                     NEW.word_count,
                     captured_source,
                     'complete',
@@ -316,8 +318,86 @@ def upgrade() -> None:
         )
     )
 
+    # The simple FK proves that current_revision_id exists. This trigger also
+    # proves ownership: the pointed revision must belong to the same article.
+    op.execute(
+        sa.text(
+            """
+            CREATE OR REPLACE FUNCTION validate_generated_article_current_revision()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                IF NEW.current_revision_id IS NULL THEN
+                    RETURN NEW;
+                END IF;
+
+                PERFORM 1
+                FROM article_revisions
+                WHERE id = NEW.current_revision_id
+                  AND article_id = NEW.id;
+
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION
+                        'Current revision % does not belong to article %',
+                        NEW.current_revision_id,
+                        NEW.id
+                        USING ERRCODE = '23514';
+                END IF;
+                RETURN NEW;
+            END;
+            $$
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            CREATE TRIGGER trg_generated_articles_validate_current_revision
+            BEFORE INSERT OR UPDATE OF current_revision_id
+            ON generated_articles
+            FOR EACH ROW
+            EXECUTE FUNCTION validate_generated_article_current_revision()
+            """
+        )
+    )
+
+    # Revisions are append-only. Deletion remains available only because an
+    # article delete must cascade its historical revisions safely.
+    op.execute(
+        sa.text(
+            """
+            CREATE OR REPLACE FUNCTION prevent_article_revision_update()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RAISE EXCEPTION 'Article revisions are immutable once inserted'
+                    USING ERRCODE = '55000';
+            END;
+            $$
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            CREATE TRIGGER trg_article_revisions_prevent_update
+            BEFORE UPDATE ON article_revisions
+            FOR EACH ROW
+            EXECUTE FUNCTION prevent_article_revision_update()
+            """
+        )
+    )
+
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS trg_article_revisions_prevent_update ON article_revisions")
+    op.execute("DROP FUNCTION IF EXISTS prevent_article_revision_update()")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_generated_articles_validate_current_revision ON generated_articles"
+    )
+    op.execute("DROP FUNCTION IF EXISTS validate_generated_article_current_revision()")
     op.execute(
         "DROP TRIGGER IF EXISTS trg_generated_articles_capture_revision ON generated_articles"
     )

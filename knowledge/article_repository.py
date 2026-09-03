@@ -158,7 +158,6 @@ class ArticleRepository:
         revision_note: Optional[str],
     ) -> Optional[Dict[str, Any]]:
         """Atomically apply a manual edit; DB triggers append the new immutable revision."""
-        del revision_note  # Revision identity is payload-derived; edit events are tracked separately.
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         async with self.db.transaction() as session:
             current_result = await session.execute(
@@ -169,6 +168,13 @@ class ArticleRepository:
             current = current_result.scalar_one_or_none()
             if current is None:
                 return None
+
+            # Transaction-local context lets the DB trigger capture human edit
+            # provenance at revision construction time. The setting disappears
+            # automatically at transaction end, so pooled connections cannot leak it.
+            await session.execute(
+                select(func.set_config("app.revision_note", revision_note or "", True))
+            )
 
             updated_result = await session.execute(
                 update(generated_articles_table)
