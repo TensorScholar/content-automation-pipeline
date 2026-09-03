@@ -562,20 +562,8 @@ class ContentService:
         if not article:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
-        # Save current version as a revision snapshot before regeneration
-        from uuid import uuid4 as _uuid4
-
-        try:
-            await self.articles.create_revision({
-                "id": _uuid4(),
-                "article_id": article_id,
-                "title": article.get("title", ""),
-                "content": article.get("content", ""),
-                "revision_note": f"Pre-revision snapshot. Feedback: {feedback[:200]}",
-                "word_count": article.get("word_count", 0),
-            })
-        except Exception as e:
-            logger.warning(f"Failed to save revision snapshot for {article_id}: {e}")
+        # The current article payload is already represented by current_revision_id.
+        # Regeneration lineage will bind the generation task to that revision in Phase 4D.
 
         # Dispatch regeneration task via Celery with feedback as custom instructions
         from orchestration.tasks import generate_content_task

@@ -12,6 +12,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -44,6 +45,16 @@ generated_articles_table = Table(
     metadata,
     Column("id", PG_UUID, primary_key=True),
     Column("generation_task_id", String(255)),
+    Column(
+        "current_revision_id",
+        PG_UUID,
+        ForeignKey(
+            "article_revisions.id",
+            name="fk_generated_articles_current_revision",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+    ),
     Column(
         "project_id",
         PG_UUID,
@@ -379,13 +390,42 @@ article_revisions_table = Table(
         nullable=False,
         index=True,
     ),
+    Column("revision_number", Integer, nullable=False),
     Column("title", String(500), nullable=False),
     Column("content", Text),
+    Column("meta_description", String(500)),
+    Column("keywords", JSONB),
     Column("revision_note", Text),
     Column("word_count", Integer),
+    Column(
+        "revision_source",
+        String(64),
+        nullable=False,
+        server_default="legacy_application_snapshot",
+    ),
+    Column(
+        "snapshot_completeness",
+        String(32),
+        nullable=False,
+        server_default="legacy_partial",
+    ),
+    Column("generation_task_id", String(255)),
     Column("created_at", DateTime, default=func.now(), index=True),
-    # Composite index for revision history queries
+    CheckConstraint(
+        "revision_number > 0",
+        name="ck_article_revisions_revision_number_positive",
+    ),
+    CheckConstraint(
+        "snapshot_completeness IN ('legacy_partial', 'complete')",
+        name="ck_article_revisions_snapshot_completeness",
+    ),
     Index("idx_revisions_article_created", "article_id", "created_at"),
+    Index(
+        "uq_article_revisions_article_number",
+        "article_id",
+        "revision_number",
+        unique=True,
+    ),
 )
 
 # Projects Table

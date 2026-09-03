@@ -126,6 +126,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/content_automation_test
+      TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/content_automation_test
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret-key-minimum-32-chars-long-for-validation
       CREDENTIAL_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
