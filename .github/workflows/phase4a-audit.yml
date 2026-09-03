@@ -1,0 +1,41 @@
+name: Phase 4A Revision Backbone Audit
+
+on:
+  push:
+    branches:
+      - feat/phase4a-revision-backbone
+    paths:
+      - .phase4a-audit-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit revision identity and lineage surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          for term in \
+            article_revisions_table \
+            'article_revisions' \
+            create_revision \
+            update_content_with_revision \
+            get_article_history \
+            request_article_revision \
+            save_generated_article \
+            create_article \
+            generation_task_id \
+            review_status \
+            publishing_attempts_table \
+            publish_idempotency_key
+          do
+            echo "=== ${term} ==="
+            git grep -n -F "${term}" -- ':!.github/workflows/phase4a-audit.yml' || true
+          done
+
+          echo '=== migration heads ==='
+          grep -R '^revision =\|^down_revision =' alembic/versions/*.py | tail -40
