@@ -27,7 +27,11 @@ jobs:
             get_article_history \
             request_article_revision \
             save_generated_article \
-            create_article \
+            'articles.create(' \
+            'article_repo.create(' \
+            'article_repository.create(' \
+            'insert(generated_articles_table)' \
+            'generated_articles_table.insert()' \
             generation_task_id \
             review_status \
             publishing_attempts_table \
@@ -36,6 +40,9 @@ jobs:
             echo "=== ${term} ==="
             git grep -n -F "${term}" -- ':!.github/workflows/phase4a-audit.yml' || true
           done
+
+          echo '=== generated_articles direct values writes ==='
+          git grep -n -E 'generated_articles_table\.(insert|update)|insert\(generated_articles_table\)|update\(generated_articles_table\)' -- '*.py' ':!.github/workflows/phase4a-audit.yml' || true
 
           echo '=== migration heads ==='
           grep -R '^revision =\|^down_revision =' alembic/versions/*.py | tail -40
