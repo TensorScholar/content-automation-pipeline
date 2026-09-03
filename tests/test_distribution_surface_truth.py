@@ -38,6 +38,7 @@ def test_readme_describes_the_real_direct_publisher():
     assert "distributer.py        # WordPress publishing adapter" in readme
     assert "distributer.py        # Multi-channel publishing" not in readme
 
+
 def test_generation_domain_has_no_generic_distribution_contract():
     enums = _read("core/enums.py")
     models = _read("core/models.py")
