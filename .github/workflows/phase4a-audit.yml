@@ -30,6 +30,9 @@ jobs:
             'articles.create(' \
             'article_repo.create(' \
             'article_repository.create(' \
+            'articles.update(' \
+            'article_repo.update(' \
+            'article_repository.update(' \
             'insert(generated_articles_table)' \
             'generated_articles_table.insert()' \
             generation_task_id \
