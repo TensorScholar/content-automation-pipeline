@@ -383,10 +383,13 @@ def upgrade() -> None:
                 captured_decision_id uuid;
                 captured_source text;
             BEGIN
+                # reviewer_id may be nulled later by the legacy live FK when a
+                # user is deleted. That referential-maintenance write is not a
+                # new editorial decision, so reviewer-only/update-time changes
+                # deliberately do not append an audit event.
                 IF NOT (
                     OLD.review_status IS DISTINCT FROM NEW.review_status OR
                     OLD.review_note IS DISTINCT FROM NEW.review_note OR
-                    OLD.reviewed_by IS DISTINCT FROM NEW.reviewed_by OR
                     OLD.reviewed_at IS DISTINCT FROM NEW.reviewed_at
                 ) THEN
                     RETURN NEW;
