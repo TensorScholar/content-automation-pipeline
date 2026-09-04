@@ -2,7 +2,7 @@
 
 The test upgrades a disposable database from the Phase 4A head, seeds a legacy
 article-level review, then exercises immutable revision-bound review decisions,
-stale-review rejection, revision invalidation, ownership guards, reviewer
+stale-review rejection, revision invalidation, projection consistency, reviewer
 snapshots, and cascade deletion using the real Alembic migration.
 """
 
@@ -12,7 +12,7 @@ import os
 import subprocess
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -112,8 +112,7 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
             ).scalar_one()
             assert phase4a_revision_id is not None
 
-            # This is the pre-Phase-4B mutable review representation that must
-            # be preserved as an immutable decision during migration.
+            # Pre-Phase-4B mutable state must survive as an immutable decision.
             connection.execute(
                 text(
                     """
@@ -156,7 +155,7 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
                     text(
                         """
                         SELECT id, article_revision_id, decision_number, decision,
-                               note, reviewer_id, reviewer_name_snapshot,
+                               note, reviewer_id_snapshot, reviewer_name_snapshot,
                                reviewer_email_snapshot, decision_source
                         FROM article_review_decisions
                         WHERE article_id = :article_id
@@ -178,13 +177,12 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
         assert legacy_decision["decision_number"] == 1
         assert legacy_decision["decision"] == "approved"
         assert legacy_decision["note"] == "Legacy approval before ledger migration"
-        assert legacy_decision["reviewer_id"] == reviewer_id
+        assert legacy_decision["reviewer_id_snapshot"] == reviewer_id
         assert legacy_decision["reviewer_name_snapshot"] == "Review Manager"
         assert legacy_decision["reviewer_email_snapshot"] == "reviewer@example.test"
         assert legacy_decision["decision_source"] == "legacy_review_backfill"
 
-        # Native Phase-4B caller: bind the review write to the exact revision
-        # that was evaluated and label the source for auditability.
+        # Native Phase-4B caller: bind the write to the exact reviewed revision.
         with target_engine.begin() as connection:
             connection.execute(
                 text("SELECT set_config('app.expected_review_revision_id', :revision, true)"),
@@ -237,9 +235,8 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
         assert native_decision["decision_source"] == "manager_api"
         assert current_pointer == native_decision["id"]
 
-        # Editing the payload creates a new immutable revision through Phase 4A
-        # and must atomically invalidate the decision projection from the older
-        # revision rather than silently inheriting it.
+        # Editing creates a new Phase-4A revision and atomically invalidates the
+        # older revision's current review projection.
         with target_engine.begin() as connection:
             connection.execute(
                 text(
@@ -279,9 +276,7 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
         assert after_edit["reviewed_by"] is None
         assert after_edit["reviewed_at"] is None
 
-        # A manager decision evaluated against the superseded revision is a
-        # concurrency conflict. The DB rejects it even if application code were
-        # to miss the race after its initial readiness check.
+        # A decision evaluated against the superseded revision is a conflict.
         with pytest.raises(DBAPIError):
             with target_engine.begin() as connection:
                 connection.execute(
@@ -329,8 +324,7 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
         assert stale_state["current_review_decision_id"] is None
         assert decision_count == 2
 
-        # The same operation succeeds when the exact current revision identity
-        # is supplied.
+        # The same operation succeeds with the exact current revision identity.
         with target_engine.begin() as connection:
             connection.execute(
                 text("SELECT set_config('app.expected_review_revision_id', :revision, true)"),
@@ -384,8 +378,21 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
         assert approved["decision_number"] == 3
         assert approved["decision"] == "approved"
 
-        # Directly switching the current revision is also review-invalidating;
-        # approval may never float across immutable revision identities.
+        # Terminal projection state cannot be left without its immutable pointer.
+        with pytest.raises(DBAPIError):
+            with target_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        UPDATE generated_articles
+                        SET current_review_decision_id = NULL
+                        WHERE id = :article_id
+                        """
+                    ),
+                    {"article_id": article_id},
+                )
+
+        # Directly switching current_revision_id also invalidates approval.
         with target_engine.begin() as connection:
             connection.execute(
                 text(
@@ -414,8 +421,7 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
         assert rewound["current_review_decision_id"] is None
         assert rewound["review_status"] == "pending_review"
 
-        # A decision from another revision cannot be installed as the current
-        # approval pointer even when it belongs to the same article.
+        # A decision from another revision cannot become the current pointer.
         with pytest.raises(DBAPIError):
             with target_engine.begin() as connection:
                 connection.execute(
@@ -439,8 +445,7 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
                     {"id": approved_decision_id},
                 )
 
-        # User deletion may null the live FK but must not erase historical
-        # reviewer identity captured at decision time.
+        # User deletion cannot erase the immutable reviewer identity snapshot.
         with target_engine.begin() as connection:
             connection.execute(text("DELETE FROM users WHERE id = :id"), {"id": reviewer_id})
 
@@ -449,7 +454,8 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
                 connection.execute(
                     text(
                         """
-                        SELECT reviewer_id, reviewer_name_snapshot, reviewer_email_snapshot
+                        SELECT reviewer_id_snapshot, reviewer_name_snapshot,
+                               reviewer_email_snapshot
                         FROM article_review_decisions
                         WHERE id = :id
                         """
@@ -460,13 +466,11 @@ def test_review_decisions_are_revision_bound_immutable_and_stale_safe():
                 .one()
             )
 
-        assert reviewer_history["reviewer_id"] is None
+        assert reviewer_history["reviewer_id_snapshot"] == reviewer_id
         assert reviewer_history["reviewer_name_snapshot"] == "Review Manager"
         assert reviewer_history["reviewer_email_snapshot"] == "reviewer@example.test"
 
-        # Article deletion still removes its immutable review ledger through
-        # the parent cascade; the current decision FK must not create a cycle
-        # that prevents normal aggregate deletion.
+        # Article deletion still cascades its immutable review ledger safely.
         with target_engine.begin() as connection:
             connection.execute(
                 text("DELETE FROM generated_articles WHERE id = :article_id"),
