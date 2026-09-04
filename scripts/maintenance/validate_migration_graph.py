@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-EXPECTED_HEAD = "20260903_001"
+EXPECTED_HEAD = "20260904_001"
 ROOT = Path(__file__).resolve().parents[2]
 VERSIONS = ROOT / "alembic" / "versions"
 
