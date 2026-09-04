@@ -27,9 +27,39 @@ branch_labels = None
 depends_on = None
 
 TERMINAL_REVIEW_STATES = "'approved', 'rejected', 'changes_requested'"
+ALL_REVIEW_STATES = f"'pending_review', {TERMINAL_REVIEW_STATES}"
 
 
 def upgrade() -> None:
+    # Fail before creating a partial ledger if legacy data already violates the
+    # Phase 4A invariant required to bind an existing decision to a revision.
+    op.execute(
+        sa.text(
+            f"""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM generated_articles
+                    WHERE review_status IN ({TERMINAL_REVIEW_STATES})
+                      AND current_revision_id IS NULL
+                ) THEN
+                    RAISE EXCEPTION
+                        'Cannot migrate terminal article review state without current revision'
+                        USING ERRCODE = '23514';
+                END IF;
+            END;
+            $$
+            """
+        )
+    )
+
+    op.create_check_constraint(
+        "ck_generated_articles_review_status",
+        "generated_articles",
+        f"review_status IN ({ALL_REVIEW_STATES})",
+    )
+
     op.create_table(
         "article_review_decisions",
         sa.Column("id", PG_UUID(), primary_key=True),
@@ -48,12 +78,10 @@ def upgrade() -> None:
         sa.Column("decision_number", sa.Integer(), nullable=False),
         sa.Column("decision", sa.String(40), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
-        sa.Column(
-            "reviewer_id",
-            PG_UUID(),
-            sa.ForeignKey("users.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
+        # Reviewer identity is an audit snapshot, not a live relational owner.
+        # Keeping this UUID free of an ON DELETE action means deleting a user
+        # cannot mutate an immutable historical decision.
+        sa.Column("reviewer_id_snapshot", PG_UUID(), nullable=True),
         sa.Column("reviewer_name_snapshot", sa.String(255), nullable=True),
         sa.Column("reviewer_email_snapshot", sa.String(255), nullable=True),
         sa.Column(
@@ -104,8 +132,7 @@ def upgrade() -> None:
     )
 
     # Numbering and revision ownership are enforced inside PostgreSQL so all
-    # writers, including an older application binary during a rolling deploy,
-    # participate in the same identity contract.
+    # writers participate in one decision identity contract.
     op.execute(
         sa.text(
             """
@@ -149,12 +176,12 @@ def upgrade() -> None:
                     NEW.decision_number := next_decision_number;
                 END IF;
 
-                IF NEW.reviewer_id IS NOT NULL
+                IF NEW.reviewer_id_snapshot IS NOT NULL
                    AND (NEW.reviewer_name_snapshot IS NULL OR NEW.reviewer_email_snapshot IS NULL) THEN
                     SELECT full_name, email
                     INTO reviewer_name, reviewer_email
                     FROM users
-                    WHERE id = NEW.reviewer_id;
+                    WHERE id = NEW.reviewer_id_snapshot;
 
                     NEW.reviewer_name_snapshot := COALESCE(
                         NEW.reviewer_name_snapshot,
@@ -193,9 +220,8 @@ def upgrade() -> None:
         )
     )
 
-    # Preserve pre-migration review history as one immutable decision bound to
-    # the current immutable revision. Pending review is a projection state, not
-    # a decision event, so it is intentionally not backfilled.
+    # Preserve pre-migration terminal review state as one immutable decision.
+    # Pending review is a projection state, not a historical decision event.
     op.execute(
         sa.text(
             f"""
@@ -207,7 +233,7 @@ def upgrade() -> None:
                     decision_number,
                     decision,
                     note,
-                    reviewer_id,
+                    reviewer_id_snapshot,
                     reviewer_name_snapshot,
                     reviewer_email_snapshot,
                     decision_source,
@@ -237,7 +263,6 @@ def upgrade() -> None:
                 LEFT JOIN users AS reviewer
                   ON reviewer.id = article.reviewed_by
                 WHERE article.review_status IN ({TERMINAL_REVIEW_STATES})
-                  AND article.current_revision_id IS NOT NULL
                 RETURNING id, article_id
             )
             UPDATE generated_articles AS article
@@ -249,7 +274,7 @@ def upgrade() -> None:
     )
 
     # A current-review pointer is valid only when the decision belongs to the
-    # same article and exactly the article's current immutable revision.
+    # same article, exact current revision, and same projected decision state.
     op.execute(
         sa.text(
             """
@@ -266,14 +291,14 @@ def upgrade() -> None:
                 FROM article_review_decisions
                 WHERE id = NEW.current_review_decision_id
                   AND article_id = NEW.id
-                  AND article_revision_id = NEW.current_revision_id;
+                  AND article_revision_id = NEW.current_revision_id
+                  AND decision = NEW.review_status;
 
                 IF NOT FOUND THEN
                     RAISE EXCEPTION
-                        'Current review decision % does not match article % current revision %',
+                        'Current review decision % does not match article % current revision/state',
                         NEW.current_review_decision_id,
-                        NEW.id,
-                        NEW.current_revision_id
+                        NEW.id
                         USING ERRCODE = '23514';
                 END IF;
                 RETURN NEW;
@@ -294,9 +319,8 @@ def upgrade() -> None:
         )
     )
 
-    # A new revision always supersedes the previous approval projection. This
-    # trigger also covers a direct current_revision_id switch, not only normal
-    # payload edits captured by the Phase 4A revision trigger.
+    # A new revision always supersedes the previous review projection. This
+    # also covers a direct current_revision_id switch.
     op.execute(
         sa.text(
             """
@@ -343,10 +367,9 @@ def upgrade() -> None:
         )
     )
 
-    # Keep the legacy review columns as a projection during the compatibility
-    # window, but capture every terminal write as an immutable revision-bound
-    # decision. New callers set app.expected_review_revision_id; if the article
-    # changed after the reviewer evaluated it, PostgreSQL rejects the stale write.
+    # Existing review columns stay writable during the expand window. Terminal
+    # projection writes append immutable decisions. New callers provide the
+    # revision they actually reviewed; stale writes fail at the DB boundary.
     op.execute(
         sa.text(
             f"""
@@ -364,8 +387,7 @@ def upgrade() -> None:
                     OLD.review_status IS DISTINCT FROM NEW.review_status OR
                     OLD.review_note IS DISTINCT FROM NEW.review_note OR
                     OLD.reviewed_by IS DISTINCT FROM NEW.reviewed_by OR
-                    OLD.reviewed_at IS DISTINCT FROM NEW.reviewed_at OR
-                    OLD.review_updated_at IS DISTINCT FROM NEW.review_updated_at
+                    OLD.reviewed_at IS DISTINCT FROM NEW.reviewed_at
                 ) THEN
                     RETURN NEW;
                 END IF;
@@ -422,7 +444,7 @@ def upgrade() -> None:
                     decision_number,
                     decision,
                     note,
-                    reviewer_id,
+                    reviewer_id_snapshot,
                     decision_source,
                     decided_at,
                     recorded_at
@@ -462,8 +484,7 @@ def upgrade() -> None:
         )
     )
 
-    # Decisions are audit events. They may be deleted only as part of deleting
-    # their parent article/revision; mutation in place is never permitted.
+    # Decisions are append-only audit events.
     op.execute(
         sa.text(
             """
@@ -490,8 +511,90 @@ def upgrade() -> None:
         )
     )
 
+    # Terminal review state must always have one current decision bound to the
+    # exact current revision. A DEFERRABLE constraint trigger allows the legacy
+    # projection UPDATE and its AFTER-trigger decision insert to complete within
+    # the same transaction while still failing inconsistent commits.
+    op.execute(
+        sa.text(
+            f"""
+            CREATE OR REPLACE FUNCTION validate_article_review_projection_consistency()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            DECLARE
+                current_row record;
+            BEGIN
+                SELECT review_status, current_revision_id, current_review_decision_id
+                INTO current_row
+                FROM generated_articles
+                WHERE id = NEW.id;
+
+                IF NOT FOUND THEN
+                    RETURN NULL;
+                END IF;
+
+                IF current_row.review_status = 'pending_review' THEN
+                    IF current_row.current_review_decision_id IS NOT NULL THEN
+                        RAISE EXCEPTION
+                            'Pending article % cannot retain a current review decision',
+                            NEW.id
+                            USING ERRCODE = '23514';
+                    END IF;
+                    RETURN NULL;
+                END IF;
+
+                IF current_row.review_status NOT IN ({TERMINAL_REVIEW_STATES}) THEN
+                    RAISE EXCEPTION 'Unsupported article review status %', current_row.review_status
+                        USING ERRCODE = '23514';
+                END IF;
+
+                IF current_row.current_review_decision_id IS NULL THEN
+                    RAISE EXCEPTION
+                        'Terminal article review state requires a current review decision for article %',
+                        NEW.id
+                        USING ERRCODE = '23514';
+                END IF;
+
+                PERFORM 1
+                FROM article_review_decisions
+                WHERE id = current_row.current_review_decision_id
+                  AND article_id = NEW.id
+                  AND article_revision_id = current_row.current_revision_id
+                  AND decision = current_row.review_status;
+
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION
+                        'Article % review projection does not match its immutable current decision',
+                        NEW.id
+                        USING ERRCODE = '23514';
+                END IF;
+                RETURN NULL;
+            END;
+            $$
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            CREATE CONSTRAINT TRIGGER trg_generated_articles_review_projection_consistency
+            AFTER INSERT OR UPDATE OF review_status, current_revision_id, current_review_decision_id
+            ON generated_articles
+            DEFERRABLE INITIALLY DEFERRED
+            FOR EACH ROW
+            EXECUTE FUNCTION validate_article_review_projection_consistency()
+            """
+        )
+    )
+
 
 def downgrade() -> None:
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_generated_articles_review_projection_consistency "
+        "ON generated_articles"
+    )
+    op.execute("DROP FUNCTION IF EXISTS validate_article_review_projection_consistency()")
     op.execute(
         "DROP TRIGGER IF EXISTS trg_article_review_decisions_prevent_update "
         "ON article_review_decisions"
@@ -537,3 +640,8 @@ def downgrade() -> None:
         table_name="article_review_decisions",
     )
     op.drop_table("article_review_decisions")
+    op.drop_constraint(
+        "ck_generated_articles_review_status",
+        "generated_articles",
+        type_="check",
+    )
