@@ -56,6 +56,16 @@ generated_articles_table = Table(
         ),
     ),
     Column(
+        "current_review_decision_id",
+        PG_UUID,
+        ForeignKey(
+            "article_review_decisions.id",
+            name="fk_generated_articles_current_review_decision",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+    ),
+    Column(
         "project_id",
         PG_UUID,
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -101,6 +111,10 @@ generated_articles_table = Table(
     Column("review_updated_at", DateTime),
     Column("created_at", DateTime, default=func.now(), index=True),
     Column("updated_at", DateTime, default=func.now(), onupdate=func.now()),
+    CheckConstraint(
+        "review_status IN ('pending_review', 'approved', 'rejected', 'changes_requested')",
+        name="ck_generated_articles_review_status",
+    ),
     # Composite indexes for common query patterns
     Index("idx_articles_project_created", "project_id", "created_at"),
     Index("idx_articles_project_distributed", "project_id", "distributed_at"),
@@ -426,6 +440,52 @@ article_revisions_table = Table(
         "revision_number",
         unique=True,
     ),
+)
+
+# Immutable Article Review Decisions Table
+article_review_decisions_table = Table(
+    "article_review_decisions",
+    metadata,
+    Column("id", PG_UUID, primary_key=True),
+    Column(
+        "article_id",
+        PG_UUID,
+        ForeignKey("generated_articles.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "article_revision_id",
+        PG_UUID,
+        ForeignKey("article_revisions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("decision_number", Integer, nullable=False),
+    Column("decision", String(40), nullable=False),
+    Column("note", Text),
+    # Deliberately not a live FK: reviewer identity is immutable audit evidence
+    # and must survive deletion/anonymization of the live user row.
+    Column("reviewer_id_snapshot", PG_UUID),
+    Column("reviewer_name_snapshot", String(255)),
+    Column("reviewer_email_snapshot", String(255)),
+    Column("decision_source", String(64), nullable=False, server_default="legacy_projection_write"),
+    Column("decided_at", DateTime, nullable=False, server_default=func.now()),
+    Column("recorded_at", DateTime, nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "decision IN ('approved', 'rejected', 'changes_requested')",
+        name="ck_article_review_decisions_decision",
+    ),
+    CheckConstraint(
+        "decision_number > 0",
+        name="ck_article_review_decisions_number_positive",
+    ),
+    Index(
+        "uq_article_review_decisions_article_number",
+        "article_id",
+        "decision_number",
+        unique=True,
+    ),
+    Index("idx_article_review_decisions_revision", "article_revision_id", "recorded_at"),
+    Index("idx_article_review_decisions_article_recorded", "article_id", "recorded_at"),
 )
 
 # Projects Table
